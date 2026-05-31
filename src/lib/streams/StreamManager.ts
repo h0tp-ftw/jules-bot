@@ -1,5 +1,5 @@
 import { Client, ThreadChannel } from 'discord.js'
-import { prisma } from '../../config'
+import { prisma } from '../../config.js'
 
 export class StreamManager {
   private buffers = new Map<string, string[]>()

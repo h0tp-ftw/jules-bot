@@ -1,11 +1,11 @@
 import { Client, GatewayIntentBits, Collection, REST, Routes, Events } from 'discord.js'
-import { DISCORD_TOKEN, prisma } from './config'
-import linkRepoCmd from './commands/link-repo'
-import setupForumCmd from './commands/setup-forum'
-import threadCreateEvt from './events/threadCreate'
-import messageCreateEvt from './events/messageCreate'
-import interactionCreateEvt from './events/interactionCreate'
-import { StreamManager } from './lib/streams/StreamManager'
+import { DISCORD_TOKEN, prisma } from './config.js'
+import linkRepoCmd from './commands/link-repo.js'
+import setupForumCmd from './commands/setup-forum.js'
+import threadCreateEvt from './events/threadCreate.js'
+import messageCreateEvt from './events/messageCreate.js'
+import interactionCreateEvt from './events/interactionCreate.js'
+import { StreamManager } from './lib/streams/StreamManager.js'
 
 if (!DISCORD_TOKEN || DISCORD_TOKEN === 'YOUR_DISCORD_TOKEN') {
   console.error('Error: DISCORD_TOKEN is not configured in .env file.')
@@ -27,7 +27,7 @@ const commands = new Collection<string, any>()
 commands.set(linkRepoCmd.data.name, linkRepoCmd)
 commands.set(setupForumCmd.data.name, setupForumCmd)
 
-import { hasPermission } from './lib/utils/permissions'
+import { hasPermission } from './lib/utils/permissions.js'
 
 // Register events
 client.on(Events.ThreadCreate, (thread) => {

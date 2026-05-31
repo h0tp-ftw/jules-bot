@@ -1,8 +1,8 @@
 import { ThreadChannel, Events } from 'discord.js'
-import { prisma } from '../config'
-import { JulesClient } from '../lib/jules/JulesClient'
-import { runJulesStream } from '../lib/jules/orchestrator'
-import { StreamManager } from '../lib/streams/StreamManager'
+import { prisma } from '../config.js'
+import { JulesClient } from '../lib/jules/JulesClient.js'
+import { runJulesStream } from '../lib/jules/orchestrator.js'
+import { StreamManager } from '../lib/streams/StreamManager.js'
 
 export default {
   name: Events.ThreadCreate,

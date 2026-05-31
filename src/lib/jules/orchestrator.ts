@@ -1,7 +1,7 @@
 import { ThreadChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js'
-import { JulesClient } from './JulesClient'
-import { StreamManager } from '../streams/StreamManager'
-import { prisma } from '../../config'
+import { JulesClient } from './JulesClient.js'
+import { StreamManager } from '../streams/StreamManager.js'
+import { prisma } from '../../config.js'
 
 export const activeStreams = new Set<string>()
 

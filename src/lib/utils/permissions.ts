@@ -1,5 +1,5 @@
 import { GuildMember, User, APIInteractionGuildMember } from 'discord.js'
-import { ALLOW_ALL, ALLOWED_USERS, ALLOWED_ROLES } from '../../config'
+import { ALLOW_ALL, ALLOWED_USERS, ALLOWED_ROLES } from '../../config.js'
 
 export function hasPermission(
   member: GuildMember | APIInteractionGuildMember | null,

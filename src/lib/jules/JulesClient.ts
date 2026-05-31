@@ -1,5 +1,5 @@
 import { jules } from '@google/jules-sdk'
-import { JULES_API_KEY, DIAGNOSTIC_PROMPT } from '../../config'
+import { JULES_API_KEY, DIAGNOSTIC_PROMPT } from '../../config.js'
 
 const client = JULES_API_KEY ? jules.with({ apiKey: JULES_API_KEY }) : jules
 
