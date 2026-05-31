@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Compiled output
+dist/
+
+# Environment variables
+.env
+
+# Database
+prisma/dev.db
+prisma/dev.db-journal

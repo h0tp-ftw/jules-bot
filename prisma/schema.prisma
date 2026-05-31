@@ -1,0 +1,26 @@
+datasource db {
+  provider = "sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model GuildConfig {
+  guildId        String   @id
+  defaultRepo    String
+  forumChannelId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model DebugSession {
+  threadId        String   @id
+  guildId         String
+  julesSessionId  String
+  statusMessageId String?
+  planMessageId   String?
+  repoName        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
