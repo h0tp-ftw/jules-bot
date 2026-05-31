@@ -49,7 +49,7 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 - A Google Jules API Key.
 
 ### 2. Configure Environment
-Create a `.env` file in the root:
+Copy `.env.example` to `.env` and fill in your keys:
 ```env
 DATABASE_URL="file:./prisma/dev.db"
 DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
