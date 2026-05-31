@@ -10,3 +10,9 @@ dist/
 # Database
 prisma/dev.db
 prisma/dev.db-journal
+
+# Jules cache
+.jules/
+
+# Scratch files
+scratch_*
