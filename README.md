@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/banner.png" alt="JulesBot Banner" width="100%">
+  <img src="assets/logo.png" alt="JulesBot Logo" width="128px">
 </p>
 
-<h1 align="center">🔮 JulesBot</h1>
+<h1 align="center">JulesBot</h1>
 
 <p align="center">
   <strong>Interactive Diagnostic Discord Assistant</strong>
