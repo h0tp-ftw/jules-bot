@@ -9,7 +9,8 @@
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.x-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a>
   <a href="https://www.prisma.io/"><img src="https://img.shields.io/badge/Prisma-v7-2D3748?style=for-the-badge&logo=prisma&logoColor=white" alt="Prisma"></a>
   <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-3-07405E?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite"></a>
-  <a href="https://developers.google.com/jules"><img src="https://img.shields.io/badge/Powered%20by-Google%20Jules-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Google Jules"></a>
+  <a href="https://jules.google.com"><img src="https://img.shields.io/badge/Powered%20by-Jules-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Jules"></a>
+  <a href="https://labs.google/"><img src="https://img.shields.io/badge/Google-Labs-F4B400?style=for-the-badge&logo=google&logoColor=white" alt="Google Labs"></a>
 </p>
 
 <p align="center">
