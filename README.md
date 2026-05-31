@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/logo.png" alt="JulesBot Logo" width="128px">
-</p>
-
 <h1 align="center">JulesBot</h1>
 
 <p align="center">
