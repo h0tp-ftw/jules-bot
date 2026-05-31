@@ -1,0 +1,28 @@
+{
+  "resource": {
+    "name": "sessions/10244565693855189251",
+    "title": "Diagnostics Test",
+    "createTime": "2026-05-31T17:11:15.896700136Z",
+    "updateTime": "2026-05-31T17:11:21.153716Z",
+    "state": "inProgress",
+    "sourceContext": {
+      "source": "sources/github/h0tp-ftw/ankimon",
+      "githubRepoContext": {
+        "startingBranch": "main"
+      },
+      "environmentVariablesEnabled": true
+    },
+    "prompt": "Check codebase and tell me what the project is about.",
+    "url": "https://jules.google.com/session/10244565693855189251",
+    "id": "10244565693855189251",
+    "archived": false,
+    "outputs": [],
+    "outcome": {
+      "sessionId": "10244565693855189251",
+      "title": "Diagnostics Test",
+      "state": "completed",
+      "outputs": []
+    }
+  },
+  "_lastSyncedAt": 1780247489785
+}

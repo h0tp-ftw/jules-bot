@@ -12,6 +12,14 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
   try {
     const session = JulesClient.getSession(sessionId)
 
+    // Wait until session is no longer queued to avoid 404 Not Found error on stream()
+    let info = await session.info()
+    while (info && info.state === 'queued') {
+      console.log(`Session ${sessionId} is queued. Waiting 5s...`)
+      await new Promise((resolve) => setTimeout(resolve, 5000))
+      info = await session.info()
+    }
+
     for await (const activity of session.stream()) {
       const type = activity.type
 
