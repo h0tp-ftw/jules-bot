@@ -40,7 +40,7 @@ export default {
       return
     }
 
-    await thread.send(`👋 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repo}\``)
+    await thread.send(`🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repo}\``)
 
     try {
       const session = await JulesClient.createSession({

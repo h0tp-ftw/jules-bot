@@ -18,7 +18,7 @@ export class StreamManager {
 
     let statusMessageId = session.statusMessageId
     if (!statusMessageId) {
-      const msg = await thread.send('⚙️ **Jules is analyzing the workspace...**\n\n*Logs will stream below:*')
+      const msg = await thread.send('🐙 **Jules is analyzing the workspace...**\n\n*Logs will stream below:*')
       statusMessageId = msg.id
       await prisma.debugSession.update({
         where: { threadId },
@@ -28,8 +28,8 @@ export class StreamManager {
 
     const buf = this.buffers.get(threadId) ?? []
     buf.push(line)
-    // Keep last 15 lines of output to fit in Discord's 2000 character limit
-    this.buffers.set(threadId, buf.slice(-15))
+    const bufSlice = buf.slice(-15)
+    this.buffers.set(threadId, bufSlice)
 
     if (this.timers.has(threadId)) return
 
@@ -41,7 +41,7 @@ export class StreamManager {
     this.timers.delete(thread.id)
     const buf = this.buffers.get(thread.id) ?? []
     const content =
-      '⚙️ **Jules is analyzing the workspace...**\n\n**Latest steps:**\n```\n' +
+      '🐙 **Jules is analyzing the workspace...**\n\n**Latest steps:**\n```\n' +
       buf.join('\n') +
       '\n```'
 

@@ -1,4 +1,4 @@
-<h1 align="center">JulesBot</h1>
+<h1 align="center">🐙 JulesBot</h1>
 
 <p align="center">
   <strong>Interactive Diagnostic Discord Assistant</strong>

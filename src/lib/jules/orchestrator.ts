@@ -25,7 +25,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             .join('\n')
 
           const embed = new EmbedBuilder()
-            .setTitle('📋 Jules Proposed Diagnostic Plan')
+            .setTitle('🐙 Jules Proposed Diagnostic Plan')
             .setDescription(stepsText.slice(0, 4000) || 'No details provided.')
             .setColor(0x00ae86)
 
