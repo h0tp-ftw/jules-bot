@@ -1,109 +1,105 @@
-# JulesBot - Interactive Diagnostic Discord Assistant
+<p align="center">
+  <img src="assets/banner.png" alt="JulesBot Banner" width="100%">
+</p>
 
-JulesBot is a Discord bot designed to act as a **friendly, interactive diagnostic helper** for developers and non-technical stakeholders alike. Powered by the **Google Jules SDK**, it allows users to have live conversations about their codebase inside Discord Forum channels.
+<h1 align="center">🔮 JulesBot</h1>
 
-Unlike default automated behaviors that rush to create code changes and Pull Requests, JulesBot's primary goal is **triage and diagnostics**:
-1. It explains bugs in simple terms with analogies.
-2. It lists raw execution/thinking logs (bash executions, command outputs, test runs) directly in the thread.
-3. It gates any proposed code changes with interactive **Approve** and **Reject** buttons.
+<p align="center">
+  <strong>Interactive Diagnostic Discord Assistant</strong>
+</p>
 
----
+<p align="center">
+  <a href="https://discord.js.org/"><img src="https://img.shields.io/badge/Discord.js-v14-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord.js"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.x-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="https://www.prisma.io/"><img src="https://img.shields.io/badge/Prisma-v7-2D3748?style=for-the-badge&logo=prisma&logoColor=white" alt="Prisma"></a>
+  <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-3-07405E?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite"></a>
+</p>
 
-## Features
-
-- **Forum-to-Session Mapping**: One forum post = one unique Google Jules interactive session.
-- **Log Streaming**: Live-streams terminal outputs and tool executions into a single, automatically-updated status message per thread (rate-limit safe!).
-- **Interactive Gates**: Presents proposed developer plans with Discord button components so humans can review and approve them before execution.
-- **Bot Rehydration**: Tracks thread states in a local SQLite database, allowing the bot to reconnect to active sessions seamlessly across bot restarts.
-- **Configurable Diagnostic Prompt**: Easily adjust how the AI behaves (e.g., instructing it to use non-technical language) in a single config file.
-
----
-
-## Architecture
-
-- **discord.js v14**: Interface with Discord API.
-- **@google/jules-sdk**: Communicates with the Google Jules API.
-- **Prisma 7 & SQLite**: Durable local state persistence.
-- **TypeScript**: Complete compile-time type safety.
+<p align="center">
+  JulesBot is a Discord bot designed to act as a <strong>friendly, interactive diagnostic helper</strong> for developers and non-technical stakeholders alike. Powered by the <strong>Google Jules SDK</strong>, it enables live conversations about your codebase inside Discord Forum channels.
+</p>
 
 ---
 
-## Installation & Setup
+## 🚀 The Triage Approach
 
-### 1. Prerequisites
-- **Node.js** (v18 or higher recommended)
-- A Discord Bot account registered on the [Discord Developer Portal](https://discord.com/developers/applications).
-- A Google Jules API Key.
+Unlike standard AI coding agents that immediately modify code and rush to open Pull Requests, JulesBot focuses on **diagnostics first**:
 
-### 2. Install Dependencies
-Clone the repository and run:
-```bash
-npm install
+```
+[User Forum Post] ➔ [Init Jules Session] ➔ [Stream live steps in Status message] ➔ [Wait for Human Button Gate] ➔ [Diagnose/Fix]
 ```
 
-### 3. Configure Environment Variables
-Create a `.env` file in the root directory:
+1. 🗣️ **Clear Explanations**: Translates bugs and issues into simple terms with everyday analogies instead of programmer jargon.
+2. ⚙️ **Real-Time Logs**: Streams live terminal outputs and step progress inside a single status message.
+3. 🛑 **Interactive Gating**: Any proposed code adjustments are presented with interactive **Approve** and **Reject** buttons before execution.
+
+---
+
+## ✨ Features
+
+* 📁 **Forum-to-Session Mapping**: Each forum post automatically initializes a unique interactive Google Jules session.
+* ⚡ **Live Log Streaming**: Stream terminal executions and tools into a single status message without hitting Discord rate limits.
+* 🛡️ **Access Control allowlists**: Allowlist commands and debug thread usage by User IDs, Role IDs, or toggle globally.
+* 🔌 **Seamless Recovery**: Database-backed rehydration re-establishes streaming listeners on bot restarts or serverless pauses.
+* 📝 **Custom Prompting**: Easily modify how the bot talks to your users by changing the prompt in `src/config.ts`.
+
+---
+
+## 🛠️ Setup & Run
+
+### 1. Prerequisites
+- **Node.js** (v18+)
+- A Discord Application token with proper intents.
+- A Google Jules API Key.
+
+### 2. Configure Environment
+Create a `.env` file in the root:
 ```env
 DATABASE_URL="file:./prisma/dev.db"
 DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
 JULES_API_KEY="YOUR_JULES_API_KEY"
 
-# Access Controls
+# Access Controls (Optional)
 ALLOW_ALL="true" # Set to "false" to enforce allowlisting
-ALLOWED_USERS="123456789012345678,987654321098765432" # Comma-separated Discord User IDs
-ALLOWED_ROLES="112233445566778899" # Comma-separated Discord Role IDs
+ALLOWED_USERS="123456789012345678" # Comma-separated user IDs
+ALLOWED_ROLES="112233445566778899" # Comma-separated role IDs
 ```
 
-### 4. Initialize the Database
-Set up the SQLite database schema using Prisma:
+### 3. Initialize Database
 ```bash
+npm install
 npm run db:migrate -- --name init
 ```
 
----
-
-## Discord Developer Portal Setup
-
-To allow the bot to read messages and manage threads:
-1. Go to your Bot page in the Discord Developer Portal.
-2. Under **Privileged Gateway Intents**, enable:
-   - **Guild Members Intent** (Optional)
-   - **Message Content Intent** (Required to parse starter messages and replies)
-3. Under **Bot Permissions**, grant:
-   - Read Messages/View Channels
-   - Send Messages
-   - Send Messages in Threads
-   - Manage Messages (To edit status updates)
-   - Read Message History
-   - Use Slash Commands
-
-Invite the bot to your server using the generated OAuth2 URL.
-
----
-
-## How to Run
-
-### Development Mode (with hot reloading)
+### 4. Start the Bot
 ```bash
+# Run in development mode (hot reload)
 npm run dev
-```
 
-### Production Mode
-Build the TypeScript files and start the production build:
-```bash
+# Run in production mode
 npm run build
 npm run start
 ```
 
 ---
 
-## Commands and Usage
+## ⚙️ Discord Developer Portal Configuration
 
-1. **Set Up the Forum Channel**:
-   Run `/setup-forum <channel>` to point the bot to your debugging forum.
-2. **Link a Repository**:
-   Run `/link-repo <owner/repo>` (e.g., `facebook/react`) to link the server to your target GitHub repository.
-3. **Start Debugging**:
-   Create a new post in the forum. Write your bug report or query. The bot will welcome you, set up a Google Jules session, and stream diagnostics!
-4. **Approve/Reject Plans**:
-   When Jules proposes a plan, click the **Approve** button to allow it to run or **Reject** to redirect it.
+Ensure the following settings are enabled on your bot application page:
+1. **Intents**:
+   - `Message Content Intent` (Required to read forum posts and thread content)
+2. **Permissions**:
+   - `Read Messages/View Channels`
+   - `Send Messages`
+   - `Send Messages in Threads`
+   - `Manage Messages` (Required to edit the status message)
+   - `Use Slash Commands`
+
+---
+
+## 🕹️ Command Reference
+
+| Command | Arguments | Permissions | Description |
+| :--- | :--- | :--- | :--- |
+| `/setup-forum` | `channel` (Forum) | `Manage Server` | Assigns the designated channel where Jules bot will spin up debug sessions. |
+| `/link-repo` | `repository` (owner/repo) | `Manage Server` | Links a target GitHub repository to the server as the default codebase. |
