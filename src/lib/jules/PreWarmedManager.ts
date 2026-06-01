@@ -12,7 +12,7 @@ export async function preWarmSession(repoName: string) {
     }
 
     const preWarmingPrompt = PRE_WARMED_SESSIONS.pre_warming_prompt || 
-      `You are a diagnostic assistant. The user is currently connecting. You may send a brief friendly greeting or joke to welcome the user. Do NOT generate any code modifications yet. Wait for the user's issue details in the next message, then analyze the codebase and propose a plan.`
+      `You are a diagnostic assistant. The user is connecting and has just sent their initial response. Acknowledge that you are showing this message now that they have replied. Share a random cool Pokémon fact, and let them know you are actively analyzing the codebase and working on their query right now. Do NOT propose code changes yet; generate the initial plan to welcome them and begin investigation.`
 
     defaultPrompt += `\n\nSystem Directive:\n${preWarmingPrompt}`
 
