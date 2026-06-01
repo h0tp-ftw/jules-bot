@@ -46,6 +46,10 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 * 🤖 **Plan Auto-Rejection Mode**: Configure the bot to automatically reject proposed plans once with customizable feedback to trigger plan revisions.
 * ✍️ **Typing Indicator**: Shows the bot is active/thinking in Discord while streaming operations.
 * 🌡️ **Pre-warmed Session Pools**: Opt-in background session pre-warming to bypass cloning/queueing delays on new thread creations.
+* ⏳ **Message Queueing**: Queues user messages while Jules is busy, sending them combined with a separator (`\n\n---\n\n`) when the active turn completes.
+* 👥 **Role-Based Overrides**: Define role-specific configuration overrides (e.g. customized prompts, auto-reject flags, reactions) applied dynamically.
+* 🔒 **Creator-Context Permissions**: Dynamic thread permissions evaluated relative to the thread creator. If a Developer starts a thread, it automatically inherits Developer role overrides and restrictions.
+* 📋 **Interactive Selection**: Supports interactive dropdown select menus to choose the GitHub repository and branch on thread creation (toggled via `interactive_selection`).
 
 
 
@@ -125,6 +129,25 @@ reactions:
   awaiting_plan_approval: "📋"
   completed: "✅"
   failed: "❌"
+```
+
+### 4. Interactive Selection
+Toggle interactive repository and branch selection on thread creation:
+```yaml
+interactive_selection: true # Ask developers to select target repo and branch on thread creation
+```
+
+### 5. Role-Based Overrides
+Merge specific overrides based on the thread creator's role (supports restricting access per role):
+```yaml
+roles:
+  "Developer": # Role Name or Role ID
+    access_control:
+      allow_all: false
+      allowed_roles:
+        - "Developer"
+        - "Admin"
+    diagnostic_prompt: "Provide deep technical diagnostic details."
 ```
 
 ---
