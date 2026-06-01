@@ -44,7 +44,7 @@ client.on(Events.MessageCreate, (message) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
     // Check permission
-    if (!hasPermission(interaction.member, interaction.user)) {
+    if (!hasPermission(interaction.member, interaction.user, interaction.channel)) {
       await interaction.reply({ content: '❌ **You do not have permission to run bot commands.**', ephemeral: true })
       return
     }

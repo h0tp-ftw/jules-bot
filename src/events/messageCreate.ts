@@ -25,7 +25,7 @@ export default {
     if (!sessionRecord) return
 
     // Enforce permission checks
-    if (!hasPermission(message.member, message.author)) {
+    if (!hasPermission(message.member, message.author, thread)) {
       await message.reply('❌ **You do not have permission to interact with this diagnostic session.**')
       return
     }

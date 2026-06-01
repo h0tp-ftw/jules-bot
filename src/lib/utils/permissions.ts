@@ -1,25 +1,29 @@
 import { GuildMember, User, APIInteractionGuildMember } from 'discord.js'
-import { ALLOW_ALL, ALLOWED_USERS, ALLOWED_ROLES } from '../../config.js'
+import { getEffectiveConfig } from '../../config.js'
 
 export function hasPermission(
   member: GuildMember | APIInteractionGuildMember | null,
-  user: User
+  user: User,
+  thread?: any
 ): boolean {
-  if (ALLOW_ALL) return true
+  const config = getEffectiveConfig(thread)
+  const ac = config.access_control
+
+  if (ac.allow_all) return true
 
   // Check user ID allowlist
-  if (ALLOWED_USERS.includes(user.id)) return true
+  if (ac.allowed_users.includes(user.id)) return true
 
   // Check role allowlist
-  if (member && ALLOWED_ROLES.length > 0) {
+  if (member && ac.allowed_roles.length > 0) {
     // member can be GuildMember or APIInteractionGuildMember (in API interactions)
     if ('roles' in member) {
       if (Array.isArray(member.roles)) {
         // APIInteractionGuildMember has roles as string[]
-        return member.roles.some((roleId) => ALLOWED_ROLES.includes(roleId))
+        return member.roles.some((roleId) => ac.allowed_roles.includes(roleId))
       } else {
         // GuildMember has roles as collection
-        return member.roles.cache.some((role) => ALLOWED_ROLES.includes(role.id))
+        return member.roles.cache.some((role) => ac.allowed_roles.includes(role.id))
       }
     }
   }

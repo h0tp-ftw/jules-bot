@@ -1,5 +1,5 @@
 import { jules } from '@google/jules-sdk'
-import { JULES_API_KEY, DIAGNOSTIC_PROMPT, AGENT_PERSONALITY, SOUL_PERSONALITY, getBootstrapContext } from '../../config.js'
+import { JULES_API_KEY, getBootstrapContext, getEffectiveConfig } from '../../config.js'
 
 const client = JULES_API_KEY ? jules.with({ apiKey: JULES_API_KEY }) : jules
 
@@ -8,11 +8,14 @@ export interface CreateSessionOptions {
   repo: string
   branch?: string
   title?: string
+  thread?: any // Optional thread/channel context
 }
 
 export class JulesClient {
   static async createSession(options: CreateSessionOptions) {
-    let sessionPrompt = `${DIAGNOSTIC_PROMPT}\n\nAgent Personality and Guidelines:\n${AGENT_PERSONALITY}\n\nAgent Soul and Principles:\n${SOUL_PERSONALITY}`
+    const threadConfig = getEffectiveConfig(options.thread)
+
+    let sessionPrompt = `${threadConfig.diagnostic_prompt}\n\nAgent Personality and Guidelines:\n${threadConfig.agents_personality}\n\nAgent Soul and Principles:\n${threadConfig.soul_personality}`
     const bootstrapContext = getBootstrapContext()
     if (bootstrapContext) {
       sessionPrompt += `\n\nBootstrap Knowledge and Context:\n${bootstrapContext}`

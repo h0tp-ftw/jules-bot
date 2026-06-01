@@ -1,7 +1,7 @@
 import { ThreadChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Message } from 'discord.js'
 import { JulesClient } from './JulesClient.js'
 import { StreamManager } from '../streams/StreamManager.js'
-import { prisma, REACTIONS, AUTO_REJECT } from '../../config.js'
+import { prisma, getEffectiveConfig } from '../../config.js'
 
 export const activeStreams = new Set<string>()
 export const autoRejectedSessions = new Set<string>()
@@ -45,7 +45,7 @@ export async function getLastHumanMessage(thread: ThreadChannel): Promise<Messag
   }
 }
 
-export async function updateReaction(message: Message | null, newStage: keyof typeof REACTIONS) {
+export async function updateReaction(message: Message | null, newStage: string) {
   if (!message) return
   try {
     const botId = message.client.user?.id
@@ -63,7 +63,9 @@ export async function updateReaction(message: Message | null, newStage: keyof ty
     }
 
     // Add new reaction emoji
-    const emojiStr = REACTIONS[newStage]
+    const threadConfig = getEffectiveConfig(message.channel)
+    const reactions = threadConfig.reactions || {}
+    const emojiStr = reactions[newStage]
     if (emojiStr) {
       const emoji = parseEmojiForReaction(message.client, emojiStr)
       await message.react(emoji)
@@ -144,10 +146,12 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             const plan = activity.plan || (activity as any).planGenerated?.plan
             if (!plan || !plan.steps) break
 
-            const shouldAutoReject = AUTO_REJECT.enabled && !autoRejectedSessions.has(sessionId)
+            const threadConfig = getEffectiveConfig(thread)
+            const autoReject = threadConfig.auto_reject || {}
+            const shouldAutoReject = autoReject.enabled && !autoRejectedSessions.has(sessionId)
             if (shouldAutoReject) {
               autoRejectedSessions.add(sessionId)
-              const feedback = AUTO_REJECT.message || 'Please revise the proposed plan.'
+              const feedback = autoReject.message || 'Please revise the proposed plan.'
               await thread.send(`🤖 **Plan Automatically Rejected:**\nFeedback: "${feedback}"\nJules is revising the plan...`)
               await session.send(feedback)
               const target = await getLastHumanMessage(thread)

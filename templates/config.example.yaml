@@ -41,4 +41,20 @@ pre_warmed_sessions:
     Share a random cool Pokémon fact, and let them know you are actively analyzing the codebase and working on their query right now. 
     Do NOT propose code changes yet; generate the initial plan to welcome them and begin investigation.
 
+# Optional Channel and Thread-specific Overrides
+# You can override any global configuration options (e.g., diagnostic_prompt, access_control, reactions, auto_reject)
+# at the Channel ID level or Thread ID level.
+# channels:
+#   "1510691541465694529": # Channel or Forum ID
+#     diagnostic_prompt: |
+#       You are a diagnostic assistant. Please write extremely concise replies.
+#     access_control:
+#       allow_all: true
+#     auto_reject:
+#       enabled: true
+#       message: "Plan automatically rejected for this forum channel."
+#     reactions:
+#       queued: "⏳"
+#       in_progress: "⚙️"
+
 

@@ -312,6 +312,101 @@ try {
   console.error('Failed to log bootstrap status on startup:', err)
 }
 
+// Resolve dynamic effective configuration for a given thread or channel
+export function getEffectiveConfig(thread?: any): {
+  diagnostic_prompt: string
+  access_control: {
+    allow_all: boolean
+    allowed_users: string[]
+    allowed_roles: string[]
+  }
+  reactions: Record<string, string>
+  auto_reject: {
+    enabled: boolean
+    message: string
+  }
+  pre_warmed_sessions: {
+    enabled: boolean
+    pool_size: number
+    pre_warming_prompt: string
+  }
+  agents_personality?: string
+  soul_personality?: string
+} {
+  const channelsConfig = yamlConfig.channels || {}
+  
+  let threadOverride = {}
+  let parentOverride = {}
+
+  if (thread) {
+    if (thread.id && channelsConfig[thread.id]) {
+      threadOverride = channelsConfig[thread.id]
+    }
+    if (thread.parentId && channelsConfig[thread.parentId]) {
+      parentOverride = channelsConfig[thread.parentId]
+    }
+  }
+
+  // Deep merge: global values -> parent channel overrides -> thread-specific overrides
+  const resolvedAutoReject = {
+    ...AUTO_REJECT,
+    ...(parentOverride as any).auto_reject,
+    ...(threadOverride as any).auto_reject,
+  }
+
+  const resolvedReactions = {
+    ...REACTIONS,
+    ...(parentOverride as any).reactions,
+    ...(threadOverride as any).reactions,
+  }
+
+  const resolvedPreWarmed = {
+    ...PRE_WARMED_SESSIONS,
+    ...(parentOverride as any).pre_warmed_sessions,
+    ...(threadOverride as any).pre_warmed_sessions,
+  }
+
+  const resolvedAccessControl = {
+    allow_all: ALLOW_ALL,
+    allowed_users: ALLOWED_USERS,
+    allowed_roles: ALLOWED_ROLES,
+  }
+
+  const parentAC = (parentOverride as any).access_control || {}
+  const threadAC = (threadOverride as any).access_control || {}
+
+  if (typeof parentAC.allow_all === 'boolean') resolvedAccessControl.allow_all = parentAC.allow_all
+  if (typeof threadAC.allow_all === 'boolean') resolvedAccessControl.allow_all = threadAC.allow_all
+
+  if (Array.isArray(parentAC.allowed_users)) resolvedAccessControl.allowed_users = parentAC.allowed_users.map(String)
+  if (Array.isArray(threadAC.allowed_users)) resolvedAccessControl.allowed_users = threadAC.allowed_users.map(String)
+
+  if (Array.isArray(parentAC.allowed_roles)) resolvedAccessControl.allowed_roles = parentAC.allowed_roles.map(String)
+  if (Array.isArray(threadAC.allowed_roles)) resolvedAccessControl.allowed_roles = threadAC.allowed_roles.map(String)
+
+  const resolvedPrompt = (threadOverride as any).diagnostic_prompt ||
+    (parentOverride as any).diagnostic_prompt ||
+    DIAGNOSTIC_PROMPT
+
+  const resolvedAgents = (threadOverride as any).agents_personality ||
+    (parentOverride as any).agents_personality ||
+    AGENT_PERSONALITY
+
+  const resolvedSoul = (threadOverride as any).soul_personality ||
+    (parentOverride as any).soul_personality ||
+    SOUL_PERSONALITY
+
+  return {
+    diagnostic_prompt: resolvedPrompt,
+    access_control: resolvedAccessControl,
+    reactions: resolvedReactions,
+    auto_reject: resolvedAutoReject,
+    pre_warmed_sessions: resolvedPreWarmed,
+    agents_personality: resolvedAgents,
+    soul_personality: resolvedSoul,
+  }
+}
+
 
 
 

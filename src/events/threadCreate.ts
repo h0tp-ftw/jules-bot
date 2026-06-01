@@ -1,5 +1,5 @@
 import { ThreadChannel, Events } from 'discord.js'
-import { prisma, YAML_GUILDS, PRE_WARMED_SESSIONS } from '../config.js'
+import { prisma, YAML_GUILDS, getEffectiveConfig } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { runJulesStream } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
@@ -64,7 +64,8 @@ export default {
         let usedPreWarmed = false
         let initialSkipIds: Set<string> | undefined
 
-        if (PRE_WARMED_SESSIONS.enabled) {
+        const threadConfig = getEffectiveConfig(thread)
+        if (threadConfig.pre_warmed_sessions.enabled) {
           let preWarmed = await prisma.preWarmedSession.findFirst({
             where: { repoName, ready: true },
             orderBy: { createdAt: 'asc' },
@@ -122,6 +123,7 @@ export default {
           prompt: promptWithMetadata,
           repo: repoName,
           title: thread.name,
+          thread: thread,
         })
       }
 
@@ -144,7 +146,7 @@ export default {
         
         await session.send(promptWithMetadata)
         replenishPool(repoName).catch(() => {})
-      } else if (PRE_WARMED_SESSIONS.enabled) {
+      } else if (threadConfig.pre_warmed_sessions.enabled) {
         replenishPool(repoName).catch(() => {})
       }
     } catch (err) {
