@@ -140,12 +140,69 @@ try {
 
 export const SOUL_PERSONALITY = soulContent
 
-// Pre-warmed session config
 const preWarmed = yamlConfig.pre_warmed_sessions || {}
 export const PRE_WARMED_SESSIONS = {
   enabled: typeof preWarmed.enabled === 'boolean' ? preWarmed.enabled : false,
   pool_size: typeof preWarmed.pool_size === 'number' ? preWarmed.pool_size : 1
 }
+
+// Helper to recursively read all files in a directory
+function getFilesRecursively(dir: string, baseDir: string = dir): { relativePath: string; content: string }[] {
+  let results: { relativePath: string; content: string }[] = []
+  if (!fs.existsSync(dir)) return results
+
+  const list = fs.readdirSync(dir)
+  for (const file of list) {
+    const filePath = path.join(dir, file)
+    const stat = fs.statSync(filePath)
+    if (stat && stat.isDirectory()) {
+      results = results.concat(getFilesRecursively(filePath, baseDir))
+    } else if (stat && stat.isFile()) {
+      const relativePath = path.relative(baseDir, filePath).replace(/\\/g, '/')
+      try {
+        const content = fs.readFileSync(filePath, 'utf8')
+        results.push({ relativePath, content })
+      } catch (err) {
+        console.error(`Failed to read file ${filePath}:`, err)
+      }
+    }
+  }
+  return results
+}
+
+// Dynamically construct bootstrap context from all files in bootstrap/
+export function getBootstrapContext(): string {
+  const bootstrapDir = path.resolve('bootstrap')
+  if (!fs.existsSync(bootstrapDir)) {
+    return ''
+  }
+  try {
+    const files = getFilesRecursively(bootstrapDir)
+    files.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+
+    const blocks = []
+    for (const file of files) {
+      blocks.push(`### FILE: bootstrap/${file.relativePath}\n\n${file.content}`)
+    }
+    return blocks.join('\n\n')
+  } catch (err) {
+    console.error('Failed to build bootstrap context:', err)
+    return ''
+  }
+}
+
+// Log initial bootstrap status on startup
+try {
+  const bootstrapDir = path.resolve('bootstrap')
+  if (fs.existsSync(bootstrapDir)) {
+    const files = getFilesRecursively(bootstrapDir)
+    const totalSize = files.reduce((acc, f) => acc + f.content.length, 0)
+    console.log(`[Bootstrap] Initialized with ${files.length} bootstrap files. Total size: ${totalSize} chars.`)
+  }
+} catch (err) {
+  console.error('Failed to log bootstrap status on startup:', err)
+}
+
 
 
 

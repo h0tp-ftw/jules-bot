@@ -1,11 +1,16 @@
 import { jules } from '@google/jules-sdk'
-import { prisma, YAML_GUILDS, PRE_WARMED_SESSIONS, JULES_API_KEY, DIAGNOSTIC_PROMPT, AGENT_PERSONALITY, SOUL_PERSONALITY } from '../../config.js'
+import { prisma, YAML_GUILDS, PRE_WARMED_SESSIONS, JULES_API_KEY, DIAGNOSTIC_PROMPT, AGENT_PERSONALITY, SOUL_PERSONALITY, getBootstrapContext } from '../../config.js'
 
 const client = JULES_API_KEY ? jules.with({ apiKey: JULES_API_KEY }) : jules
 
 export async function preWarmSession(repoName: string) {
   try {
-    const defaultPrompt = `${DIAGNOSTIC_PROMPT}\n\nAgent Personality and Guidelines:\n${AGENT_PERSONALITY}\n\nAgent Soul and Principles:\n${SOUL_PERSONALITY}\n\nSystem Directive:\nYou are a diagnostic assistant. The user is currently connecting. Do NOT generate any code modifications yet. Wait for the user's issue details in the next message, then analyze the codebase and propose a plan.`
+    let defaultPrompt = `${DIAGNOSTIC_PROMPT}\n\nAgent Personality and Guidelines:\n${AGENT_PERSONALITY}\n\nAgent Soul and Principles:\n${SOUL_PERSONALITY}`
+    const bootstrapContext = getBootstrapContext()
+    if (bootstrapContext) {
+      defaultPrompt += `\n\nBootstrap Knowledge and Context:\n${bootstrapContext}`
+    }
+    defaultPrompt += `\n\nSystem Directive:\nYou are a diagnostic assistant. The user is currently connecting. Do NOT generate any code modifications yet. Wait for the user's issue details in the next message, then analyze the codebase and propose a plan.`
 
     console.log(`[Pre-warm] Creating session for ${repoName}...`)
     const session = await client.session({
