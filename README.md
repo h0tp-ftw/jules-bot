@@ -39,7 +39,13 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 * ⚡ **Live Log Streaming**: Stream terminal executions and tools into a single status message without hitting Discord rate limits.
 * 🛡️ **Access Control allowlists**: Allowlist commands and debug thread usage by User IDs, Role IDs, or toggle globally.
 * 🔌 **Seamless Recovery**: Database-backed rehydration re-establishes streaming listeners on bot restarts or serverless pauses.
-* 📝 **Custom Prompting**: Easily modify how the bot talks to your users by changing the prompt in `src/config.ts`.
+* ⚙️ **YAML Configuration**: Keep access control, guild overrides, and behavior in `config.yaml` (gitignored, copy from `config.example.yaml`).
+* 🎭 **Custom Personality (AGENTS.md)**: Shape the agent's behavior and tone using a custom `AGENTS.md` file (gitignored, copy from `AGENTS.example.md`).
+* 🏷️ **Dynamic Status Reactions**: Automatically react to thread starter messages with configurable emojis (unicode or custom Discord emojis like `<:name:id>`).
+* 💬 **Context & Conversational Replies**: Injects nickname, message time, and thread title metadata into prompt headers. Replies directly to the user's message.
+* 🤖 **Plan Auto-Rejection Mode**: Configure the bot to automatically reject proposed plans once with customizable feedback to trigger plan revisions.
+* ✍️ **Typing Indicator**: Shows the bot is active/thinking in Discord while streaming operations.
+
 
 ---
 
@@ -50,18 +56,22 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 - A Discord Application token with proper intents.
 - A Google Jules API Key.
 
-### 2. Configure Environment
-Copy `.env.example` to `.env` and fill in your keys:
-```env
-DATABASE_URL="file:./prisma/dev.db"
-DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
-JULES_API_KEY="YOUR_JULES_API_KEY"
+### 2. Configure Settings & Environment
+1. Copy `.env.example` to `.env` and fill in credentials:
+   ```env
+   DATABASE_URL="file:./prisma/dev.db"
+   DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
+   JULES_API_KEY="YOUR_JULES_API_KEY"
+   ```
+2. Copy `config.example.yaml` to `config.yaml` to define access control lists, status reaction emojis, and guild overrides:
+   ```bash
+   cp config.example.yaml config.yaml
+   ```
+3. Copy `AGENTS.example.md` to `AGENTS.md` to customize the agent's persona guidelines and tone:
+   ```bash
+   cp AGENTS.example.md AGENTS.md
+   ```
 
-# Access Controls (Optional)
-ALLOW_ALL="true" # Set to "false" to enforce allowlisting
-ALLOWED_USERS="123456789012345678" # Comma-separated user IDs
-ALLOWED_ROLES="112233445566778899" # Comma-separated role IDs
-```
 
 ### 3. Initialize Database
 ```bash
