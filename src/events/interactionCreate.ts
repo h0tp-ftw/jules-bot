@@ -1,7 +1,7 @@
 import { Interaction, Events, ThreadChannel } from 'discord.js'
 import { prisma } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { runJulesStream, activeStreams } from '../lib/jules/orchestrator.js'
+import { runJulesStream, activeStreams, busySessions } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 
 import { hasPermission } from '../lib/utils/permissions.js'
@@ -42,6 +42,9 @@ export default {
       if (kind === 'plan-approve') {
         // Approve the plan
         await session.approve()
+
+        // Mark session as busy
+        busySessions.add(thread.id)
 
         // Rehydrate stream listener if not already active
         if (!activeStreams.has(thread.id)) {

@@ -1,7 +1,7 @@
 import { Message, Events, ThreadChannel } from 'discord.js'
 import { prisma } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { runJulesStream, activeStreams, updateReaction } from '../lib/jules/orchestrator.js'
+import { runJulesStream, activeStreams, updateReaction, busySessions, queuedMessages } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 
 import { hasPermission } from '../lib/utils/permissions.js'
@@ -27,6 +27,32 @@ export default {
     // Enforce permission checks
     if (!hasPermission(message.member, message.author, thread)) {
       await message.reply('❌ **You do not have permission to interact with this diagnostic session.**')
+      return
+    }
+
+    const isBusy = activeStreams.has(thread.id) && busySessions.has(thread.id)
+
+    if (isBusy) {
+      try {
+        const authorNickname = message.member?.displayName || message.author.username
+        const messageTime = message.createdAt.toISOString()
+
+        let queued = queuedMessages.get(thread.id)
+        if (!queued) {
+          queued = []
+          queuedMessages.set(thread.id, queued)
+        }
+        queued.push({
+          authorNickname,
+          messageTime,
+          content: message.content,
+        })
+
+        await message.reply('⏳ **Jules is currently busy. Your message has been queued and will be sent in the next turn.**')
+      } catch (err) {
+        console.error(`Failed to queue message for thread ${thread.id}:`, err)
+        await message.reply('❌ **Failed to queue message.**')
+      }
       return
     }
 
