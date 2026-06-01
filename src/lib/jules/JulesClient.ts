@@ -34,4 +34,23 @@ export class JulesClient {
   static getSession(sessionId: string) {
     return client.session(sessionId)
   }
+
+  static async getConnectedRepos(): Promise<{ name: string; id: string; defaultBranch?: string; branches: string[] }[]> {
+    const repos: { name: string; id: string; defaultBranch?: string; branches: string[] }[] = []
+    try {
+      for await (const source of client.sources()) {
+        if (source.type === 'githubRepo') {
+          repos.push({
+            name: `${source.githubRepo.owner}/${source.githubRepo.repo}`,
+            id: source.id,
+            defaultBranch: source.githubRepo.defaultBranch,
+            branches: source.githubRepo.branches || [],
+          })
+        }
+      }
+    } catch (err) {
+      console.error('[JulesClient] Failed to list connected sources:', err)
+    }
+    return repos
+  }
 }

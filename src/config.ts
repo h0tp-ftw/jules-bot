@@ -247,6 +247,10 @@ export const PRE_WARMED_SESSIONS = {
   pre_warming_prompt: typeof preWarmed.pre_warming_prompt === 'string' ? preWarmed.pre_warming_prompt : ''
 }
 
+export const INTERACTIVE_SELECTION = typeof yamlConfig.interactive_selection === 'boolean'
+  ? yamlConfig.interactive_selection
+  : false
+
 // Helper to recursively read all files in a directory
 function getFilesRecursively(dir: string, baseDir: string = dir): { relativePath: string; content: string }[] {
   let results: { relativePath: string; content: string }[] = []
@@ -336,6 +340,7 @@ export function getEffectiveConfig(thread?: any, member?: any): {
   }
   agents_personality?: string
   soul_personality?: string
+  interactive_selection: boolean
 } {
   const channelsConfig = yamlConfig.channels || {}
   
@@ -448,6 +453,14 @@ export function getEffectiveConfig(thread?: any, member?: any): {
     (parentOverride as any).soul_personality ||
     SOUL_PERSONALITY
 
+  const resolvedInteractive = typeof (roleOverride as any).interactive_selection === 'boolean'
+    ? (roleOverride as any).interactive_selection
+    : typeof (threadOverride as any).interactive_selection === 'boolean'
+      ? (threadOverride as any).interactive_selection
+      : typeof (parentOverride as any).interactive_selection === 'boolean'
+        ? (parentOverride as any).interactive_selection
+        : INTERACTIVE_SELECTION
+
   return {
     diagnostic_prompt: resolvedPrompt,
     access_control: resolvedAccessControl,
@@ -456,6 +469,7 @@ export function getEffectiveConfig(thread?: any, member?: any): {
     pre_warmed_sessions: resolvedPreWarmed,
     agents_personality: resolvedAgents,
     soul_personality: resolvedSoul,
+    interactive_selection: resolvedInteractive,
   }
 }
 

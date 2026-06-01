@@ -1,9 +1,8 @@
-import { ThreadChannel, Events } from 'discord.js'
+import { ThreadChannel, Events, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder } from 'discord.js'
 import { prisma, YAML_GUILDS, getEffectiveConfig } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { runJulesStream } from '../lib/jules/orchestrator.js'
+import { initializeJulesSession } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
-import { replenishPool } from '../lib/jules/PreWarmedManager.js'
 
 export default {
   name: Events.ThreadCreate,
@@ -44,112 +43,46 @@ export default {
       return
     }
 
+    const threadConfig = getEffectiveConfig(thread, starterMessage.member)
+    const isInteractive = threadConfig.interactive_selection || !repo
+
+    if (isInteractive) {
+      try {
+        const repos = await JulesClient.getConnectedRepos()
+        if (repos.length > 0) {
+          const select = new StringSelectMenuBuilder()
+            .setCustomId(`select-repo:${thread.id}`)
+            .setPlaceholder('Choose a repository...')
+            .addOptions(
+              repos.slice(0, 25).map(r => 
+                new StringSelectMenuOptionBuilder()
+                  .setLabel(r.name)
+                  .setValue(r.name)
+              )
+            )
+
+          const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)
+          await thread.send({
+            content: '📋 **Configure Jules Diagnostic Session**\nPlease select the repository you want to run diagnostics against:',
+            components: [row],
+          })
+          return
+        }
+      } catch (err) {
+        console.error('Failed to load connected repos for selection:', err)
+      }
+    }
+
     if (!repo) {
       await thread.send('⚠️ **No default repository has been set for this server.** Please use the `/link-repo` command to set a default repository.')
       return
     }
 
     const repoName: string = repo
-
     await thread.send(`🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\``)
 
-      try {
-        const authorNickname = starterMessage.member?.displayName || starterMessage.author.username
-        const messageTime = starterMessage.createdAt.toISOString()
-        const threadTitle = thread.name
-        
-        let promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterMessage.content}`
-
-        let session: any = null
-        let usedPreWarmed = false
-        let initialSkipIds: Set<string> | undefined
-
-        const threadConfig = getEffectiveConfig(thread, starterMessage.member)
-        if (threadConfig.pre_warmed_sessions.enabled) {
-          let preWarmed = await prisma.preWarmedSession.findFirst({
-            where: { repoName, ready: true },
-            orderBy: { createdAt: 'asc' },
-          })
-
-          if (!preWarmed) {
-            const warming = await prisma.preWarmedSession.findFirst({
-              where: { repoName, ready: false },
-              orderBy: { createdAt: 'asc' },
-            })
-            if (warming) {
-              const statusMsg = await thread.send('⏳ **A session is currently pre-warming. Waiting for it to become ready...**')
-              for (let attempt = 0; attempt < 12; attempt++) {
-                await new Promise((resolve) => setTimeout(resolve, 5000))
-                const check = await prisma.preWarmedSession.findUnique({
-                  where: { id: warming.id }
-                })
-                if (check && check.ready) {
-                  preWarmed = check
-                  break
-                }
-              }
-              await statusMsg.delete().catch(() => {})
-            }
-          }
-
-          if (preWarmed) {
-            try {
-              session = JulesClient.getSession(preWarmed.id)
-              
-              // Fetch current activity IDs to skip them in the stream
-              const info = await session.info()
-              if (info.activities) {
-                initialSkipIds = new Set(info.activities.map((a: any) => a.id))
-              }
-
-              if (info.state === 'awaitingPlanApproval') {
-                console.log(`[threadCreate] Automatically approving welcome plan for pre-warmed session ${session.id}`)
-                await session.approve()
-              }
-
-              await prisma.preWarmedSession.delete({
-                where: { id: preWarmed.id },
-              })
-              usedPreWarmed = true
-              console.log(`[threadCreate] Consumed pre-warmed session ${session.id} for repo ${repoName}`)
-            } catch (err) {
-              console.error(`[threadCreate] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
-            }
-          }
-        }
-
-      if (!session) {
-        session = await JulesClient.createSession({
-          prompt: promptWithMetadata,
-          repo: repoName,
-          title: thread.name,
-          thread: thread,
-          member: starterMessage.member,
-        })
-      }
-
-      await prisma.debugSession.create({
-        data: {
-          threadId: thread.id,
-          guildId: thread.guildId,
-          julesSessionId: session.id,
-          repoName: repoName,
-        },
-      })
-
-      // Start processing events in the background
-      runJulesStream(session.id, thread, streamManager, initialSkipIds)
-
-      if (usedPreWarmed) {
-        // Inform user we are using a ready session and start typing immediately
-        await thread.send('🚀 **Ready session found! Processing your issue...**')
-        thread.sendTyping().catch(() => {})
-        
-        await session.send(promptWithMetadata)
-        replenishPool(repoName).catch(() => {})
-      } else if (threadConfig.pre_warmed_sessions.enabled) {
-        replenishPool(repoName).catch(() => {})
-      }
+    try {
+      await initializeJulesSession(thread, repoName, 'main', streamManager)
     } catch (err) {
       console.error('Failed to start Jules session:', err)
       await thread.send('❌ **Failed to start Jules diagnostic session. Please verify your repository configuration and permissions.**')

@@ -2,6 +2,7 @@ import { ThreadChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuild
 import { JulesClient } from './JulesClient.js'
 import { StreamManager } from '../streams/StreamManager.js'
 import { prisma, getEffectiveConfig } from '../../config.js'
+import { replenishPool } from './PreWarmedManager.js'
 
 export const activeStreams = new Set<string>()
 export const autoRejectedSessions = new Set<string>()
@@ -308,5 +309,114 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
       console.error(`Failed to send combined queued messages for thread ${thread.id}:`, err)
       await thread.send('❌ **Failed to deliver queued messages to Jules.**')
     }
+  }
+}
+
+export async function initializeJulesSession(
+  thread: ThreadChannel,
+  repoName: string,
+  branchName: string,
+  streamManager: StreamManager
+) {
+  const starterMessage = await thread.fetchStarterMessage()
+  if (!starterMessage || !starterMessage.content) {
+    await thread.send('⚠️ **Could not retrieve the starter message for this thread. Please reply with your issue details to start.**')
+    return
+  }
+
+  const authorNickname = starterMessage.member?.displayName || starterMessage.author.username
+  const messageTime = starterMessage.createdAt.toISOString()
+  const threadTitle = thread.name
+  
+  const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterMessage.content}`
+
+  let session: any = null
+  let usedPreWarmed = false
+  let initialSkipIds: Set<string> | undefined
+
+  const threadConfig = getEffectiveConfig(thread, starterMessage.member)
+  if (threadConfig.pre_warmed_sessions.enabled) {
+    let preWarmed = await prisma.preWarmedSession.findFirst({
+      where: { repoName, ready: true },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    if (!preWarmed) {
+      const warming = await prisma.preWarmedSession.findFirst({
+        where: { repoName, ready: false },
+        orderBy: { createdAt: 'asc' },
+      })
+      if (warming) {
+        const statusMsg = await thread.send('⏳ **A session is currently pre-warming. Waiting for it to become ready...**')
+        for (let attempt = 0; attempt < 12; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 5000))
+          const check = await prisma.preWarmedSession.findUnique({
+            where: { id: warming.id }
+          })
+          if (check && check.ready) {
+            preWarmed = check
+            break
+          }
+        }
+        await statusMsg.delete().catch(() => {})
+      }
+    }
+
+    if (preWarmed) {
+      try {
+        session = JulesClient.getSession(preWarmed.id)
+        
+        const info = await session.info()
+        if (info.activities) {
+          initialSkipIds = new Set(info.activities.map((a: any) => a.id))
+        }
+
+        if (info.state === 'awaitingPlanApproval') {
+          console.log(`[initializeJulesSession] Automatically approving welcome plan for pre-warmed session ${session.id}`)
+          await session.approve()
+        }
+
+        await prisma.preWarmedSession.delete({
+          where: { id: preWarmed.id },
+        })
+        usedPreWarmed = true
+        console.log(`[initializeJulesSession] Consumed pre-warmed session ${session.id} for repo ${repoName}`)
+      } catch (err) {
+        console.error(`[initializeJulesSession] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
+      }
+    }
+  }
+
+  if (!session) {
+    session = await JulesClient.createSession({
+      prompt: promptWithMetadata,
+      repo: repoName,
+      branch: branchName,
+      title: thread.name,
+      thread: thread,
+      member: starterMessage.member,
+    })
+  }
+
+  await prisma.debugSession.create({
+    data: {
+      threadId: thread.id,
+      guildId: thread.guildId,
+      julesSessionId: session.id,
+      repoName: repoName,
+    },
+  })
+
+  // Start processing events in the background
+  runJulesStream(session.id, thread, streamManager, initialSkipIds)
+
+  if (usedPreWarmed) {
+    await thread.send('🚀 **Ready session found! Processing your issue...**')
+    thread.sendTyping().catch(() => {})
+    
+    await session.send(promptWithMetadata)
+    replenishPool(repoName).catch(() => {})
+  } else if (threadConfig.pre_warmed_sessions.enabled) {
+    replenishPool(repoName).catch(() => {})
   }
 }
