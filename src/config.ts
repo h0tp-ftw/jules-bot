@@ -101,3 +101,21 @@ export const AUTO_REJECT = {
   message: typeof autoReject.message === 'string' ? autoReject.message : ''
 }
 
+// Load Agent Personality Markdown
+const agentsExamplePath = path.resolve('agents.example.md')
+const agentsUserPath = path.resolve('agents.md')
+let agentsContent = ''
+
+try {
+  if (fs.existsSync(agentsUserPath)) {
+    agentsContent = fs.readFileSync(agentsUserPath, 'utf8')
+  } else if (fs.existsSync(agentsExamplePath)) {
+    agentsContent = fs.readFileSync(agentsExamplePath, 'utf8')
+  }
+} catch (err) {
+  console.error('Failed to load agent personality file:', err)
+}
+
+export const AGENT_PERSONALITY = agentsContent
+
+
