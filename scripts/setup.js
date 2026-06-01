@@ -2,10 +2,10 @@ import fs from 'fs'
 import path from 'path'
 
 const filesToCopy = [
-  { src: '.env.example', dest: '.env' },
-  { src: 'config.example.yaml', dest: 'config.yaml' },
-  { src: 'AGENTS.example.md', dest: 'AGENTS.md' },
-  { src: 'SOUL.example.md', dest: 'SOUL.md' }
+  { src: 'templates/.env.example', dest: '.env' },
+  { src: 'templates/config.example.yaml', dest: 'config.yaml' },
+  { src: 'templates/AGENTS.example.md', dest: 'AGENTS.md' },
+  { src: 'templates/SOUL.example.md', dest: 'SOUL.md' }
 ]
 
 console.log('🐙 Initializing JulesBot Local Environment...')

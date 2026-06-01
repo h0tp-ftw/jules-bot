@@ -6,8 +6,9 @@ import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from '@prisma/client'
 
 // Load default and user configuration
-const examplePath = path.resolve('config.example.yaml')
+const examplePath = path.resolve('templates/config.example.yaml')
 const userPath = path.resolve('config.yaml')
+
 
 let yamlConfig: any = {}
 
@@ -102,7 +103,7 @@ export const AUTO_REJECT = {
 }
 
 // Load Agent Personality Markdown
-const agentsExamplePath = path.resolve('AGENTS.example.md')
+const agentsExamplePath = path.resolve('templates/AGENTS.example.md')
 const agentsUserPath = path.resolve('AGENTS.md')
 let agentsContent = ''
 
@@ -119,7 +120,7 @@ try {
 export const AGENT_PERSONALITY = agentsContent
 
 // Load Agent Soul Markdown
-const soulExamplePath = path.resolve('SOUL.example.md')
+const soulExamplePath = path.resolve('templates/SOUL.example.md')
 const soulUserPath = path.resolve('SOUL.md')
 let soulContent = ''
 
