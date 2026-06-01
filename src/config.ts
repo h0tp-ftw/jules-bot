@@ -118,4 +118,22 @@ try {
 
 export const AGENT_PERSONALITY = agentsContent
 
+// Load Agent Soul Markdown
+const soulExamplePath = path.resolve('SOUL.example.md')
+const soulUserPath = path.resolve('SOUL.md')
+let soulContent = ''
+
+try {
+  if (fs.existsSync(soulUserPath)) {
+    soulContent = fs.readFileSync(soulUserPath, 'utf8')
+  } else if (fs.existsSync(soulExamplePath)) {
+    soulContent = fs.readFileSync(soulExamplePath, 'utf8')
+  }
+} catch (err) {
+  console.error('Failed to load agent soul file:', err)
+}
+
+export const SOUL_PERSONALITY = soulContent
+
+
 
