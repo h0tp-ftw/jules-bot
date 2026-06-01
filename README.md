@@ -96,6 +96,39 @@ npm run start
 
 ---
 
+## ⚙️ Configuration File (config.yaml)
+
+The `config.yaml` file allows you to customize the bot's behavior. Below are the key configuration blocks:
+
+### 1. Plan Auto-Rejection
+Automatically rejects the first proposed plan from Jules and sends a custom revision feedback message:
+```yaml
+auto_reject:
+  enabled: true # Enable/disable auto-reject
+  message: "Please double check the proposed changes and ensure no unnecessary modifications are made."
+```
+
+### 2. Pre-warmed Session Pools
+Pre-creates interactive Jules sessions in the background to reduce initial startup delays on new thread creations:
+```yaml
+pre_warmed_sessions:
+  enabled: true # Enable/disable pre-warming pool
+  pool_size: 2  # Number of warm sessions to maintain per repository
+```
+
+### 3. Status Reactions
+Custom emojis applied to the thread starter message depending on the session stage:
+```yaml
+reactions:
+  queued: "⏳"
+  in_progress: "⚙️"
+  awaiting_plan_approval: "📋"
+  completed: "✅"
+  failed: "❌"
+```
+
+---
+
 ## ⚙️ Discord Developer Portal Configuration
 
 Ensure the following settings are enabled on your bot application page:
