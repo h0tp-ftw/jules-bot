@@ -92,4 +92,13 @@ async function start() {
   }
 }
 
+// Global error handlers to prevent bot from crashing on temporary network dropouts
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error)
+})
+
 start()
