@@ -9,13 +9,14 @@ access_control:
     - "445586026451173377"
   allowed_roles: []
 
-# Status Reactions Emojis (Supports Unicode or Custom Emoji IDs)
+# Status Reactions Emojis (Supports Unicode, <:name:id>, name:id, or raw ID)
 reactions:
   queued: "⏳"
   in_progress: "⚙️"
   awaiting_plan_approval: "📋"
   completed: "✅"
   failed: "❌"
+
 
 # Optional Guild-specific mappings (Overrides database slash command configuration)
 guilds:
