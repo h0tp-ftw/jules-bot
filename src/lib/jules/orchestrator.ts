@@ -74,7 +74,7 @@ export async function updateReaction(message: Message | null, newStage: keyof ty
 }
 
 
-export async function runJulesStream(sessionId: string, thread: ThreadChannel, streamManager: StreamManager) {
+export async function runJulesStream(sessionId: string, thread: ThreadChannel, streamManager: StreamManager, initialProcessedIds?: Set<string>) {
   if (activeStreams.has(thread.id)) return
   activeStreams.add(thread.id)
 
@@ -95,7 +95,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
     }
   }
 
-  const processedActivityIds = new Set<string>()
+  const processedActivityIds = initialProcessedIds || new Set<string>()
   let consecutiveFailures = 0
   const maxRetries = 20
   let retryDelay = 5000

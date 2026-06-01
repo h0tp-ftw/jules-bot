@@ -61,6 +61,7 @@ export default {
 
       let session: any = null
       let usedPreWarmed = false
+      let initialSkipIds: Set<string> | undefined
 
       if (PRE_WARMED_SESSIONS.enabled) {
         const preWarmed = await prisma.preWarmedSession.findFirst({
@@ -71,11 +72,23 @@ export default {
         if (preWarmed) {
           try {
             session = JulesClient.getSession(preWarmed.id)
+            
+            // Fetch current activity IDs to skip them in the stream
+            const info = await session.info()
+            if (info.activities) {
+              initialSkipIds = new Set(info.activities.map((a: any) => a.id))
+            }
+
             await prisma.preWarmedSession.delete({
               where: { id: preWarmed.id },
             })
             usedPreWarmed = true
             console.log(`[threadCreate] Consumed pre-warmed session ${session.id} for repo ${repoName}`)
+
+            // If there's a stored welcome message, send it now
+            if (preWarmed.welcomeMessage) {
+              await thread.send(`🤖 **Pre-warm Greeting:**\n${preWarmed.welcomeMessage}`)
+            }
           } catch (err) {
             console.error(`[threadCreate] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
           }
@@ -100,7 +113,7 @@ export default {
       })
 
       // Start processing events in the background
-      runJulesStream(session.id, thread, streamManager)
+      runJulesStream(session.id, thread, streamManager, initialSkipIds)
 
       if (usedPreWarmed) {
         // Inform user we are using a ready session and start typing immediately

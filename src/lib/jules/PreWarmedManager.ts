@@ -12,7 +12,7 @@ export async function preWarmSession(repoName: string) {
     }
 
     const preWarmingPrompt = PRE_WARMED_SESSIONS.pre_warming_prompt || 
-      `You are a diagnostic assistant. The user is currently connecting. Do NOT generate any code modifications yet. Wait for the user's issue details in the next message, then analyze the codebase and propose a plan.`
+      `You are a diagnostic assistant. The user is currently connecting. You may send a brief friendly greeting or joke to welcome the user. Do NOT generate any code modifications yet. Wait for the user's issue details in the next message, then analyze the codebase and propose a plan.`
 
     defaultPrompt += `\n\nSystem Directive:\n${preWarmingPrompt}`
 
@@ -44,15 +44,25 @@ export async function preWarmSession(repoName: string) {
     if (info && info.state === 'awaitingPlanApproval') {
       console.log(`[Pre-warm] Approving initial setup plan for ${session.id}...`)
       await session.approve()
+      
+      // Wait a bit for indexing/initial message after approval
+      await new Promise((resolve) => setTimeout(resolve, 10000))
+      info = await session.info()
     }
     
+    // Capture any welcome message from agent
+    const welcomeMsg = info.activities?.find(a => a.type === 'agentMessaged')?.message || null
+
     // Mark as ready in DB
     await prisma.preWarmedSession.update({
       where: { id: session.id },
-      data: { ready: true }
+      data: { 
+        ready: true,
+        welcomeMessage: welcomeMsg
+      }
     })
 
-    console.log(`[Pre-warm] Session ${session.id} is now fully warm and ready.`)
+    console.log(`[Pre-warm] Session ${session.id} is now fully warm and ready. ${welcomeMsg ? '(Captured greeting)' : '(No greeting)'}`)
   } catch (err) {
     console.error(`[Pre-warm] Failed to pre-warm session for ${repoName}:`, err)
   }
