@@ -17,7 +17,6 @@ reactions:
   completed: "✅"
   failed: "❌"
 
-
 # Optional Guild-specific mappings (Overrides database slash command configuration)
 guilds:
   "1467678405586714822":

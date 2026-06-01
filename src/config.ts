@@ -5,18 +5,45 @@ import { parse } from 'yaml'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from '@prisma/client'
 
-// Load config.yaml
-const configPath = path.resolve('config.yaml')
+// Load default and user configuration
+const examplePath = path.resolve('config.example.yaml')
+const userPath = path.resolve('config.yaml')
+
 let yamlConfig: any = {}
 
 try {
-  if (fs.existsSync(configPath)) {
-    const fileContent = fs.readFileSync(configPath, 'utf8')
-    yamlConfig = parse(fileContent) || {}
+  let defaultYaml: any = {}
+  if (fs.existsSync(examplePath)) {
+    const defaultContent = fs.readFileSync(examplePath, 'utf8')
+    defaultYaml = parse(defaultContent) || {}
+  }
+
+  let userYaml: any = {}
+  if (fs.existsSync(userPath)) {
+    const userContent = fs.readFileSync(userPath, 'utf8')
+    userYaml = parse(userContent) || {}
+  }
+
+  yamlConfig = {
+    ...defaultYaml,
+    ...userYaml,
+    access_control: {
+      ...(defaultYaml.access_control || {}),
+      ...(userYaml.access_control || {}),
+    },
+    reactions: {
+      ...(defaultYaml.reactions || {}),
+      ...(userYaml.reactions || {}),
+    },
+    guilds: {
+      ...(defaultYaml.guilds || {}),
+      ...(userYaml.guilds || {}),
+    },
   }
 } catch (err) {
-  console.error('Failed to parse config.yaml, using defaults:', err)
+  console.error('Failed to parse config files, using empty defaults:', err)
 }
+
 
 // Diagnostic Prompt for Google Jules
 export const DIAGNOSTIC_PROMPT = yamlConfig.diagnostic_prompt || 

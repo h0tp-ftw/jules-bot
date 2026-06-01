@@ -6,6 +6,8 @@ dist/
 
 # Environment variables
 .env
+config.yaml
+
 
 # Database
 prisma/dev.db
