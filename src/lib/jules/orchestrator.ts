@@ -107,6 +107,12 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
       // Wait until session is no longer queued to avoid 404 Not Found error on stream()
       let info = await session.info()
+      if (info && (info.state === 'completed' || info.state === 'failed')) {
+        console.log(`Session ${sessionId} is already ${info.state}. Exiting stream handler.`)
+        stopTyping()
+        activeStreams.delete(thread.id)
+        return
+      }
       if (info && info.state === 'queued') {
         const targetMessage = await getLastHumanMessage(thread)
         await updateReaction(targetMessage, 'queued')
