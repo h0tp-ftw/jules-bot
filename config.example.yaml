@@ -22,3 +22,9 @@ guilds:
   "1467678405586714822":
     default_repo: "h0tp-ftw/ankimon"
     forum_channel_id: "1510691541465694529"
+
+# Auto-reject proposed plans once per session
+auto_reject:
+  enabled: false
+  message: "Please double check the proposed changes and ensure no unnecessary modifications are made."
+

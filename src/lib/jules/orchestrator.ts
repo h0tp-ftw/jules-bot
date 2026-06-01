@@ -1,9 +1,11 @@
 import { ThreadChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Message } from 'discord.js'
 import { JulesClient } from './JulesClient.js'
 import { StreamManager } from '../streams/StreamManager.js'
-import { prisma, REACTIONS } from '../../config.js'
+import { prisma, REACTIONS, AUTO_REJECT } from '../../config.js'
 
 export const activeStreams = new Set<string>()
+export const autoRejectedSessions = new Set<string>()
+
 
 function parseEmojiForReaction(client: any, emojiStr: string): string {
   const trimmed = emojiStr.trim()
@@ -126,6 +128,18 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           if (!plan || !plan.steps) break
 
           stopTyping()
+
+          const shouldAutoReject = AUTO_REJECT.enabled && !autoRejectedSessions.has(sessionId)
+          if (shouldAutoReject) {
+            autoRejectedSessions.add(sessionId)
+            const feedback = AUTO_REJECT.message || 'Please revise the proposed plan.'
+            await thread.send(`🤖 **Plan Automatically Rejected:**\nFeedback: "${feedback}"\nJules is revising the plan...`)
+            await session.send(feedback)
+            await updateReaction(starterMessage, 'in_progress')
+            startTyping()
+            break
+          }
+
           await updateReaction(starterMessage, 'awaiting_plan_approval')
 
           const stepsText = plan.steps

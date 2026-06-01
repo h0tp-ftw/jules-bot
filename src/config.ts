@@ -39,10 +39,15 @@ try {
       ...(defaultYaml.guilds || {}),
       ...(userYaml.guilds || {}),
     },
+    auto_reject: {
+      ...(defaultYaml.auto_reject || {}),
+      ...(userYaml.auto_reject || {}),
+    },
   }
 } catch (err) {
   console.error('Failed to parse config files, using empty defaults:', err)
 }
+
 
 
 // Diagnostic Prompt for Google Jules
@@ -88,3 +93,11 @@ export const DATABASE_URL = process.env.DATABASE_URL || 'file:./prisma/dev.db'
 // SQLite Prisma adapter init
 const adapter = new PrismaBetterSqlite3({ url: DATABASE_URL })
 export const prisma = new PrismaClient({ adapter })
+
+// Auto-reject configuration
+const autoReject = yamlConfig.auto_reject || {}
+export const AUTO_REJECT = {
+  enabled: typeof autoReject.enabled === 'boolean' ? autoReject.enabled : false,
+  message: typeof autoReject.message === 'string' ? autoReject.message : ''
+}
+
