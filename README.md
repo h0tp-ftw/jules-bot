@@ -57,20 +57,23 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 - A Google Jules API Key.
 
 ### 2. Configure Settings & Environment
-1. Copy `.env.example` to `.env` and fill in credentials:
+1. Run the interactive setup script to copy default templates to their local gitignored files:
+   ```bash
+   npm run setup
+   ```
+   This generates:
+   - `.env` (Environment variables)
+   - `config.yaml` (YAML configurations)
+   - `AGENTS.md` (Agent guidelines)
+   - `SOUL.md` (Agent principles)
+
+2. Open `.env` and fill in your Discord credentials and Jules API key:
    ```env
    DATABASE_URL="file:./prisma/dev.db"
    DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
    JULES_API_KEY="YOUR_JULES_API_KEY"
    ```
-2. Copy `config.example.yaml` to `config.yaml` to define access control lists, status reaction emojis, and guild overrides:
-   ```bash
-   cp config.example.yaml config.yaml
-   ```
-3. Copy `AGENTS.example.md` to `AGENTS.md` to customize the agent's persona guidelines and tone:
-   ```bash
-   cp AGENTS.example.md AGENTS.md
-   ```
+
 
 
 ### 3. Initialize Database
