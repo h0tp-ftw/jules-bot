@@ -70,7 +70,7 @@ export async function updateReaction(message: Message | null, newStage: string) 
     }
 
     // Add new reaction emoji
-    const threadConfig = getEffectiveConfig(message.channel)
+    const threadConfig = getEffectiveConfig(message.channel, message.member)
     const reactions = threadConfig.reactions || {}
     const emojiStr = reactions[newStage]
     if (emojiStr) {
@@ -154,7 +154,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             const plan = activity.plan || (activity as any).planGenerated?.plan
             if (!plan || !plan.steps) break
 
-            const threadConfig = getEffectiveConfig(thread)
+            const lastHuman = await getLastHumanMessage(thread)
+            const threadConfig = getEffectiveConfig(thread, lastHuman?.member)
             const autoReject = threadConfig.auto_reject || {}
             const shouldAutoReject = autoReject.enabled && !autoRejectedSessions.has(sessionId)
             if (shouldAutoReject) {

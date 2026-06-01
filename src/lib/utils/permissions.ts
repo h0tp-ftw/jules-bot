@@ -6,7 +6,7 @@ export function hasPermission(
   user: User,
   thread?: any
 ): boolean {
-  const config = getEffectiveConfig(thread)
+  const config = getEffectiveConfig(thread, member)
   const ac = config.access_control
 
   if (ac.allow_all) return true

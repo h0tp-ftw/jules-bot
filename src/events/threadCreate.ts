@@ -64,7 +64,7 @@ export default {
         let usedPreWarmed = false
         let initialSkipIds: Set<string> | undefined
 
-        const threadConfig = getEffectiveConfig(thread)
+        const threadConfig = getEffectiveConfig(thread, starterMessage.member)
         if (threadConfig.pre_warmed_sessions.enabled) {
           let preWarmed = await prisma.preWarmedSession.findFirst({
             where: { repoName, ready: true },
@@ -124,6 +124,7 @@ export default {
           repo: repoName,
           title: thread.name,
           thread: thread,
+          member: starterMessage.member,
         })
       }
 

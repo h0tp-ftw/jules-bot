@@ -102,6 +102,10 @@ try {
       ...(defaultYaml.pre_warmed_sessions || {}),
       ...(userYaml.pre_warmed_sessions || {}),
     },
+    roles: {
+      ...(defaultYaml.roles || {}),
+      ...(userYaml.roles || {}),
+    },
   }
 } catch (err) {
   console.error('Failed to parse config files, using empty defaults:', err)
@@ -313,7 +317,7 @@ try {
 }
 
 // Resolve dynamic effective configuration for a given thread or channel
-export function getEffectiveConfig(thread?: any): {
+export function getEffectiveConfig(thread?: any, member?: any): {
   diagnostic_prompt: string
   access_control: {
     allow_all: boolean
@@ -347,23 +351,64 @@ export function getEffectiveConfig(thread?: any): {
     }
   }
 
-  // Deep merge: global values -> parent channel overrides -> thread-specific overrides
+  // Resolve role-based overrides if member is provided
+  let roleOverride: any = {}
+  if (member && member.roles) {
+    const rolesConfig = yamlConfig.roles || {}
+    for (const [roleKey, roleVal] of Object.entries(rolesConfig)) {
+      let hasRole = false
+      if ('cache' in member.roles) {
+        hasRole = member.roles.cache.has(roleKey) || 
+                  member.roles.cache.some((r: any) => r.name === roleKey)
+      } else if (Array.isArray(member.roles)) {
+        hasRole = member.roles.includes(roleKey)
+      }
+      
+      if (hasRole && roleVal && typeof roleVal === 'object') {
+        roleOverride = {
+          ...roleOverride,
+          ...roleVal,
+          access_control: {
+            ...(roleOverride.access_control || {}),
+            ...((roleVal as any).access_control || {}),
+          },
+          reactions: {
+            ...(roleOverride.reactions || {}),
+            ...((roleVal as any).reactions || {}),
+          },
+          auto_reject: {
+            ...(roleOverride.auto_reject || {}),
+            ...((roleVal as any).auto_reject || {}),
+          },
+          pre_warmed_sessions: {
+            ...(roleOverride.pre_warmed_sessions || {}),
+            ...((roleVal as any).pre_warmed_sessions || {}),
+          },
+        }
+      }
+    }
+  }
+
+  // Deep merge: global values -> parent channel overrides -> thread-specific overrides -> role overrides
   const resolvedAutoReject = {
     ...AUTO_REJECT,
     ...(parentOverride as any).auto_reject,
     ...(threadOverride as any).auto_reject,
+    ...(roleOverride as any).auto_reject,
   }
 
   const resolvedReactions = {
     ...REACTIONS,
     ...(parentOverride as any).reactions,
     ...(threadOverride as any).reactions,
+    ...(roleOverride as any).reactions,
   }
 
   const resolvedPreWarmed = {
     ...PRE_WARMED_SESSIONS,
     ...(parentOverride as any).pre_warmed_sessions,
     ...(threadOverride as any).pre_warmed_sessions,
+    ...(roleOverride as any).pre_warmed_sessions,
   }
 
   const resolvedAccessControl = {
@@ -374,25 +419,32 @@ export function getEffectiveConfig(thread?: any): {
 
   const parentAC = (parentOverride as any).access_control || {}
   const threadAC = (threadOverride as any).access_control || {}
+  const roleAC = (roleOverride as any).access_control || {}
 
   if (typeof parentAC.allow_all === 'boolean') resolvedAccessControl.allow_all = parentAC.allow_all
   if (typeof threadAC.allow_all === 'boolean') resolvedAccessControl.allow_all = threadAC.allow_all
+  if (typeof roleAC.allow_all === 'boolean') resolvedAccessControl.allow_all = roleAC.allow_all
 
   if (Array.isArray(parentAC.allowed_users)) resolvedAccessControl.allowed_users = parentAC.allowed_users.map(String)
   if (Array.isArray(threadAC.allowed_users)) resolvedAccessControl.allowed_users = threadAC.allowed_users.map(String)
+  if (Array.isArray(roleAC.allowed_users)) resolvedAccessControl.allowed_users = roleAC.allowed_users.map(String)
 
   if (Array.isArray(parentAC.allowed_roles)) resolvedAccessControl.allowed_roles = parentAC.allowed_roles.map(String)
   if (Array.isArray(threadAC.allowed_roles)) resolvedAccessControl.allowed_roles = threadAC.allowed_roles.map(String)
+  if (Array.isArray(roleAC.allowed_roles)) resolvedAccessControl.allowed_roles = roleAC.allowed_roles.map(String)
 
-  const resolvedPrompt = (threadOverride as any).diagnostic_prompt ||
+  const resolvedPrompt = (roleOverride as any).diagnostic_prompt ||
+    (threadOverride as any).diagnostic_prompt ||
     (parentOverride as any).diagnostic_prompt ||
     DIAGNOSTIC_PROMPT
 
-  const resolvedAgents = (threadOverride as any).agents_personality ||
+  const resolvedAgents = (roleOverride as any).agents_personality ||
+    (threadOverride as any).agents_personality ||
     (parentOverride as any).agents_personality ||
     AGENT_PERSONALITY
 
-  const resolvedSoul = (threadOverride as any).soul_personality ||
+  const resolvedSoul = (roleOverride as any).soul_personality ||
+    (threadOverride as any).soul_personality ||
     (parentOverride as any).soul_personality ||
     SOUL_PERSONALITY
 

@@ -9,11 +9,12 @@ export interface CreateSessionOptions {
   branch?: string
   title?: string
   thread?: any // Optional thread/channel context
+  member?: any // Optional member context
 }
 
 export class JulesClient {
   static async createSession(options: CreateSessionOptions) {
-    const threadConfig = getEffectiveConfig(options.thread)
+    const threadConfig = getEffectiveConfig(options.thread, options.member)
 
     let sessionPrompt = `${threadConfig.diagnostic_prompt}\n\nAgent Personality and Guidelines:\n${threadConfig.agents_personality}\n\nAgent Soul and Principles:\n${threadConfig.soul_personality}`
     const bootstrapContext = getBootstrapContext()
