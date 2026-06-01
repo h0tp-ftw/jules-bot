@@ -65,10 +65,31 @@ export default {
         let initialSkipIds: Set<string> | undefined
 
         if (PRE_WARMED_SESSIONS.enabled) {
-          const preWarmed = await prisma.preWarmedSession.findFirst({
+          let preWarmed = await prisma.preWarmedSession.findFirst({
             where: { repoName, ready: true },
             orderBy: { createdAt: 'asc' },
           })
+
+          if (!preWarmed) {
+            const warming = await prisma.preWarmedSession.findFirst({
+              where: { repoName, ready: false },
+              orderBy: { createdAt: 'asc' },
+            })
+            if (warming) {
+              const statusMsg = await thread.send('⏳ **A session is currently pre-warming. Waiting for it to become ready...**')
+              for (let attempt = 0; attempt < 12; attempt++) {
+                await new Promise((resolve) => setTimeout(resolve, 5000))
+                const check = await prisma.preWarmedSession.findUnique({
+                  where: { id: warming.id }
+                })
+                if (check && check.ready) {
+                  preWarmed = check
+                  break
+                }
+              }
+              await statusMsg.delete().catch(() => {})
+            }
+          }
 
           if (preWarmed) {
             try {
