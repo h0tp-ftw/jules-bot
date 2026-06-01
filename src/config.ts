@@ -102,8 +102,8 @@ export const AUTO_REJECT = {
 }
 
 // Load Agent Personality Markdown
-const agentsExamplePath = path.resolve('agents.example.md')
-const agentsUserPath = path.resolve('agents.md')
+const agentsExamplePath = path.resolve('AGENTS.example.md')
+const agentsUserPath = path.resolve('AGENTS.md')
 let agentsContent = ''
 
 try {
