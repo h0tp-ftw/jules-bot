@@ -120,6 +120,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
       const targetMessage = await getLastHumanMessage(thread)
       await updateReaction(targetMessage, 'in_progress')
 
+      let agentMessagedInThisTurn = false
+
       for await (const activity of session.stream()) {
         const id = activity.id
         if (processedActivityIds.has(id)) {
@@ -136,8 +138,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             const plan = activity.plan || (activity as any).planGenerated?.plan
             if (!plan || !plan.steps) break
 
-            stopTyping()
-
             const shouldAutoReject = AUTO_REJECT.enabled && !autoRejectedSessions.has(sessionId)
             if (shouldAutoReject) {
               autoRejectedSessions.add(sessionId)
@@ -146,7 +146,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
               await session.send(feedback)
               const target = await getLastHumanMessage(thread)
               await updateReaction(target, 'in_progress')
-              startTyping()
               break
             }
 
@@ -189,7 +188,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             // If we were awaiting approval, go back to in_progress on updates
             const target = await getLastHumanMessage(thread)
             await updateReaction(target, 'in_progress')
-            startTyping()
             const title = activity.title || (activity as any).progressUpdated?.title || ''
             const description = activity.description || (activity as any).progressUpdated?.description || ''
             const logLine = description ? `${title}\n${description}` : title
@@ -202,39 +200,45 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           case 'agentMessaged': {
             const message = activity.message || (activity as any).agentMessaged?.message || ''
             if (message) {
+              agentMessagedInThisTurn = true
               const lastHuman = await getLastHumanMessage(thread)
               if (lastHuman) {
                 await lastHuman.reply(message.slice(0, 2000))
-                await updateReaction(lastHuman, 'responded')
               } else {
                 await thread.send(message.slice(0, 2000))
               }
-              stopTyping()
             }
             break
           }
 
           case 'sessionCompleted': {
-            stopTyping()
             const target = await getLastHumanMessage(thread)
             await updateReaction(target, 'completed')
             await streamManager.finalizeSession(thread.id, true)
             activeStreams.delete(thread.id)
+            stopTyping()
             return
           }
 
           case 'sessionFailed': {
-            stopTyping()
             const target = await getLastHumanMessage(thread)
             await updateReaction(target, 'failed')
             const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
             await streamManager.finalizeSession(thread.id, false, reason)
             activeStreams.delete(thread.id)
+            stopTyping()
             return
           }
         }
       }
 
+      // Stream loop finished for this turn
+      if (agentMessagedInThisTurn) {
+        const lastHuman = await getLastHumanMessage(thread)
+        await updateReaction(lastHuman, 'responded')
+      }
+
+      stopTyping()
       break
     } catch (err: any) {
       consecutiveFailures++

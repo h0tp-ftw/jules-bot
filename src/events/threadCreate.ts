@@ -53,47 +53,50 @@ export default {
 
     await thread.send(`🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\``)
 
-    try {
-      const authorNickname = starterMessage.member?.displayName || starterMessage.author.username
-      const messageTime = starterMessage.createdAt.toISOString()
-      const threadTitle = thread.name
-      const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterMessage.content}`
+      try {
+        const authorNickname = starterMessage.member?.displayName || starterMessage.author.username
+        const messageTime = starterMessage.createdAt.toISOString()
+        const threadTitle = thread.name
+        
+        let promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterMessage.content}`
 
-      let session: any = null
-      let usedPreWarmed = false
-      let initialSkipIds: Set<string> | undefined
+        let session: any = null
+        let usedPreWarmed = false
+        let initialSkipIds: Set<string> | undefined
 
-      if (PRE_WARMED_SESSIONS.enabled) {
-        const preWarmed = await prisma.preWarmedSession.findFirst({
-          where: { repoName, ready: true },
-          orderBy: { createdAt: 'asc' },
-        })
+        if (PRE_WARMED_SESSIONS.enabled) {
+          const preWarmed = await prisma.preWarmedSession.findFirst({
+            where: { repoName, ready: true },
+            orderBy: { createdAt: 'asc' },
+          })
 
-        if (preWarmed) {
-          try {
-            session = JulesClient.getSession(preWarmed.id)
-            
-            // Fetch current activity IDs to skip them in the stream
-            const info = await session.info()
-            if (info.activities) {
-              initialSkipIds = new Set(info.activities.map((a: any) => a.id))
+          if (preWarmed) {
+            try {
+              session = JulesClient.getSession(preWarmed.id)
+              
+              // Fetch current activity IDs to skip them in the stream
+              const info = await session.info()
+              if (info.activities) {
+                initialSkipIds = new Set(info.activities.map((a: any) => a.id))
+              }
+
+              await prisma.preWarmedSession.delete({
+                where: { id: preWarmed.id },
+              })
+              usedPreWarmed = true
+              console.log(`[threadCreate] Consumed pre-warmed session ${session.id} for repo ${repoName}`)
+
+              // If there's a stored welcome message, send it now
+              if (preWarmed.welcomeMessage) {
+                await thread.send(`🤖 **Pre-warm Greeting:**\n${preWarmed.welcomeMessage}`)
+                // Add a note to the prompt to tell Jules not to repeat the greeting
+                promptWithMetadata = `[System Note: Your pre-warm welcome message has already been displayed to the user. Do not repeat it. Proceed directly to analyzing the issue.]\n\n${promptWithMetadata}`
+              }
+            } catch (err) {
+              console.error(`[threadCreate] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
             }
-
-            await prisma.preWarmedSession.delete({
-              where: { id: preWarmed.id },
-            })
-            usedPreWarmed = true
-            console.log(`[threadCreate] Consumed pre-warmed session ${session.id} for repo ${repoName}`)
-
-            // If there's a stored welcome message, send it now
-            if (preWarmed.welcomeMessage) {
-              await thread.send(`🤖 **Pre-warm Greeting:**\n${preWarmed.welcomeMessage}`)
-            }
-          } catch (err) {
-            console.error(`[threadCreate] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
           }
         }
-      }
 
       if (!session) {
         session = await JulesClient.createSession({
