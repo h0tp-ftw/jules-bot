@@ -31,6 +31,18 @@ function parseEmojiForReaction(client: any, emojiStr: string): string {
   return trimmed
 }
 
+async function getLastHumanMessage(thread: ThreadChannel): Promise<Message | null> {
+  try {
+    const messages = await thread.messages.fetch({ limit: 20 })
+    const sorted = Array.from(messages.values()).sort((a, b) => b.createdTimestamp - a.createdTimestamp)
+    const lastHuman = sorted.find((m) => !m.author.bot)
+    return lastHuman || null
+  } catch (err) {
+    console.error('Failed to fetch last human message for reply:', err)
+    return null
+  }
+}
+
 async function updateReaction(message: Message | null, newStage: keyof typeof REACTIONS) {
   if (!message) return
   try {
@@ -164,7 +176,12 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         case 'agentMessaged': {
           const message = activity.message || (activity as any).agentMessaged?.message || ''
           if (message) {
-            await thread.send(message.slice(0, 2000))
+            const lastHuman = await getLastHumanMessage(thread)
+            if (lastHuman) {
+              await lastHuman.reply(message.slice(0, 2000))
+            } else {
+              await thread.send(message.slice(0, 2000))
+            }
             thread.sendTyping().catch(() => {})
           }
           break

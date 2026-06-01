@@ -40,8 +40,12 @@ export default {
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
 
-      // Send the user prompt to Jules
-      await session.send(message.content)
+      // Send the user prompt to Jules with metadata
+      const authorNickname = message.member?.displayName || message.author.username
+      const messageTime = message.createdAt.toISOString()
+      const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}]\n\n${message.content}`
+
+      await session.send(promptWithMetadata)
     } catch (err) {
       console.error(`Failed to send message to Jules for thread ${thread.id}:`, err)
       await message.reply('❌ **Failed to deliver message to Jules. Please make sure the session is still active.**')

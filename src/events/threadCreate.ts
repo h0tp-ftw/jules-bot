@@ -53,8 +53,13 @@ export default {
     await thread.send(`🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\``)
 
     try {
+      const authorNickname = starterMessage.member?.displayName || starterMessage.author.username
+      const messageTime = starterMessage.createdAt.toISOString()
+      const threadTitle = thread.name
+      const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterMessage.content}`
+
       const session = await JulesClient.createSession({
-        prompt: starterMessage.content,
+        prompt: promptWithMetadata,
         repo: repoName,
         title: thread.name,
       })
