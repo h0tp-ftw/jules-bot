@@ -13,6 +13,7 @@ access_control:
 reactions:
   queued: "⏳"
   in_progress: "⚙️"
+  responded: "💬"
   awaiting_plan_approval: "📋"
   completed: "✅"
   failed: "❌"

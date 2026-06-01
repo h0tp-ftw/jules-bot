@@ -77,6 +77,7 @@ export const ALLOWED_ROLES: string[] = Array.isArray(accessControl.allowed_roles
 const defaultReactions = {
   queued: "⏳",
   in_progress: "⚙️",
+  responded: "💬",
   awaiting_plan_approval: "📋",
   completed: "✅",
   failed: "❌"

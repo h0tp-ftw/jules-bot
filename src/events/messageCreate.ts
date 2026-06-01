@@ -1,7 +1,7 @@
 import { Message, Events, ThreadChannel } from 'discord.js'
 import { prisma } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { runJulesStream, activeStreams } from '../lib/jules/orchestrator.js'
+import { runJulesStream, activeStreams, updateReaction } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 
 import { hasPermission } from '../lib/utils/permissions.js'
@@ -39,6 +39,9 @@ export default {
         // Give the stream listener a moment to initialize
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
+
+      // Update reaction to 'in_progress' immediately
+      await updateReaction(message, 'in_progress')
 
       // Send the user prompt to Jules with metadata
       const authorNickname = message.member?.displayName || message.author.username

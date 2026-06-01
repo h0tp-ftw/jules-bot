@@ -33,7 +33,7 @@ function parseEmojiForReaction(client: any, emojiStr: string): string {
   return trimmed
 }
 
-async function getLastHumanMessage(thread: ThreadChannel): Promise<Message | null> {
+export async function getLastHumanMessage(thread: ThreadChannel): Promise<Message | null> {
   try {
     const messages = await thread.messages.fetch({ limit: 20 })
     const sorted = Array.from(messages.values()).sort((a, b) => b.createdTimestamp - a.createdTimestamp)
@@ -45,7 +45,7 @@ async function getLastHumanMessage(thread: ThreadChannel): Promise<Message | nul
   }
 }
 
-async function updateReaction(message: Message | null, newStage: keyof typeof REACTIONS) {
+export async function updateReaction(message: Message | null, newStage: keyof typeof REACTIONS) {
   if (!message) return
   try {
     const botId = message.client.user?.id
@@ -95,13 +95,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
     }
   }
 
-  let starterMessage: Message | null = null
-  try {
-    starterMessage = await thread.fetchStarterMessage()
-  } catch (err) {
-    console.error(`Failed to fetch starter message for thread ${thread.id}:`, err)
-  }
-
   const processedActivityIds = new Set<string>()
   let consecutiveFailures = 0
   const maxRetries = 20
@@ -115,7 +108,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
       // Wait until session is no longer queued to avoid 404 Not Found error on stream()
       let info = await session.info()
       if (info && info.state === 'queued') {
-        await updateReaction(starterMessage, 'queued')
+        const targetMessage = await getLastHumanMessage(thread)
+        await updateReaction(targetMessage, 'queued')
       }
       while (info && info.state === 'queued') {
         console.log(`Session ${sessionId} is queued. Waiting 5s...`)
@@ -123,7 +117,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         info = await session.info()
       }
 
-      await updateReaction(starterMessage, 'in_progress')
+      const targetMessage = await getLastHumanMessage(thread)
+      await updateReaction(targetMessage, 'in_progress')
 
       for await (const activity of session.stream()) {
         const id = activity.id
@@ -149,12 +144,14 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
               const feedback = AUTO_REJECT.message || 'Please revise the proposed plan.'
               await thread.send(`🤖 **Plan Automatically Rejected:**\nFeedback: "${feedback}"\nJules is revising the plan...`)
               await session.send(feedback)
-              await updateReaction(starterMessage, 'in_progress')
+              const target = await getLastHumanMessage(thread)
+              await updateReaction(target, 'in_progress')
               startTyping()
               break
             }
 
-            await updateReaction(starterMessage, 'awaiting_plan_approval')
+            const target = await getLastHumanMessage(thread)
+            await updateReaction(target, 'awaiting_plan_approval')
 
             const stepsText = plan.steps
               .map((step: any, i: number) => `**${i + 1}.** ${step.title}`)
@@ -190,7 +187,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
           case 'progressUpdated': {
             // If we were awaiting approval, go back to in_progress on updates
-            await updateReaction(starterMessage, 'in_progress')
+            const target = await getLastHumanMessage(thread)
+            await updateReaction(target, 'in_progress')
             startTyping()
             const title = activity.title || (activity as any).progressUpdated?.title || ''
             const description = activity.description || (activity as any).progressUpdated?.description || ''
@@ -207,6 +205,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
               const lastHuman = await getLastHumanMessage(thread)
               if (lastHuman) {
                 await lastHuman.reply(message.slice(0, 2000))
+                await updateReaction(lastHuman, 'responded')
               } else {
                 await thread.send(message.slice(0, 2000))
               }
@@ -217,7 +216,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
           case 'sessionCompleted': {
             stopTyping()
-            await updateReaction(starterMessage, 'completed')
+            const target = await getLastHumanMessage(thread)
+            await updateReaction(target, 'completed')
             await streamManager.finalizeSession(thread.id, true)
             activeStreams.delete(thread.id)
             return
@@ -225,7 +225,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
           case 'sessionFailed': {
             stopTyping()
-            await updateReaction(starterMessage, 'failed')
+            const target = await getLastHumanMessage(thread)
+            await updateReaction(target, 'failed')
             const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
             await streamManager.finalizeSession(thread.id, false, reason)
             activeStreams.delete(thread.id)
