@@ -45,6 +45,8 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 * 💬 **Context & Conversational Replies**: Injects nickname, message time, and thread title metadata into prompt headers. Replies directly to the user's message.
 * 🤖 **Plan Auto-Rejection Mode**: Configure the bot to automatically reject proposed plans once with customizable feedback to trigger plan revisions.
 * ✍️ **Typing Indicator**: Shows the bot is active/thinking in Discord while streaming operations.
+* 🌡️ **Pre-warmed Session Pools**: Opt-in background session pre-warming to bypass cloning/queueing delays on new thread creations.
+
 
 
 ---
