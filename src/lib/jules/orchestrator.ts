@@ -64,6 +64,23 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
   if (activeStreams.has(thread.id)) return
   activeStreams.add(thread.id)
 
+  let typingInterval: NodeJS.Timeout | null = null
+
+  const startTyping = () => {
+    if (typingInterval) return
+    thread.sendTyping().catch(() => {})
+    typingInterval = setInterval(() => {
+      thread.sendTyping().catch(() => {})
+    }, 8000)
+  }
+
+  const stopTyping = () => {
+    if (typingInterval) {
+      clearInterval(typingInterval)
+      typingInterval = null
+    }
+  }
+
   let starterMessage: Message | null = null
   try {
     starterMessage = await thread.fetchStarterMessage()
@@ -72,6 +89,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
   }
 
   try {
+    startTyping()
     const session = JulesClient.getSession(sessionId)
 
     // Wait until session is no longer queued to avoid 404 Not Found error on stream()
@@ -95,6 +113,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           const plan = activity.plan || (activity as any).planGenerated?.plan
           if (!plan || !plan.steps) break
 
+          stopTyping()
           await updateReaction(starterMessage, 'awaiting_plan_approval')
 
           const stepsText = plan.steps
@@ -132,6 +151,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         case 'progressUpdated': {
           // If we were awaiting approval, go back to in_progress on updates
           await updateReaction(starterMessage, 'in_progress')
+          startTyping()
           const title = activity.title || (activity as any).progressUpdated?.title || ''
           const description = activity.description || (activity as any).progressUpdated?.description || ''
           const logLine = description ? `${title}\n${description}` : title
@@ -145,11 +165,13 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           const message = activity.message || (activity as any).agentMessaged?.message || ''
           if (message) {
             await thread.send(message.slice(0, 2000))
+            thread.sendTyping().catch(() => {})
           }
           break
         }
 
         case 'sessionCompleted': {
+          stopTyping()
           await updateReaction(starterMessage, 'completed')
           await streamManager.finalizeSession(thread.id, true)
           activeStreams.delete(thread.id)
@@ -157,6 +179,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         }
 
         case 'sessionFailed': {
+          stopTyping()
           await updateReaction(starterMessage, 'failed')
           const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
           await streamManager.finalizeSession(thread.id, false, reason)
@@ -170,6 +193,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
     const errorMsg = err instanceof Error ? err.stack || err.message : String(err)
     await thread.send(`⚠️ **An error occurred during the diagnostic analysis session:**\n\`\`\`ts\n${errorMsg.slice(0, 1800)}\n\`\`\``)
   } finally {
+    stopTyping()
     activeStreams.delete(thread.id)
   }
 }
