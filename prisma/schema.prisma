@@ -28,6 +28,7 @@ model DebugSession {
 model PreWarmedSession {
   id             String   @id
   repoName       String
+  contextKey     String?
   ready          Boolean  @default(false)
   welcomeMessage String?
   createdAt      DateTime @default(now())

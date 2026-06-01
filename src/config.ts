@@ -64,7 +64,7 @@ const userPath = isProfileActive && profileDir
   : path.resolve('config.yaml')
 
 
-let yamlConfig: any = {}
+export let yamlConfig: any = {}
 
 try {
   let defaultYaml: any = {}

@@ -29,15 +29,15 @@ auto_reject:
   enabled: false
   message: "Please double check the proposed changes and ensure no unnecessary modifications are made."
 
-# Pre-warmed session pool configuration (opt-in)
-pre_warmed_sessions:
-  enabled: false
-  pool_size: 1
-
 # Force interactive repository and branch selection on thread creation.
 # If true, shows an embed with select menus allowing developers to pick a connected repo and branch.
 # If false, automatically proceeds with default repository and branch.
 interactive_selection: false
+
+# Pre-warmed session pool configuration (opt-in)
+pre_warmed_sessions:
+  enabled: false
+  pool_size: 1
   # Optional: Instructions sent only to pre-warmed sessions during initialization.
   # Use this to give Jules background tasks or specific focus areas before the user connects.
   pre_warming_prompt: |

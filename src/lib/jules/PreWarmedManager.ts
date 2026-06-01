@@ -1,26 +1,47 @@
 import { jules } from '@google/jules-sdk'
-import { prisma, YAML_GUILDS, PRE_WARMED_SESSIONS, JULES_API_KEY, DIAGNOSTIC_PROMPT, AGENT_PERSONALITY, SOUL_PERSONALITY, getBootstrapContext } from '../../config.js'
+import { prisma, YAML_GUILDS, PRE_WARMED_SESSIONS, JULES_API_KEY, DIAGNOSTIC_PROMPT, AGENT_PERSONALITY, SOUL_PERSONALITY, getBootstrapContext, yamlConfig, getEffectiveConfig } from '../../config.js'
 
 const client = JULES_API_KEY ? jules.with({ apiKey: JULES_API_KEY }) : jules
 
-export async function preWarmSession(repoName: string) {
+function getConfigForContext(contextKey: string | null) {
+  if (!contextKey) return getEffectiveConfig()
+  
+  // If contextKey is a channel ID (numeric)
+  if (/^\d+$/.test(contextKey)) {
+    return getEffectiveConfig({ id: contextKey, parentId: contextKey })
+  }
+  
+  // Else treat contextKey as a role name/ID
+  const mockMember = {
+    roles: {
+      cache: {
+        has: (key: string) => key === contextKey,
+        some: (fn: any) => fn({ name: contextKey, id: contextKey })
+      }
+    }
+  }
+  return getEffectiveConfig(null, mockMember)
+}
+
+export async function preWarmSession(repoName: string, contextKey: string | null = null) {
   try {
-    let defaultPrompt = `${DIAGNOSTIC_PROMPT}\n\nAgent Personality and Guidelines:\n${AGENT_PERSONALITY}\n\nAgent Soul and Principles:\n${SOUL_PERSONALITY}`
+    const config = getConfigForContext(contextKey)
+    let defaultPrompt = `${config.diagnostic_prompt}\n\nAgent Personality and Guidelines:\n${config.agents_personality}\n\nAgent Soul and Principles:\n${config.soul_personality}`
     const bootstrapContext = getBootstrapContext()
     if (bootstrapContext) {
       defaultPrompt += `\n\nBootstrap Knowledge and Context:\n${bootstrapContext}`
     }
 
-    const preWarmingPrompt = PRE_WARMED_SESSIONS.pre_warming_prompt || 
+    const preWarmingPrompt = config.pre_warmed_sessions.pre_warming_prompt || 
       `You are a diagnostic assistant. The user is connecting and has just sent their initial response. Acknowledge that you are showing this message now that they have replied. Share a random cool Pokémon fact, and let them know you are actively analyzing the codebase and working on their query right now. Do NOT propose code changes yet; generate the initial plan to welcome them and begin investigation.`
 
     defaultPrompt += `\n\nSystem Directive:\n${preWarmingPrompt}`
 
-    console.log(`[Pre-warm] Creating session for ${repoName}...`)
+    console.log(`[Pre-warm] Creating session for ${repoName} (Context: ${contextKey || 'global'})...`)
     const session = await client.session({
       prompt: defaultPrompt,
       source: { github: repoName, baseBranch: 'main' },
-      title: `Pre-warmed Session (${repoName})`,
+      title: contextKey ? `Pre-warmed Session (${repoName} - Context: ${contextKey})` : `Pre-warmed Session (${repoName})`,
       requireApproval: true,
     })
 
@@ -29,10 +50,11 @@ export async function preWarmSession(repoName: string) {
       data: {
         id: session.id,
         repoName,
+        contextKey,
       }
     })
 
-    console.log(`[Pre-warm] Created session ${session.id} for ${repoName}. Waiting for ready...`)
+    console.log(`[Pre-warm] Created session ${session.id} for ${repoName} (Context: ${contextKey || 'global'}). Waiting for ready...`)
 
     // Wait until it's out of queued state, and if it proposes an initial plan, approve it
     let info = await session.info()
@@ -52,31 +74,30 @@ export async function preWarmSession(repoName: string) {
 
     console.log(`[Pre-warm] Session ${session.id} is now fully warm and ready in awaitingPlanApproval state.`)
   } catch (err) {
-    console.error(`[Pre-warm] Failed to pre-warm session for ${repoName}:`, err)
+    console.error(`[Pre-warm] Failed to pre-warm session for ${repoName} (Context: ${contextKey || 'global'}):`, err)
   }
 }
 
-export async function replenishPool(repoName: string) {
-  if (!PRE_WARMED_SESSIONS.enabled) return
+export async function replenishPool(repoName: string, contextKey: string | null = null) {
+  const config = getConfigForContext(contextKey)
+  if (!config.pre_warmed_sessions.enabled) return
   
-  // Count how many pre-warmed sessions exist for this repo (including those warming)
+  // Count how many pre-warmed sessions exist for this repo and context (including those warming)
   const count = await prisma.preWarmedSession.count({
-    where: { repoName }
+    where: { repoName, contextKey }
   })
   
-  const targetCount = PRE_WARMED_SESSIONS.pool_size
+  const targetCount = config.pre_warmed_sessions.pool_size
   if (count < targetCount) {
     const needed = targetCount - count
-    console.log(`[Pool] Replenishing pre-warmed pool for ${repoName}. Current: ${count}, Target: ${targetCount}. Spawning ${needed} session(s) in background.`)
+    console.log(`[Pool] Replenishing pre-warmed pool for ${repoName} (Context: ${contextKey || 'global'}). Current: ${count}, Target: ${targetCount}. Spawning ${needed} session(s) in background.`)
     for (let i = 0; i < needed; i++) {
-      preWarmSession(repoName).catch(() => {})
+      preWarmSession(repoName, contextKey).catch(() => {})
     }
   }
 }
 
 export async function initPreWarmedPools() {
-  if (!PRE_WARMED_SESSIONS.enabled) return
-
   console.log('[Pool] Initializing pre-warmed session pools...')
 
   // Cleanup any sessions that didn't finish warming from a previous run
@@ -112,8 +133,37 @@ export async function initPreWarmedPools() {
     console.error('[Pool] Failed to fetch guild configs from database on startup:', err)
   }
 
-  // 3. Replenish for each repo
+  // Collect contexts to warm
+  const contexts: (string | null)[] = [null] // null = global default
+
+  const channelsConfig = yamlConfig.channels || {}
+  for (const channelId of Object.keys(channelsConfig)) {
+    const conf = getEffectiveConfig({ id: channelId, parentId: channelId })
+    if (conf.pre_warmed_sessions.enabled) {
+      contexts.push(channelId)
+    }
+  }
+
+  const rolesConfig = yamlConfig.roles || {}
+  for (const roleKey of Object.keys(rolesConfig)) {
+    const mockMember = {
+      roles: {
+        cache: {
+          has: (key: string) => key === roleKey,
+          some: (fn: any) => fn({ name: roleKey, id: roleKey })
+        }
+      }
+    }
+    const conf = getEffectiveConfig(null, mockMember)
+    if (conf.pre_warmed_sessions.enabled) {
+      contexts.push(roleKey)
+    }
+  }
+
+  // 3. Replenish for each repo and context
   for (const repo of repos) {
-    replenishPool(repo).catch(() => {})
+    for (const contextKey of contexts) {
+      replenishPool(repo, contextKey).catch(() => {})
+    }
   }
 }

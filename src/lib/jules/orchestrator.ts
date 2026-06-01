@@ -1,7 +1,7 @@
 import { ThreadChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Message } from 'discord.js'
 import { JulesClient } from './JulesClient.js'
 import { StreamManager } from '../streams/StreamManager.js'
-import { prisma, getEffectiveConfig } from '../../config.js'
+import { prisma, getEffectiveConfig, yamlConfig } from '../../config.js'
 import { replenishPool } from './PreWarmedManager.js'
 
 export const activeStreams = new Set<string>()
@@ -335,15 +335,63 @@ export async function initializeJulesSession(
   let initialSkipIds: Set<string> | undefined
 
   const threadConfig = getEffectiveConfig(thread, starterMessage.member)
-  if (threadConfig.pre_warmed_sessions.enabled) {
+  
+  // Determine matching contextKey and pool eligibility
+  let contextKey: string | null = null
+  let usePool = false
+
+  const channelsConfig = yamlConfig.channels || {}
+  const rolesConfig = yamlConfig.roles || {}
+
+  if (thread.id && channelsConfig[thread.id] && channelsConfig[thread.id].pre_warmed_sessions?.enabled) {
+    contextKey = thread.id
+    usePool = true
+  } else if (thread.parentId && channelsConfig[thread.parentId] && channelsConfig[thread.parentId].pre_warmed_sessions?.enabled) {
+    contextKey = thread.parentId
+    usePool = true
+  } else {
+    // Check roles
+    if (starterMessage.member && starterMessage.member.roles) {
+      for (const [roleKey, roleVal] of Object.entries(rolesConfig)) {
+        let hasRole = false
+        const roles = starterMessage.member.roles as any
+        if (roles && roles.cache) {
+          hasRole = roles.cache.has(roleKey) || 
+                    roles.cache.some((r: any) => r.name === roleKey)
+        } else if (Array.isArray(roles)) {
+          hasRole = roles.includes(roleKey)
+        }
+        if (hasRole && roleVal && typeof roleVal === 'object' && (roleVal as any).pre_warmed_sessions?.enabled) {
+          contextKey = roleKey
+          usePool = true
+          break
+        }
+      }
+    }
+  }
+
+  if (!usePool) {
+    // Check if global pool is enabled and prompts are NOT overridden
+    const globalConfig = getEffectiveConfig()
+    const isPromptOverridden = threadConfig.diagnostic_prompt !== globalConfig.diagnostic_prompt ||
+      threadConfig.agents_personality !== globalConfig.agents_personality ||
+      threadConfig.soul_personality !== globalConfig.soul_personality
+
+    if (threadConfig.pre_warmed_sessions.enabled && !isPromptOverridden) {
+      contextKey = null
+      usePool = true
+    }
+  }
+
+  if (usePool) {
     let preWarmed = await prisma.preWarmedSession.findFirst({
-      where: { repoName, ready: true },
+      where: { repoName, ready: true, contextKey },
       orderBy: { createdAt: 'asc' },
     })
 
     if (!preWarmed) {
       const warming = await prisma.preWarmedSession.findFirst({
-        where: { repoName, ready: false },
+        where: { repoName, ready: false, contextKey },
         orderBy: { createdAt: 'asc' },
       })
       if (warming) {
@@ -380,7 +428,7 @@ export async function initializeJulesSession(
           where: { id: preWarmed.id },
         })
         usedPreWarmed = true
-        console.log(`[initializeJulesSession] Consumed pre-warmed session ${session.id} for repo ${repoName}`)
+        console.log(`[initializeJulesSession] Consumed pre-warmed session ${session.id} for repo ${repoName} (Context: ${contextKey || 'global'})`)
       } catch (err) {
         console.error(`[initializeJulesSession] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
       }
@@ -415,8 +463,8 @@ export async function initializeJulesSession(
     thread.sendTyping().catch(() => {})
     
     await session.send(promptWithMetadata)
-    replenishPool(repoName).catch(() => {})
-  } else if (threadConfig.pre_warmed_sessions.enabled) {
-    replenishPool(repoName).catch(() => {})
+    replenishPool(repoName, contextKey).catch(() => {})
+  } else if (usePool) {
+    replenishPool(repoName, contextKey).catch(() => {})
   }
 }
