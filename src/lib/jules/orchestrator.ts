@@ -1,24 +1,63 @@
-import { ThreadChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js'
+import { ThreadChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, Message } from 'discord.js'
 import { JulesClient } from './JulesClient.js'
 import { StreamManager } from '../streams/StreamManager.js'
-import { prisma } from '../../config.js'
+import { prisma, REACTIONS } from '../../config.js'
 
 export const activeStreams = new Set<string>()
+
+async function updateReaction(message: Message | null, newStage: keyof typeof REACTIONS) {
+  if (!message) return
+  try {
+    const botId = message.client.user?.id
+    if (botId) {
+      // Remove any existing bot reactions to clean up previous stages
+      for (const reaction of message.reactions.cache.values()) {
+        try {
+          if (reaction.me) {
+            await reaction.users.remove(botId)
+          }
+        } catch (err) {
+          // Ignore removal errors
+        }
+      }
+    }
+
+    // Add new reaction emoji
+    const emoji = REACTIONS[newStage]
+    if (emoji) {
+      await message.react(emoji)
+    }
+  } catch (err) {
+    console.error(`Failed to update reaction to stage ${newStage}:`, err)
+  }
+}
 
 export async function runJulesStream(sessionId: string, thread: ThreadChannel, streamManager: StreamManager) {
   if (activeStreams.has(thread.id)) return
   activeStreams.add(thread.id)
+
+  let starterMessage: Message | null = null
+  try {
+    starterMessage = await thread.fetchStarterMessage()
+  } catch (err) {
+    console.error(`Failed to fetch starter message for thread ${thread.id}:`, err)
+  }
 
   try {
     const session = JulesClient.getSession(sessionId)
 
     // Wait until session is no longer queued to avoid 404 Not Found error on stream()
     let info = await session.info()
+    if (info && info.state === 'queued') {
+      await updateReaction(starterMessage, 'queued')
+    }
     while (info && info.state === 'queued') {
       console.log(`Session ${sessionId} is queued. Waiting 5s...`)
       await new Promise((resolve) => setTimeout(resolve, 5000))
       info = await session.info()
     }
+
+    await updateReaction(starterMessage, 'in_progress')
 
     for await (const activity of session.stream()) {
       const type = activity.type
@@ -27,6 +66,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         case 'planGenerated': {
           const plan = activity.plan || (activity as any).planGenerated?.plan
           if (!plan || !plan.steps) break
+
+          await updateReaction(starterMessage, 'awaiting_plan_approval')
 
           const stepsText = plan.steps
             .map((step: any, i: number) => `**${i + 1}.** ${step.title}`)
@@ -61,6 +102,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         }
 
         case 'progressUpdated': {
+          // If we were awaiting approval, go back to in_progress on updates
+          await updateReaction(starterMessage, 'in_progress')
           const title = activity.title || (activity as any).progressUpdated?.title || ''
           const description = activity.description || (activity as any).progressUpdated?.description || ''
           const logLine = description ? `${title}\n${description}` : title
@@ -79,12 +122,14 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         }
 
         case 'sessionCompleted': {
+          await updateReaction(starterMessage, 'completed')
           await streamManager.finalizeSession(thread.id, true)
           activeStreams.delete(thread.id)
           return
         }
 
         case 'sessionFailed': {
+          await updateReaction(starterMessage, 'failed')
           const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
           await streamManager.finalizeSession(thread.id, false, reason)
           activeStreams.delete(thread.id)

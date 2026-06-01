@@ -1,5 +1,5 @@
 import { ThreadChannel, Events } from 'discord.js'
-import { prisma } from '../config.js'
+import { prisma, YAML_GUILDS } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { runJulesStream } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
@@ -9,12 +9,21 @@ export default {
   async execute(thread: ThreadChannel, streamManager: StreamManager) {
     if (!thread.guildId) return
 
-    // Find guild configuration
-    const config = await prisma.guildConfig.findUnique({
-      where: { guildId: thread.guildId },
-    })
+    // Check config.yaml overrides first
+    const yamlGuild = YAML_GUILDS[thread.guildId]
+    let repo = yamlGuild?.default_repo
+    let forumChannelId = yamlGuild?.forum_channel_id
 
-    if (!config || !config.forumChannelId || thread.parentId !== config.forumChannelId) {
+    // Fallback to database config if not configured in YAML
+    if (!repo || !forumChannelId) {
+      const config = await prisma.guildConfig.findUnique({
+        where: { guildId: thread.guildId },
+      })
+      if (!repo) repo = config?.defaultRepo ?? undefined
+      if (!forumChannelId) forumChannelId = config?.forumChannelId ?? undefined
+    }
+
+    if (!forumChannelId || thread.parentId !== forumChannelId) {
       // Thread is not in the designated debugging forum channel
       return
     }
@@ -34,18 +43,19 @@ export default {
       return
     }
 
-    const repo = config.defaultRepo
     if (!repo) {
       await thread.send('⚠️ **No default repository has been set for this server.** Please use the `/link-repo` command to set a default repository.')
       return
     }
 
-    await thread.send(`🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repo}\``)
+    const repoName: string = repo
+
+    await thread.send(`🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\``)
 
     try {
       const session = await JulesClient.createSession({
         prompt: starterMessage.content,
-        repo: repo,
+        repo: repoName,
         title: thread.name,
       })
 
@@ -54,7 +64,7 @@ export default {
           threadId: thread.id,
           guildId: thread.guildId,
           julesSessionId: session.id,
-          repoName: repo,
+          repoName: repoName,
         },
       })
 
