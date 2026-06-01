@@ -46,6 +46,12 @@ export async function preWarmSession(repoName: string) {
       await session.approve()
     }
     
+    // Mark as ready in DB
+    await prisma.preWarmedSession.update({
+      where: { id: session.id },
+      data: { ready: true }
+    })
+
     console.log(`[Pre-warm] Session ${session.id} is now fully warm and ready.`)
   } catch (err) {
     console.error(`[Pre-warm] Failed to pre-warm session for ${repoName}:`, err)
@@ -55,7 +61,7 @@ export async function preWarmSession(repoName: string) {
 export async function replenishPool(repoName: string) {
   if (!PRE_WARMED_SESSIONS.enabled) return
   
-  // Count how many pre-warmed sessions exist for this repo
+  // Count how many pre-warmed sessions exist for this repo (including those warming)
   const count = await prisma.preWarmedSession.count({
     where: { repoName }
   })
@@ -74,6 +80,19 @@ export async function initPreWarmedPools() {
   if (!PRE_WARMED_SESSIONS.enabled) return
 
   console.log('[Pool] Initializing pre-warmed session pools...')
+
+  // Cleanup any sessions that didn't finish warming from a previous run
+  try {
+    const deleted = await prisma.preWarmedSession.deleteMany({
+      where: { ready: false }
+    })
+    if (deleted.count > 0) {
+      console.log(`[Pool] Cleaned up ${deleted.count} stale pre-warmed sessions.`)
+    }
+  } catch (err) {
+    console.error('[Pool] Failed to cleanup stale sessions:', err)
+  }
+
   const repos = new Set<string>()
 
   // 1. Get repos from YAML

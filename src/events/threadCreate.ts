@@ -64,7 +64,7 @@ export default {
 
       if (PRE_WARMED_SESSIONS.enabled) {
         const preWarmed = await prisma.preWarmedSession.findFirst({
-          where: { repoName },
+          where: { repoName, ready: true },
           orderBy: { createdAt: 'asc' },
         })
 
