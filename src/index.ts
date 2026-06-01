@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, Collection, REST, Routes, Events } from 'dis
 import { DISCORD_TOKEN, prisma } from './config.js'
 import linkRepoCmd from './commands/link-repo.js'
 import setupForumCmd from './commands/setup-forum.js'
+import approveCmd from './commands/approve.js'
 import threadCreateEvt from './events/threadCreate.js'
 import messageCreateEvt from './events/messageCreate.js'
 import interactionCreateEvt from './events/interactionCreate.js'
@@ -27,6 +28,7 @@ const streamManager = new StreamManager(client)
 const commands = new Collection<string, any>()
 commands.set(linkRepoCmd.data.name, linkRepoCmd)
 commands.set(setupForumCmd.data.name, setupForumCmd)
+commands.set(approveCmd.data.name, approveCmd)
 
 import { hasPermission } from './lib/utils/permissions.js'
 
@@ -51,7 +53,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!command) return
 
     try {
-      await command.execute(interaction)
+      await command.execute(interaction, streamManager)
     } catch (err: any) {
       console.error(err)
       const errorMsg = err instanceof Error ? err.stack || err.message : String(err)
