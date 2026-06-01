@@ -1,13 +1,67 @@
 import 'dotenv/config'
+import dotenv from 'dotenv'
 import fs from 'fs'
 import path from 'path'
 import { parse } from 'yaml'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from '@prisma/client'
+import { execSync } from 'child_process'
+
+// Detect active profile from command line (--profile <name>) or BOT_PROFILE environment variable
+let profileName: string | undefined = process.env.BOT_PROFILE
+const profileArgIndex = process.argv.indexOf('--profile')
+if (profileArgIndex !== -1 && profileArgIndex + 1 < process.argv.length) {
+  profileName = process.argv[profileArgIndex + 1]
+}
+
+const isProfileActive = !!profileName
+const profileDir = isProfileActive ? path.resolve('profiles', profileName!) : null
+
+if (isProfileActive && profileDir) {
+  // Ensure profile directory exists
+  if (!fs.existsSync(profileDir)) {
+    fs.mkdirSync(profileDir, { recursive: true })
+  }
+
+  // Ensure bootstrap directory inside profile exists
+  const profileBootstrapDir = path.join(profileDir, 'bootstrap')
+  if (!fs.existsSync(profileBootstrapDir)) {
+    fs.mkdirSync(profileBootstrapDir, { recursive: true })
+  }
+
+  // Copy template files if they are missing
+  const templatesToCopy = [
+    { src: 'templates/.env.example', dest: '.env' },
+    { src: 'templates/config.example.yaml', dest: 'config.yaml' },
+    { src: 'templates/AGENTS.example.md', dest: 'AGENTS.md' },
+    { src: 'templates/SOUL.example.md', dest: 'SOUL.md' }
+  ]
+
+  for (const { src, dest } of templatesToCopy) {
+    const srcPath = path.resolve(src)
+    const destPath = path.join(profileDir, dest)
+    if (!fs.existsSync(destPath) && fs.existsSync(srcPath)) {
+      try {
+        fs.copyFileSync(srcPath, destPath)
+        console.log(`[Profile] Copied template ${src} to ${destPath}`)
+      } catch (err) {
+        console.error(`[Profile] Failed to copy template ${src} to ${destPath}:`, err)
+      }
+    }
+  }
+
+  // Load profile .env file, overriding existing env vars
+  const profileEnvPath = path.join(profileDir, '.env')
+  if (fs.existsSync(profileEnvPath)) {
+    dotenv.config({ path: profileEnvPath, override: true })
+  }
+}
 
 // Load default and user configuration
 const examplePath = path.resolve('templates/config.example.yaml')
-const userPath = path.resolve('config.yaml')
+const userPath = isProfileActive && profileDir
+  ? path.join(profileDir, 'config.yaml')
+  : path.resolve('config.yaml')
 
 
 let yamlConfig: any = {}
@@ -94,7 +148,44 @@ export const YAML_GUILDS: Record<string, { default_repo?: string; forum_channel_
 // API Keys and Tokens
 export const DISCORD_TOKEN = process.env.DISCORD_TOKEN || ''
 export const JULES_API_KEY = process.env.JULES_API_KEY || ''
-export const DATABASE_URL = process.env.DATABASE_URL || 'file:./prisma/dev.db'
+
+let rawDatabaseUrl = process.env.DATABASE_URL
+if (!rawDatabaseUrl) {
+  rawDatabaseUrl = isProfileActive && profileDir
+    ? `file:profiles/${profileName}/dev.db`
+    : 'file:./prisma/dev.db'
+} else if (isProfileActive && profileDir && rawDatabaseUrl.startsWith('file:')) {
+  const rawPath = rawDatabaseUrl.slice(5)
+  if (!path.isAbsolute(rawPath)) {
+    const resolvedPath = path.resolve(profileDir, rawPath).replace(/\\/g, '/')
+    rawDatabaseUrl = `file:${resolvedPath}`
+  }
+}
+
+export const DATABASE_URL = rawDatabaseUrl
+// Ensure process.env has the resolved DATABASE_URL for Prisma config and CLI usage
+process.env.DATABASE_URL = DATABASE_URL
+
+if (DATABASE_URL.startsWith('file:')) {
+  const dbPath = path.resolve(DATABASE_URL.slice(5))
+  if (!fs.existsSync(dbPath)) {
+    console.log(`[Database] SQLite file not found at ${dbPath}. Auto-provisioning...`)
+    const dbDir = path.dirname(dbPath)
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true })
+    }
+    try {
+      console.log(`[Database] Running 'npx prisma db push' to provision database...`)
+      execSync('npx prisma db push', {
+        env: { ...process.env, DATABASE_URL: DATABASE_URL },
+        stdio: 'inherit'
+      })
+      console.log(`[Database] Successfully provisioned SQLite database at ${dbPath}`)
+    } catch (err) {
+      console.error('[Database] Failed to auto-provision SQLite database:', err)
+    }
+  }
+}
 
 // SQLite Prisma adapter init
 const adapter = new PrismaBetterSqlite3({ url: DATABASE_URL })
@@ -109,7 +200,9 @@ export const AUTO_REJECT = {
 
 // Load Agent Personality Markdown
 const agentsExamplePath = path.resolve('templates/AGENTS.example.md')
-const agentsUserPath = path.resolve('AGENTS.md')
+const agentsUserPath = isProfileActive && profileDir
+  ? path.join(profileDir, 'AGENTS.md')
+  : path.resolve('AGENTS.md')
 let agentsContent = ''
 
 try {
@@ -126,7 +219,9 @@ export const AGENT_PERSONALITY = agentsContent
 
 // Load Agent Soul Markdown
 const soulExamplePath = path.resolve('templates/SOUL.example.md')
-const soulUserPath = path.resolve('SOUL.md')
+const soulUserPath = isProfileActive && profileDir
+  ? path.join(profileDir, 'SOUL.md')
+  : path.resolve('SOUL.md')
 let soulContent = ''
 
 try {
@@ -174,7 +269,13 @@ function getFilesRecursively(dir: string, baseDir: string = dir): { relativePath
 
 // Dynamically construct bootstrap context from all files in bootstrap/
 export function getBootstrapContext(): string {
-  const bootstrapDir = path.resolve('bootstrap')
+  let bootstrapDir = path.resolve('bootstrap')
+  if (isProfileActive && profileDir) {
+    const profileBootstrapDir = path.join(profileDir, 'bootstrap')
+    if (fs.existsSync(profileBootstrapDir) && fs.readdirSync(profileBootstrapDir).length > 0) {
+      bootstrapDir = profileBootstrapDir
+    }
+  }
   if (!fs.existsSync(bootstrapDir)) {
     return ''
   }
@@ -195,7 +296,13 @@ export function getBootstrapContext(): string {
 
 // Log initial bootstrap status on startup
 try {
-  const bootstrapDir = path.resolve('bootstrap')
+  let bootstrapDir = path.resolve('bootstrap')
+  if (isProfileActive && profileDir) {
+    const profileBootstrapDir = path.join(profileDir, 'bootstrap')
+    if (fs.existsSync(profileBootstrapDir) && fs.readdirSync(profileBootstrapDir).length > 0) {
+      bootstrapDir = profileBootstrapDir
+    }
+  }
   if (fs.existsSync(bootstrapDir)) {
     const files = getFilesRecursively(bootstrapDir)
     const totalSize = files.reduce((acc, f) => acc + f.content.length, 0)

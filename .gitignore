@@ -23,3 +23,6 @@ prisma/dev.db-journal
 
 # Scratch files
 scratch_*
+
+# Local profiles
+profiles/
