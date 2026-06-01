@@ -57,4 +57,18 @@ pre_warmed_sessions:
 #       queued: "⏳"
 #       in_progress: "⚙️"
 
+# Optional Role-specific Overrides
+# Overrides configuration options based on the roles of the thread creator.
+# When a thread creator has a matching role, the overrides are applied to that thread's session.
+# For example, if a Developer starts a thread, you can restrict access to only Developers:
+# roles:
+#   "Developer": # Role Name or Role ID
+#     access_control:
+#       allow_all: false
+#       allowed_roles:
+#         - "Developer"
+#         - "Admin"
+#     diagnostic_prompt: |
+#       You are a technical assistant. Provide deep code explanations.
+
 

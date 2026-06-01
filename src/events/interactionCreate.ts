@@ -17,7 +17,7 @@ export default {
     if (!interaction.isButton()) return
 
     // Check permission
-    if (!hasPermission(interaction.member, interaction.user, interaction.channel)) {
+    if (!await hasPermission(interaction.member, interaction.user, interaction.channel)) {
       await interaction.reply({ content: '❌ **You do not have permission to interact with this session.**', ephemeral: true })
       return
     }
