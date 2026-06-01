@@ -32,5 +32,10 @@ auto_reject:
 pre_warmed_sessions:
   enabled: false
   pool_size: 1
+  # Optional: Instructions sent only to pre-warmed sessions during initialization.
+  # Use this to give Jules background tasks or specific focus areas before the user connects.
+  pre_warming_prompt: |
+    You are a diagnostic assistant. The user is currently connecting. Do NOT generate any code modifications yet. 
+    Wait for the user's issue details in the next message, then analyze the codebase and propose a plan.
 
 

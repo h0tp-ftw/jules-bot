@@ -68,7 +68,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 })
 
-client.once('ready', async () => {
+client.once(Events.ClientReady, async () => {
   console.log(`🐙 Bot logged in as ${client.user?.tag}`)
 
   // Automatically register slash commands globally

@@ -103,6 +103,10 @@ export default {
       runJulesStream(session.id, thread, streamManager)
 
       if (usedPreWarmed) {
+        // Inform user we are using a ready session and start typing immediately
+        await thread.send('🚀 **Ready session found! Processing your issue...**')
+        thread.sendTyping().catch(() => {})
+        
         await session.send(promptWithMetadata)
         replenishPool(repoName).catch(() => {})
       } else if (PRE_WARMED_SESSIONS.enabled) {

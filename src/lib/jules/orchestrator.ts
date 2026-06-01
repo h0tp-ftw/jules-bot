@@ -210,7 +210,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
               } else {
                 await thread.send(message.slice(0, 2000))
               }
-              thread.sendTyping().catch(() => {})
+              stopTyping()
             }
             break
           }

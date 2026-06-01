@@ -143,7 +143,8 @@ export const SOUL_PERSONALITY = soulContent
 const preWarmed = yamlConfig.pre_warmed_sessions || {}
 export const PRE_WARMED_SESSIONS = {
   enabled: typeof preWarmed.enabled === 'boolean' ? preWarmed.enabled : false,
-  pool_size: typeof preWarmed.pool_size === 'number' ? preWarmed.pool_size : 1
+  pool_size: typeof preWarmed.pool_size === 'number' ? preWarmed.pool_size : 1,
+  pre_warming_prompt: typeof preWarmed.pre_warming_prompt === 'string' ? preWarmed.pre_warming_prompt : ''
 }
 
 // Helper to recursively read all files in a directory

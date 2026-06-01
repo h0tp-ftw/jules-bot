@@ -10,7 +10,11 @@ export async function preWarmSession(repoName: string) {
     if (bootstrapContext) {
       defaultPrompt += `\n\nBootstrap Knowledge and Context:\n${bootstrapContext}`
     }
-    defaultPrompt += `\n\nSystem Directive:\nYou are a diagnostic assistant. The user is currently connecting. Do NOT generate any code modifications yet. Wait for the user's issue details in the next message, then analyze the codebase and propose a plan.`
+
+    const preWarmingPrompt = PRE_WARMED_SESSIONS.pre_warming_prompt || 
+      `You are a diagnostic assistant. The user is currently connecting. Do NOT generate any code modifications yet. Wait for the user's issue details in the next message, then analyze the codebase and propose a plan.`
+
+    defaultPrompt += `\n\nSystem Directive:\n${preWarmingPrompt}`
 
     console.log(`[Pre-warm] Creating session for ${repoName}...`)
     const session = await client.session({
