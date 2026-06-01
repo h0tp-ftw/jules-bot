@@ -41,28 +41,16 @@ export async function preWarmSession(repoName: string) {
       info = await session.info()
     }
 
-    if (info && info.state === 'awaitingPlanApproval') {
-      console.log(`[Pre-warm] Approving initial setup plan for ${session.id}...`)
-      await session.approve()
-      
-      // Wait a bit for indexing/initial message after approval
-      await new Promise((resolve) => setTimeout(resolve, 10000))
-      info = await session.info()
-    }
-    
-    // Capture any welcome message from agent
-    const welcomeMsg = info.activities?.find(a => a.type === 'agentMessaged')?.message || null
-
     // Mark as ready in DB
     await prisma.preWarmedSession.update({
       where: { id: session.id },
       data: { 
         ready: true,
-        welcomeMessage: welcomeMsg
+        welcomeMessage: null
       }
     })
 
-    console.log(`[Pre-warm] Session ${session.id} is now fully warm and ready. ${welcomeMsg ? '(Captured greeting)' : '(No greeting)'}`)
+    console.log(`[Pre-warm] Session ${session.id} is now fully warm and ready in awaitingPlanApproval state.`)
   } catch (err) {
     console.error(`[Pre-warm] Failed to pre-warm session for ${repoName}:`, err)
   }

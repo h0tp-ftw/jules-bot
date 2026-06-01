@@ -80,18 +80,16 @@ export default {
                 initialSkipIds = new Set(info.activities.map((a: any) => a.id))
               }
 
+              if (info.state === 'awaitingPlanApproval') {
+                console.log(`[threadCreate] Automatically approving welcome plan for pre-warmed session ${session.id}`)
+                await session.approve()
+              }
+
               await prisma.preWarmedSession.delete({
                 where: { id: preWarmed.id },
               })
               usedPreWarmed = true
               console.log(`[threadCreate] Consumed pre-warmed session ${session.id} for repo ${repoName}`)
-
-              // If there's a stored welcome message, send it now
-              if (preWarmed.welcomeMessage) {
-                await thread.send(`🤖 **Pre-warm Greeting:**\n${preWarmed.welcomeMessage}`)
-                // Add a note to the prompt to tell Jules not to repeat the greeting
-                promptWithMetadata = `[System Note: Your pre-warm welcome message has already been displayed to the user. Do not repeat it. Proceed directly to analyzing the issue.]\n\n${promptWithMetadata}`
-              }
             } catch (err) {
               console.error(`[threadCreate] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
             }
