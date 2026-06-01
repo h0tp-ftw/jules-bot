@@ -51,9 +51,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     try {
       await command.execute(interaction)
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      await interaction.reply({ content: '❌ There was an error executing this command!', ephemeral: true })
+      const errorMsg = err instanceof Error ? err.stack || err.message : String(err)
+      await interaction.reply({
+        content: `❌ **There was an error executing this command:**\n\`\`\`ts\n${errorMsg.slice(0, 1800)}\n\`\`\``,
+        ephemeral: true,
+      })
     }
   } else {
     // Pass other interactions (buttons) to interactionCreate event

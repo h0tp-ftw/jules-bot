@@ -92,9 +92,10 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         }
       }
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error(`Error in Jules stream for thread ${thread.id}:`, err)
-    await thread.send('⚠️ **An error occurred during the diagnostic analysis session.**')
+    const errorMsg = err instanceof Error ? err.stack || err.message : String(err)
+    await thread.send(`⚠️ **An error occurred during the diagnostic analysis session:**\n\`\`\`ts\n${errorMsg.slice(0, 1800)}\n\`\`\``)
   } finally {
     activeStreams.delete(thread.id)
   }
