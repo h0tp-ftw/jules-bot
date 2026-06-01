@@ -1,8 +1,9 @@
 import { ThreadChannel, Events } from 'discord.js'
-import { prisma, YAML_GUILDS } from '../config.js'
+import { prisma, YAML_GUILDS, PRE_WARMED_SESSIONS } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { runJulesStream } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
+import { replenishPool } from '../lib/jules/PreWarmedManager.js'
 
 export default {
   name: Events.ThreadCreate,
@@ -58,11 +59,36 @@ export default {
       const threadTitle = thread.name
       const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterMessage.content}`
 
-      const session = await JulesClient.createSession({
-        prompt: promptWithMetadata,
-        repo: repoName,
-        title: thread.name,
-      })
+      let session: any = null
+      let usedPreWarmed = false
+
+      if (PRE_WARMED_SESSIONS.enabled) {
+        const preWarmed = await prisma.preWarmedSession.findFirst({
+          where: { repoName },
+          orderBy: { createdAt: 'asc' },
+        })
+
+        if (preWarmed) {
+          try {
+            session = JulesClient.getSession(preWarmed.id)
+            await prisma.preWarmedSession.delete({
+              where: { id: preWarmed.id },
+            })
+            usedPreWarmed = true
+            console.log(`[threadCreate] Consumed pre-warmed session ${session.id} for repo ${repoName}`)
+          } catch (err) {
+            console.error(`[threadCreate] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
+          }
+        }
+      }
+
+      if (!session) {
+        session = await JulesClient.createSession({
+          prompt: promptWithMetadata,
+          repo: repoName,
+          title: thread.name,
+        })
+      }
 
       await prisma.debugSession.create({
         data: {
@@ -75,6 +101,13 @@ export default {
 
       // Start processing events in the background
       runJulesStream(session.id, thread, streamManager)
+
+      if (usedPreWarmed) {
+        await session.send(promptWithMetadata)
+        replenishPool(repoName).catch(() => {})
+      } else if (PRE_WARMED_SESSIONS.enabled) {
+        replenishPool(repoName).catch(() => {})
+      }
     } catch (err) {
       console.error('Failed to start Jules session:', err)
       await thread.send('❌ **Failed to start Jules diagnostic session. Please verify your repository configuration and permissions.**')

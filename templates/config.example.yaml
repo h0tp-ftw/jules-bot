@@ -28,3 +28,9 @@ auto_reject:
   enabled: false
   message: "Please double check the proposed changes and ensure no unnecessary modifications are made."
 
+# Pre-warmed session pool configuration (opt-in)
+pre_warmed_sessions:
+  enabled: false
+  pool_size: 1
+
+

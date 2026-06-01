@@ -6,6 +6,7 @@ import threadCreateEvt from './events/threadCreate.js'
 import messageCreateEvt from './events/messageCreate.js'
 import interactionCreateEvt from './events/interactionCreate.js'
 import { StreamManager } from './lib/streams/StreamManager.js'
+import { initPreWarmedPools } from './lib/jules/PreWarmedManager.js'
 
 if (!DISCORD_TOKEN || DISCORD_TOKEN === 'YOUR_DISCORD_TOKEN') {
   console.error('Error: DISCORD_TOKEN is not configured in .env file.')
@@ -81,6 +82,11 @@ client.once('ready', async () => {
   } catch (error) {
     console.error('Failed to register application commands:', error)
   }
+
+  // Initialize pre-warmed pools
+  initPreWarmedPools().catch((err) => {
+    console.error('Failed to initialize pre-warmed pools:', err)
+  })
 })
 
 // Connect to SQLite and Login bot

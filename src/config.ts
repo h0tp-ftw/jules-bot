@@ -44,6 +44,10 @@ try {
       ...(defaultYaml.auto_reject || {}),
       ...(userYaml.auto_reject || {}),
     },
+    pre_warmed_sessions: {
+      ...(defaultYaml.pre_warmed_sessions || {}),
+      ...(userYaml.pre_warmed_sessions || {}),
+    },
   }
 } catch (err) {
   console.error('Failed to parse config files, using empty defaults:', err)
@@ -135,6 +139,14 @@ try {
 }
 
 export const SOUL_PERSONALITY = soulContent
+
+// Pre-warmed session config
+const preWarmed = yamlConfig.pre_warmed_sessions || {}
+export const PRE_WARMED_SESSIONS = {
+  enabled: typeof preWarmed.enabled === 'boolean' ? preWarmed.enabled : false,
+  pool_size: typeof preWarmed.pool_size === 'number' ? preWarmed.pool_size : 1
+}
+
 
 
 
