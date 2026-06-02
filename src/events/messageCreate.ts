@@ -79,6 +79,19 @@ export default {
     try {
       const session = JulesClient.getSession(sessionRecord.julesSessionId)
 
+      // Check session state to prevent sending messages to dead sessions
+      const sessionInfo = await session.info()
+      if (
+        sessionInfo.outcome?.state === 'completed' ||
+        sessionInfo.state === 'failed' ||
+        sessionInfo.state === 'completed'
+      ) {
+        await message.reply(
+          '⚠️ This session has ended. Jules cannot receive new messages on a completed session. Please open a new thread.'
+        )
+        return
+      }
+
       // Rehydrate stream listener if not already active (e.g. after bot restart)
       if (!activeStreams.has(thread.id)) {
         runJulesStream(sessionRecord.julesSessionId, thread, streamManager)
