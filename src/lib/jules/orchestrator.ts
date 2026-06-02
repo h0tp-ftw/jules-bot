@@ -346,6 +346,8 @@ export async function initializeJulesSession(
   let session: any = null
   let usedPreWarmed = false
   let initialSkipIds: Set<string> | undefined
+  let welcomePlanRejected = false
+  let welcomeFeedback = ''
 
   const threadConfig = getEffectiveConfig(thread, starterMessage.member)
   
@@ -448,7 +450,7 @@ export async function initializeJulesSession(
                   .setTitle(`${threadConfig.bot_emoji || '🐙'} Jules Proposed Diagnostic Plan`)
                   .setDescription(stepsText.slice(0, 4000) || 'No details provided.')
                   .setColor(0x00ae86)
-                  .setFooter({ text: 'Plan auto-approved from pre-warmed session.' })
+                  .setFooter({ text: 'Welcome plan auto-rejected.' })
 
                 await thread.send({ embeds: [embed] })
               }
@@ -457,8 +459,13 @@ export async function initializeJulesSession(
         }
 
         if (info.state === 'awaitingPlanApproval') {
-          console.log(`[initializeJulesSession] Automatically approving welcome plan for pre-warmed session ${session.id}`)
-          await session.approve()
+          welcomePlanRejected = true
+          welcomeFeedback = threadConfig.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
+          autoRejectedSessions.add(session.id)
+
+          const botEmoji = threadConfig.bot_emoji || '🐙'
+          console.log(`[initializeJulesSession] Automatically rejecting welcome plan for pre-warmed session ${session.id}`)
+          await thread.send(`${botEmoji} **Plan Automatically Rejected:**\nFeedback: "${welcomeFeedback}"\nJules is revising the plan...`)
         }
 
         await prisma.preWarmedSession.delete({
@@ -499,7 +506,11 @@ export async function initializeJulesSession(
     await thread.send('🚀 **Ready session found! Processing your issue...**')
     thread.sendTyping().catch(() => {})
     
-    await session.send(promptWithMetadata)
+    let finalPrompt = promptWithMetadata
+    if (welcomePlanRejected) {
+      finalPrompt = `[System Directive: Auto-Reject Plan]\nFeedback: "${welcomeFeedback}"\n\nUser Issue/Prompt:\n${promptWithMetadata}`
+    }
+    await session.send(finalPrompt)
     replenishPool(repoName, contextKey).catch(() => {})
   } else if (usePool) {
     replenishPool(repoName, contextKey).catch(() => {})
