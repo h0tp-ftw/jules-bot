@@ -117,6 +117,8 @@ try {
 export const DIAGNOSTIC_PROMPT = yamlConfig.diagnostic_prompt || 
 `You are a diagnostic help agent talking to a non-technical user. Explain bugs and issues in simple, everyday terms. Avoid developer jargon, deep technical code details, and raw code blocks unless explicitly requested. Use clear analogies to explain what is wrong. Do NOT modify the codebase, write code changes, or create pull requests unless a program-level bug is identified and the user explicitly asks for a code fix. Keep conversation interactive, clear, and friendly.`
 
+export const BOT_EMOJI = typeof yamlConfig.bot_emoji === 'string' ? yamlConfig.bot_emoji : '🐙'
+
 // Access Control config
 const accessControl = yamlConfig.access_control || {}
 export const ALLOW_ALL = typeof accessControl.allow_all === 'boolean'
@@ -344,6 +346,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
   default_repo?: string
   default_branch?: string
   ignore_prefix?: string
+  bot_emoji: string
 } {
   const channelsConfig = yamlConfig.channels || {}
   
@@ -515,6 +518,19 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     resolvedIgnorePrefix = roleOverride.ignore_prefix
   }
 
+  // Resolve bot_emoji
+  let resolvedBotEmoji = BOT_EMOJI
+
+  if (parentOverride && (parentOverride as any).bot_emoji) {
+    resolvedBotEmoji = (parentOverride as any).bot_emoji
+  }
+  if (threadOverride && (threadOverride as any).bot_emoji) {
+    resolvedBotEmoji = (threadOverride as any).bot_emoji
+  }
+  if (roleOverride && roleOverride.bot_emoji) {
+    resolvedBotEmoji = roleOverride.bot_emoji
+  }
+
   return {
     diagnostic_prompt: resolvedPrompt,
     access_control: resolvedAccessControl,
@@ -527,6 +543,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     default_repo: resolvedDefaultRepo,
     default_branch: resolvedDefaultBranch,
     ignore_prefix: resolvedIgnorePrefix,
+    bot_emoji: resolvedBotEmoji,
   }
 }
 

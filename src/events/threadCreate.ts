@@ -108,7 +108,8 @@ export default {
 
     const repoName: string = repo
     const branchName = threadConfig.default_branch || 'main'
-    await thread.send(`🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`)
+    const botEmoji = threadConfig.bot_emoji || '🐙'
+    await thread.send(`${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`)
 
     try {
       await initializeJulesSession(thread, repoName, branchName, streamManager)

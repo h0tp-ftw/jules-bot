@@ -1,5 +1,5 @@
 import { Client, ThreadChannel } from 'discord.js'
-import { prisma } from '../../config.js'
+import { prisma, getEffectiveConfig } from '../../config.js'
 
 export class StreamManager {
   private buffers = new Map<string, string[]>()
@@ -19,7 +19,9 @@ export class StreamManager {
 
     let statusMessageId = session.statusMessageId
     if (!statusMessageId) {
-      const msg = await thread.send('🐙 **Jules is analyzing the workspace...**\n\n*Logs will stream below:*')
+      const threadConfig = getEffectiveConfig(thread)
+      const botEmoji = threadConfig.bot_emoji || '🐙'
+      const msg = await thread.send(`${botEmoji} **Jules is analyzing the workspace...**\n\n*Logs will stream below:*`)
       statusMessageId = msg.id
       await prisma.debugSession.update({
         where: { threadId },
@@ -48,7 +50,10 @@ export class StreamManager {
     const buf = this.buffers.get(thread.id) ?? []
     const activeStep = this.activeSteps.get(thread.id)
 
-    let content = '🐙 **Jules is analyzing the workspace...**\n\n'
+    const threadConfig = getEffectiveConfig(thread)
+    const botEmoji = threadConfig.bot_emoji || '🐙'
+
+    let content = `${botEmoji} **Jules is analyzing the workspace...**\n\n`
     if (activeStep) {
       content += `⚡ **Current Step:**\n> **${activeStep.title}**\n`
       if (activeStep.description) {

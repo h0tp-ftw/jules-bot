@@ -92,16 +92,17 @@ export default {
           }
 
           const branches = selectedRepo.branches || []
+          const threadConfig = getEffectiveConfig(thread, interaction.member)
+          const botEmoji = threadConfig.bot_emoji || '🐙'
           if (branches.length === 0) {
             const branch = selectedRepo.defaultBranch || 'main'
             await interaction.editReply({
-              content: `🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branch}\`...`,
+              content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branch}\`...`,
               components: [],
             })
 
             await initializeJulesSession(thread, repoName, branch, streamManager)
           } else {
-            const threadConfig = getEffectiveConfig(thread, interaction.member)
             const defaultBranch = threadConfig.default_branch || selectedRepo.defaultBranch || 'main'
             const options: StringSelectMenuOptionBuilder[] = []
 
@@ -269,8 +270,10 @@ export default {
             return
           }
 
+          const threadConfig = getEffectiveConfig(thread, interaction.member)
+          const botEmoji = threadConfig.bot_emoji || '🐙'
           await interaction.update({
-            content: `🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`,
+            content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`,
             components: [],
           })
 
@@ -302,15 +305,17 @@ export default {
 
         if (kind === 'modal-branch') {
           const branchName = interaction.fields.getTextInputValue('branch-input')
+          const threadConfig = getEffectiveConfig(thread, interaction.member)
+          const botEmoji = threadConfig.bot_emoji || '🐙'
 
           if (interaction.isFromMessage()) {
             await interaction.update({
-              content: `🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`,
+              content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`,
               components: [],
             })
           } else {
             await interaction.reply({
-              content: `🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`,
+              content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`,
               ephemeral: true,
             })
           }
@@ -343,14 +348,16 @@ export default {
           // Check for exact case-insensitive match
           const exactMatch = branches.find(b => b === query || b.toLowerCase() === query.toLowerCase())
           if (exactMatch) {
+            const threadConfig = getEffectiveConfig(thread, interaction.member)
+            const botEmoji = threadConfig.bot_emoji || '🐙'
             if (interaction.isFromMessage()) {
               await interaction.editReply({
-                content: `🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${exactMatch}\`...`,
+                content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${exactMatch}\`...`,
                 components: [],
               })
             } else {
               await interaction.editReply({
-                content: `🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${exactMatch}\`...`,
+                content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${exactMatch}\`...`,
               })
             }
             await initializeJulesSession(thread, repoName, exactMatch, streamManager)
