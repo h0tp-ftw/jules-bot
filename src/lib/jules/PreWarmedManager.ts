@@ -58,19 +58,26 @@ export async function preWarmSession(repoName: string, contextKey: string | null
 
     console.log(`[Pre-warm] Created session ${session.id} for ${repoName} (Context: ${contextKey || 'global'}). Waiting for ready...`)
 
-    // Wait until it's out of queued state, and if it proposes an initial plan, reject it with the nudge feedback
+    // Wait until it's out of queued state
     let info = await session.info()
     while (info && info.state === 'queued') {
       await new Promise((resolve) => setTimeout(resolve, 5000))
       info = await session.info()
     }
 
-    while (info && info.state === 'awaitingPlanApproval' && config.auto_reject?.enabled) {
-      const feedback = config.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
-      console.log(`[Pre-warm] Plan proposed for session ${session.id}. Automatically rejecting with welcome feedback: "${feedback}"`)
+    // If it proposed a plan (awaitingPlanApproval) OR auto-approved it (inProgress), 
+    // and auto-reject is enabled, we MUST send the rejection directive to force it back to diagnostic conversation.
+    let rejectedInWarming = false
+    while (info && (info.state === 'awaitingPlanApproval' || info.state === 'inProgress') && config.auto_reject?.enabled && !rejectedInWarming) {
+      const hasPlan = info.plan || info.activities?.some((a: any) => a.type === 'planGenerated')
+      if (!hasPlan && info.state === 'inProgress') break // Already working on something non-plan related? Unlikely for pre-warming
+
+      console.log(`[Pre-warm] Plan detected (State: ${info.state}) for session ${session.id}. Automatically rejecting with welcome feedback...`)
       
+      const feedback = config.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
       const rejectionPrompt = `[System Directive: Auto-Reject Plan]\nFeedback: "${feedback}"\n\nPlease do not create or refine an implementation plan. Respond directly to the previous prompt and do not try to refine the implementation plan.`
       await session.send(rejectionPrompt)
+      rejectedInWarming = true
 
       // Wait again for it to process the rejection
       info = await session.info()

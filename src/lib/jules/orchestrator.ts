@@ -434,6 +434,19 @@ export async function initializeJulesSession(
         
         const info = await session.info()
         console.log(`[initializeJulesSession] Session ${session.id} state at consumption: ${info.state}`)
+        
+        // If auto-reject is enabled, we check if there's any active plan to reject
+        if (threadConfig.auto_reject?.enabled) {
+          const hasActivePlan = !!info.plan
+          const hasPlanInHistory = info.activities?.some((a: any) => a.type === 'planGenerated')
+          
+          if (hasActivePlan || hasPlanInHistory || info.state === 'awaitingPlanApproval') {
+            console.log(`[initializeJulesSession] Plan detected for session ${session.id} (Active: ${hasActivePlan}, History: ${hasPlanInHistory}, State: ${info.state}). Marking for rejection.`)
+            welcomePlanRejected = true
+            welcomeFeedback = threadConfig.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
+          }
+        }
+
         if (info.activities) {
           console.log(`[initializeJulesSession] Session ${session.id} has ${info.activities.length} activities.`)
           initialSkipIds = new Set(info.activities.map((a: any) => a.id))
@@ -448,7 +461,7 @@ export async function initializeJulesSession(
             } else if (activity.type === 'planGenerated') {
               const plan = activity.plan || (activity as any).planGenerated?.plan
               if (plan && plan.steps) {
-                console.log(`[initializeJulesSession] Found plan in history for session ${session.id}`)
+                console.log(`[initializeJulesSession] Rendering plan from history for session ${session.id}`)
                 const stepsText = plan.steps
                   .map((step: any, i: number) => `**${i + 1}.** ${step.title}`)
                   .join('\n')
@@ -457,24 +470,12 @@ export async function initializeJulesSession(
                   .setTitle(`${threadConfig.bot_emoji || '🐙'} Jules Proposed Diagnostic Plan`)
                   .setDescription(stepsText.slice(0, 4000) || 'No details provided.')
                   .setColor(0x00ae86)
-                  .setFooter({ text: 'Welcome plan detected in history.' })
+                  .setFooter({ text: 'Welcome plan detected.' })
 
                 await thread.send({ embeds: [embed] })
-                
-                if (threadConfig.auto_reject?.enabled) {
-                  welcomePlanRejected = true
-                  welcomeFeedback = threadConfig.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
-                }
               }
             }
           }
-        }
-
-        // Check if we are CURRENTLY awaiting approval, even if no plan activity was in history (edge case)
-        if (!welcomePlanRejected && info.state === 'awaitingPlanApproval' && threadConfig.auto_reject?.enabled) {
-          console.log(`[initializeJulesSession] Session ${session.id} is in awaitingPlanApproval state. Marking for rejection.`)
-          welcomePlanRejected = true
-          welcomeFeedback = threadConfig.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
         }
 
         if (welcomePlanRejected) {
