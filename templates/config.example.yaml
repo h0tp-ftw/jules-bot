@@ -8,6 +8,7 @@ bot_emoji: "🐙"
 # Access Control Allowlist
 access_control:
   allow_all: false
+  silent: false # If true, unauthorized interactions are silently ignored
   allowed_users:
     - "445586026451173377"
   allowed_roles: []

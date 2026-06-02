@@ -44,8 +44,14 @@ client.on(Events.MessageCreate, (message) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
     // Check permission
-    if (!await hasPermission(interaction.member, interaction.user, interaction.channel)) {
-      await interaction.reply({ content: '❌ **You do not have permission to run bot commands.**', ephemeral: true })
+    const { authorized, silent } = await hasPermission(interaction.member, interaction.user, interaction.channel)
+    if (!authorized) {
+      if (!silent) {
+        await interaction.reply({ content: '❌ **You do not have permission to run bot commands.**', ephemeral: true })
+      } else {
+        // Just ignore it, or reply with ephemeral hidden message if it's a command to not leave it hanging
+        await interaction.reply({ content: '❌ **You do not have permission to run bot commands.**', ephemeral: true })
+      }
       return
     }
 

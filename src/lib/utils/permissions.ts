@@ -5,7 +5,7 @@ export async function hasPermission(
   member: GuildMember | APIInteractionGuildMember | null,
   user: User,
   thread?: any
-): Promise<boolean> {
+): Promise<{ authorized: boolean, silent: boolean }> {
   let creatorMember: any = null
   if (thread && thread.guild && thread.ownerId) {
     creatorMember = thread.guild.members.cache.get(thread.ownerId)
@@ -20,28 +20,31 @@ export async function hasPermission(
 
   const config = getEffectiveConfig(thread, creatorMember)
   const ac = config.access_control
+  const isSilent = ac.silent === true
 
-  if (ac.allow_all) return true
+  if (ac.allow_all) return { authorized: true, silent: isSilent }
 
   // Thread creator always has permission to access their own thread
-  if (thread && user.id === thread.ownerId) return true
+  if (thread && user.id === thread.ownerId) return { authorized: true, silent: isSilent }
 
   // Check user ID allowlist
-  if (ac.allowed_users.includes(user.id)) return true
+  if (ac.allowed_users.includes(user.id)) return { authorized: true, silent: isSilent }
 
   // Check role allowlist
   if (member && ac.allowed_roles.length > 0) {
     // member can be GuildMember or APIInteractionGuildMember (in API interactions)
+    let hasRole = false
     if ('roles' in member) {
       if (Array.isArray(member.roles)) {
         // APIInteractionGuildMember has roles as string[]
-        return member.roles.some((roleId) => ac.allowed_roles.includes(roleId))
+        hasRole = member.roles.some((roleId) => ac.allowed_roles.includes(roleId))
       } else {
         // GuildMember has roles as collection
-        return member.roles.cache.some((role) => ac.allowed_roles.includes(role.id))
+        hasRole = member.roles.cache.some((role) => ac.allowed_roles.includes(role.id))
       }
     }
+    if (hasRole) return { authorized: true, silent: isSilent }
   }
 
-  return false
+  return { authorized: false, silent: isSilent }
 }

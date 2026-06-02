@@ -31,8 +31,11 @@ export default {
     if (!sessionRecord) return
 
     // Enforce permission checks
-    if (!await hasPermission(message.member, message.author, thread)) {
-      await message.reply('❌ **You do not have permission to interact with this diagnostic session.**')
+    const { authorized, silent } = await hasPermission(message.member, message.author, thread)
+    if (!authorized) {
+      if (!silent) {
+        await message.reply('❌ **You do not have permission to interact with this diagnostic session.**')
+      }
       return
     }
 
