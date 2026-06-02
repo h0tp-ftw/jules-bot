@@ -1,7 +1,9 @@
 import { jules } from '@google/jules-sdk'
 import { JULES_API_KEY, getBootstrapContext, getEffectiveConfig } from '../../config.js'
 
-const client = JULES_API_KEY ? jules.with({ apiKey: JULES_API_KEY }) : jules
+const client = JULES_API_KEY 
+  ? jules.with({ apiKey: JULES_API_KEY, config: { requestTimeoutMs: 180000 } }) 
+  : jules.with({ config: { requestTimeoutMs: 180000 } })
 
 export interface CreateSessionOptions {
   prompt: string
