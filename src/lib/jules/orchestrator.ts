@@ -456,16 +456,26 @@ export async function initializeJulesSession(
                   .setFooter({ text: 'Welcome plan auto-rejected.' })
 
                 await thread.send({ embeds: [embed] })
+                
+                // If auto-reject is enabled, we mark this for rejection even if Jules 
+                // already moved past the 'awaitingPlanApproval' state.
+                if (threadConfig.auto_reject?.enabled) {
+                  welcomePlanRejected = true
+                  welcomeFeedback = threadConfig.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
+                }
               }
             }
           }
         }
 
-        if (info.state === 'awaitingPlanApproval' && threadConfig.auto_reject?.enabled) {
+        // Only do this if it wasn't already caught by the activity loop above
+        if (!welcomePlanRejected && info.state === 'awaitingPlanApproval' && threadConfig.auto_reject?.enabled) {
           welcomePlanRejected = true
           welcomeFeedback = threadConfig.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
-          autoRejectedSessions.add(session.id)
+        }
 
+        if (welcomePlanRejected) {
+          autoRejectedSessions.add(session.id)
           const botEmoji = threadConfig.bot_emoji || '🐙'
           console.log(`[initializeJulesSession] Automatically rejecting welcome plan for pre-warmed session ${session.id}`)
           await thread.send(`${botEmoji} **Plan Automatically Rejected:**\nFeedback: "${welcomeFeedback}"\nJules is revising the plan...`)
