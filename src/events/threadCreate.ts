@@ -1,7 +1,7 @@
 import { ThreadChannel, Events, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder } from 'discord.js'
 import { prisma, YAML_GUILDS, getEffectiveConfig } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { initializeJulesSession } from '../lib/jules/orchestrator.js'
+import { initializeJulesSession, updateReaction } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 
 export default {
@@ -38,10 +38,13 @@ export default {
       console.error('Failed to fetch starter message:', err)
     }
 
-    if (!starterMessage || !starterMessage.content) {
+    if (!starterMessage || (!starterMessage.content && starterMessage.attachments.size === 0)) {
       await thread.send('⚠️ **Could not retrieve the starter message for this thread. Please reply with your issue details to start.**')
       return
     }
+
+    // Add reaction to indicate session setup has acknowledged the message
+    await updateReaction(starterMessage, 'queued').catch(() => {})
 
     const threadConfig = getEffectiveConfig(thread, starterMessage.member, repo)
     const isInteractive = threadConfig.interactive_selection || !repo
