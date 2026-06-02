@@ -4,10 +4,11 @@ import { prisma } from '../../config.js'
 export class StreamManager {
   private buffers = new Map<string, string[]>()
   private timers = new Map<string, NodeJS.Timeout>()
+  private activeSteps = new Map<string, { title: string; description?: string }>()
 
   constructor(private client: Client) {}
 
-  async handleProgress(threadId: string, line: string) {
+  async handleProgress(threadId: string, title: string, description?: string) {
     const session = await prisma.debugSession.findUnique({
       where: { threadId },
     })
@@ -26,10 +27,15 @@ export class StreamManager {
       })
     }
 
+    const logLine = description ? `[${title}] ${description}` : title
     const buf = this.buffers.get(threadId) ?? []
-    buf.push(line)
+    if (buf.length === 0 || buf[buf.length - 1] !== logLine) {
+      buf.push(logLine)
+    }
     const bufSlice = buf.slice(-15)
     this.buffers.set(threadId, bufSlice)
+
+    this.activeSteps.set(threadId, { title, description })
 
     if (this.timers.has(threadId)) return
 
@@ -40,10 +46,20 @@ export class StreamManager {
   private async flush(thread: ThreadChannel, statusMessageId: string) {
     this.timers.delete(thread.id)
     const buf = this.buffers.get(thread.id) ?? []
-    const content =
-      '🐙 **Jules is analyzing the workspace...**\n\n**Latest steps:**\n```\n' +
-      buf.join('\n') +
-      '\n```'
+    const activeStep = this.activeSteps.get(thread.id)
+
+    let content = '🐙 **Jules is analyzing the workspace...**\n\n'
+    if (activeStep) {
+      content += `⚡ **Current Step:**\n> **${activeStep.title}**\n`
+      if (activeStep.description) {
+        content += `> *${activeStep.description}*\n`
+      }
+      content += '\n'
+    }
+
+    if (buf.length > 0) {
+      content += '**Execution Logs:**\n```\n' + buf.join('\n') + '\n```'
+    }
 
     try {
       const msg = await thread.messages.fetch(statusMessageId)
@@ -87,5 +103,6 @@ export class StreamManager {
 
     // Clean up in-memory buffer
     this.buffers.delete(threadId)
+    this.activeSteps.delete(threadId)
   }
 }

@@ -430,6 +430,30 @@ export async function initializeJulesSession(
         const info = await session.info()
         if (info.activities) {
           initialSkipIds = new Set(info.activities.map((a: any) => a.id))
+          for (const activity of info.activities) {
+            if (activity.type === 'agentMessaged') {
+              const message = activity.message || (activity as any).agentMessaged?.message || ''
+              if (message) {
+                const resolved = resolveMessageEmojis(thread.client, message)
+                await thread.send(resolved.slice(0, 2000))
+              }
+            } else if (activity.type === 'planGenerated') {
+              const plan = activity.plan || (activity as any).planGenerated?.plan
+              if (plan && plan.steps) {
+                const stepsText = plan.steps
+                  .map((step: any, i: number) => `**${i + 1}.** ${step.title}`)
+                  .join('\n')
+
+                const embed = new EmbedBuilder()
+                  .setTitle('🐙 Jules Proposed Diagnostic Plan')
+                  .setDescription(stepsText.slice(0, 4000) || 'No details provided.')
+                  .setColor(0x00ae86)
+                  .setFooter({ text: 'Plan auto-approved from pre-warmed session.' })
+
+                await thread.send({ embeds: [embed] })
+              }
+            }
+          }
         }
 
         if (info.state === 'awaitingPlanApproval') {
