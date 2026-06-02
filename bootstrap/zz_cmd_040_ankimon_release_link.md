@@ -1,6 +1,0 @@
-## Latest Experimental Release
-Latest Tag: `2.02-E`
-Download Link: [ankimon-2.02-E.ankiaddon](https://github.com/h0tp-ftw/ankimon/releases/download/2.02-E/ankimon-2.02-E-anki21-ankiweb.ankiaddon)
-
-### Usage Instructions
-- **Fixed Issues**: If an issue is already fixed in this version, **directly provide the download link provided above** in your response to the user. Encourage users who are on the outdated AnkiWeb version to upgrade to this Experimental version to receive the latest fixes and features immediately.
