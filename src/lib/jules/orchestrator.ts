@@ -434,6 +434,12 @@ export async function initializeJulesSession(
         
         const info = await session.info()
         console.log(`[initializeJulesSession] Session ${session.id} state at consumption: ${info.state}`)
+
+        if (info && info.state === 'failed') {
+          console.warn(`[initializeJulesSession] Session ${session.id} is in failed state. Discarding and creating new session.`)
+          await prisma.preWarmedSession.delete({ where: { id: preWarmed.id } })
+          throw new Error(`Pre-warmed session ${session.id} is in failed state`)
+        }
         
         // If auto-reject is enabled, we check if there's any active plan to reject
         if (threadConfig.auto_reject?.enabled) {

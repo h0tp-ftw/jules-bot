@@ -65,6 +65,13 @@ export async function preWarmSession(repoName: string, contextKey: string | null
       info = await session.info()
     }
 
+    if (info && info.state === 'failed') {
+      const reason = (info as any).reason || 'Unknown failure during initialization'
+      console.error(`[Pre-warm] Session ${session.id} failed during initialization: ${reason}`)
+      await prisma.preWarmedSession.delete({ where: { id: session.id } })
+      return
+    }
+
     // If it proposed a plan (awaitingPlanApproval) OR auto-approved it (inProgress), 
     // and auto-reject is enabled, we MUST send the rejection directive to force it back to diagnostic conversation.
     let rejectedInWarming = false
@@ -85,6 +92,19 @@ export async function preWarmSession(repoName: string, contextKey: string | null
         await new Promise((resolve) => setTimeout(resolve, 5000))
         info = await session.info()
       }
+
+      if (info && info.state === 'failed') {
+        const reason = (info as any).reason || 'Unknown failure during plan rejection'
+        console.error(`[Pre-warm] Session ${session.id} failed after rejection: ${reason}`)
+        await prisma.preWarmedSession.delete({ where: { id: session.id } })
+        return
+      }
+    }
+
+    // Final state check before marking as ready
+    if (info && info.state === 'failed') {
+      await prisma.preWarmedSession.delete({ where: { id: session.id } })
+      return
     }
 
     // Mark as ready in DB
