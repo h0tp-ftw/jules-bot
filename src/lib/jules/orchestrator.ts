@@ -398,7 +398,10 @@ export async function initializeJulesSession(
     }
   }
 
-  if (usePool) {
+  // Pre-warmed sessions are currently only created for the default branch (usually 'main')
+  const isDefaultBranch = branchName === (threadConfig.default_branch || 'main')
+
+  if (usePool && isDefaultBranch) {
     let preWarmed = await prisma.preWarmedSession.findFirst({
       where: { repoName, ready: true, contextKey },
       orderBy: { createdAt: 'asc' },

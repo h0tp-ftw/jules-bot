@@ -4,10 +4,23 @@ import { JulesClient } from '../lib/jules/JulesClient.js'
 import { initializeJulesSession, updateReaction } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 
+const pendingThreads = new Set<string>()
+
 export default {
   name: Events.ThreadCreate,
   async execute(thread: ThreadChannel, streamManager: StreamManager) {
     if (!thread.guildId) return
+
+    console.log(`[Event: ThreadCreate] New thread "${thread.name}" (${thread.id}) created in parent ${thread.parentId}`)
+
+    if (pendingThreads.has(thread.id)) {
+      console.log(`[Event: ThreadCreate] Thread ${thread.id} is already being initialized. Skipping.`)
+      return
+    }
+    pendingThreads.add(thread.id)
+
+    // Remove from set after a timeout to prevent memory leak
+    setTimeout(() => pendingThreads.delete(thread.id), 30000)
 
     // Check config.yaml overrides first
     const yamlGuild = YAML_GUILDS[thread.guildId]

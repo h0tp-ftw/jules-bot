@@ -41,6 +41,12 @@ client.on(Events.MessageCreate, (message) => {
   messageCreateEvt.execute(message, streamManager)
 })
 
+client.on(Events.Raw, (packet) => {
+  if (['MESSAGE_CREATE', 'THREAD_CREATE'].includes(packet.t)) {
+    console.log(`[Raw Debug] Received packet: ${packet.t}`)
+  }
+})
+
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
     // Check permission
