@@ -151,24 +151,16 @@ export async function initPreWarmedPools() {
 
   const channelsConfig = yamlConfig.channels || {}
   for (const channelId of Object.keys(channelsConfig)) {
-    const conf = getEffectiveConfig({ id: channelId, parentId: channelId })
-    if (conf.pre_warmed_sessions.enabled) {
+    const channelVal = channelsConfig[channelId]
+    if (channelVal && typeof channelVal === 'object' && channelVal.pre_warmed_sessions?.enabled === true) {
       contexts.push(channelId)
     }
   }
 
   const rolesConfig = yamlConfig.roles || {}
   for (const roleKey of Object.keys(rolesConfig)) {
-    const mockMember = {
-      roles: {
-        cache: {
-          has: (key: string) => key === roleKey,
-          some: (fn: any) => fn({ name: roleKey, id: roleKey })
-        }
-      }
-    }
-    const conf = getEffectiveConfig(null, mockMember)
-    if (conf.pre_warmed_sessions.enabled) {
+    const roleVal = rolesConfig[roleKey]
+    if (roleVal && typeof roleVal === 'object' && roleVal.pre_warmed_sessions?.enabled === true) {
       contexts.push(roleKey)
     }
   }

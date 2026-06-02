@@ -2,31 +2,31 @@
 
 Here is a list of Discord emojis you can use. Use them in the exact format shown which is with the XML tags. Brackets below are NOT to be used - they are as comments for your reference.
 
-<a:Waving:1484349150664331447> 
+<a:wave:1511236496978350260>
 (Pikachu waving hi)
 
-<:Surprised:1484349148713975818> 
+<:surprised:1511236476615266324>
 (Pikachu surprised, like the meme)
 
-<a:Minecraft:1484349146604245113> 
+<a:mine:1511236461842923530>
 (Pikachu mining with a pickaxe)
 
-<:Lurking:1484349144289116171> 
+<:lurk:1511236473901416500>
 (Pikachu lurking in grass)
 
-<:Gleaming:1484349142456209438> 
+<:pleading:1511236479777636402>
 (Pikachu gleaming with happiness)
 
-<:FacePalm:1484349140455526641> 
+<:facepalm:1511236484236054548>
 (Pikachu facepalming)
 
-<:Detective:1484349139327258827> 
+<:detective:1511236465252630618>
 (Pikachu with a detective lens)
 
-<:Dead:1484349137154474138> 
+<:dead:1511236471288496248>
 (Pikachu lying down as if tired and dead)
 
-<:Coffee:1484349135774683296>
+<:coffee:1511236468226523287>
 (Pikachu holding a cup of coffee)
 
 DO NOT deviate from this format, or you will send a literal string of text instead of an emoji.
