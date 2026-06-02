@@ -100,12 +100,14 @@ client.once(Events.ClientReady, async () => {
       else if (t === 'listening') type = ActivityType.Listening
       else if (t === 'competing') type = ActivityType.Competing
       else if (t === 'streaming') type = ActivityType.Streaming
+      else if (t === 'custom') type = ActivityType.Custom
     }
 
     client.user?.setPresence({
       status: (presence.status || 'online') as PresenceStatusData,
       activities: presence.activity ? [{
-        name: presence.activity,
+        name: type === ActivityType.Custom ? 'Custom Status' : presence.activity,
+        state: type === ActivityType.Custom ? presence.activity : undefined,
         type: type,
         url: presence.url
       }] : []

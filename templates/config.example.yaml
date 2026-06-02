@@ -44,7 +44,7 @@ ignore_prefix: ""
 presence:
   status: "online" # online, idle, dnd, invisible
   activity: "Diagnostic Logs"
-  activity_type: "Watching" # Playing, Watching, Listening, Competing, Streaming
+  activity_type: "Watching" # Playing, Watching, Listening, Competing, Streaming, Custom
   # url: "https://twitch.tv/..." # Required for Streaming type
 
 # Pre-warmed session pool configuration (opt-in)
