@@ -65,10 +65,12 @@ export async function preWarmSession(repoName: string, contextKey: string | null
       info = await session.info()
     }
 
-    if (info && info.state === 'awaitingPlanApproval') {
+    while (info && info.state === 'awaitingPlanApproval' && config.auto_reject?.enabled) {
       const feedback = config.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
       console.log(`[Pre-warm] Plan proposed for session ${session.id}. Automatically rejecting with welcome feedback: "${feedback}"`)
-      await session.send(feedback)
+      
+      const rejectionPrompt = `[System Directive: Auto-Reject Plan]\nFeedback: "${feedback}"\n\nPlease do not create or refine an implementation plan. Respond directly to the previous prompt and do not try to refine the implementation plan.`
+      await session.send(rejectionPrompt)
 
       // Wait again for it to process the rejection
       info = await session.info()
@@ -151,16 +153,24 @@ export async function initPreWarmedPools() {
 
   const channelsConfig = yamlConfig.channels || {}
   for (const channelId of Object.keys(channelsConfig)) {
-    const channelVal = channelsConfig[channelId]
-    if (channelVal && typeof channelVal === 'object' && channelVal.pre_warmed_sessions?.enabled === true) {
+    const conf = getEffectiveConfig({ id: channelId, parentId: channelId })
+    if (conf.pre_warmed_sessions.enabled) {
       contexts.push(channelId)
     }
   }
 
   const rolesConfig = yamlConfig.roles || {}
   for (const roleKey of Object.keys(rolesConfig)) {
-    const roleVal = rolesConfig[roleKey]
-    if (roleVal && typeof roleVal === 'object' && roleVal.pre_warmed_sessions?.enabled === true) {
+    const mockMember = {
+      roles: {
+        cache: {
+          has: (key: string) => key === roleKey,
+          some: (fn: any) => fn({ name: roleKey, id: roleKey })
+        }
+      }
+    }
+    const conf = getEffectiveConfig(null, mockMember)
+    if (conf.pre_warmed_sessions.enabled) {
       contexts.push(roleKey)
     }
   }

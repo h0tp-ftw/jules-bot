@@ -458,7 +458,7 @@ export async function initializeJulesSession(
           }
         }
 
-        if (info.state === 'awaitingPlanApproval') {
+        if (info.state === 'awaitingPlanApproval' && threadConfig.auto_reject?.enabled) {
           welcomePlanRejected = true
           welcomeFeedback = threadConfig.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
           autoRejectedSessions.add(session.id)
@@ -506,11 +506,20 @@ export async function initializeJulesSession(
     await thread.send('🚀 **Ready session found! Processing your issue...**')
     thread.sendTyping().catch(() => {})
     
-    let finalPrompt = promptWithMetadata
     if (welcomePlanRejected) {
-      finalPrompt = `[System Directive: Auto-Reject Plan]\nFeedback: "${welcomeFeedback}"\n\nUser Issue/Prompt:\n${promptWithMetadata}`
+      // Send rejection separately BEFORE the user prompt
+      const rejectionDirective = `[System Directive: Auto-Reject Plan]\nFeedback: "${welcomeFeedback}"\n\nPlease do not create or refine an implementation plan. Respond directly to the user's prompt.`
+      await session.send(rejectionDirective)
+      
+      // Wait for it to process the rejection so it's ready for the prompt
+      for (let i = 0; i < 10; i++) {
+        const info = await session.info()
+        if (info.state !== 'queued') break
+        await new Promise(r => setTimeout(r, 1000))
+      }
     }
-    await session.send(finalPrompt)
+    
+    await session.send(promptWithMetadata)
     replenishPool(repoName, contextKey).catch(() => {})
   } else if (usePool) {
     replenishPool(repoName, contextKey).catch(() => {})
