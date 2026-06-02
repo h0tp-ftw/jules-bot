@@ -58,11 +58,24 @@ export async function preWarmSession(repoName: string, contextKey: string | null
 
     console.log(`[Pre-warm] Created session ${session.id} for ${repoName} (Context: ${contextKey || 'global'}). Waiting for ready...`)
 
-    // Wait until it's out of queued state, and if it proposes an initial plan, approve it
+    // Wait until it's out of queued state, and if it proposes an initial plan, reject it with the nudge feedback
     let info = await session.info()
     while (info && info.state === 'queued') {
       await new Promise((resolve) => setTimeout(resolve, 5000))
       info = await session.info()
+    }
+
+    if (info && info.state === 'awaitingPlanApproval') {
+      const feedback = config.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
+      console.log(`[Pre-warm] Plan proposed for session ${session.id}. Automatically rejecting with welcome feedback: "${feedback}"`)
+      await session.send(feedback)
+
+      // Wait again for it to process the rejection
+      info = await session.info()
+      while (info && info.state === 'queued') {
+        await new Promise((resolve) => setTimeout(resolve, 5000))
+        info = await session.info()
+      }
     }
 
     // Mark as ready in DB
@@ -74,7 +87,7 @@ export async function preWarmSession(repoName: string, contextKey: string | null
       }
     })
 
-    console.log(`[Pre-warm] Session ${session.id} is now fully warm and ready in awaitingPlanApproval state.`)
+    console.log(`[Pre-warm] Session ${session.id} is now fully warm and ready in ${info?.state || 'unknown'} state.`)
   } catch (err) {
     console.error(`[Pre-warm] Failed to pre-warm session for ${repoName} (Context: ${contextKey || 'global'}):`, err)
   }
