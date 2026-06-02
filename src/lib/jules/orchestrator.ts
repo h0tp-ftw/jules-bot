@@ -130,9 +130,20 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         const targetMessage = await getLastHumanMessage(thread)
         await updateReaction(targetMessage, 'queued')
       }
+      let queuedWaitMs = 0
+      const maxQueuedWaitMs = 2 * 60 * 1000 // 2 minutes max
       while (info && info.state === 'queued') {
+        if (queuedWaitMs >= maxQueuedWaitMs) {
+          console.error(`Session ${sessionId} stuck in queued state for too long. Aborting.`)
+          await thread.send('⚠️ Jules session timed out waiting to start. Please open a new thread.')
+          activeStreams.delete(thread.id)
+          busySessions.delete(thread.id)
+          stopTyping()
+          return
+        }
         console.log(`Session ${sessionId} is queued. Waiting 5s...`)
         await new Promise((resolve) => setTimeout(resolve, 5000))
+        queuedWaitMs += 5000
         info = await session.info()
       }
 
