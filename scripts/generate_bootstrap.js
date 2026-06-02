@@ -3,7 +3,7 @@ import path from 'path'
 import { execSync } from 'child_process'
 
 const bootstrapDir = path.resolve('bootstrap')
-const piecesDir = path.join(bootstrapDir, 'bootstrap_pieces')
+const piecesDir = path.resolve('bootstrap_pieces')
 const staticDir = path.join(piecesDir, 'static')
 
 console.log('🧹 Cleaning old bootstrap markdown files...')

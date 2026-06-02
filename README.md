@@ -87,11 +87,11 @@ JulesBot uses **Docling** to parse files like PDFs, images, DOCX, etc., into Mar
    Docling downloads layout and OCR model weights (approx. 300-500MB) on its first run. To prevent the bot from hitting process execution timeouts during active threads, run a manual conversion to cache the models beforehand:
    - **Windows:**
      ```powershell
-     .venv\Scripts\python scripts/parse_document.py bootstrap/bootstrap_pieces/image.png
+     .venv\Scripts\python scripts/parse_document.py bootstrap_pieces/image.png
      ```
    - **macOS / Linux:**
      ```bash
-     .venv/bin/python scripts/parse_document.py bootstrap/bootstrap_pieces/image.png
+     .venv/bin/python scripts/parse_document.py bootstrap_pieces/image.png
      ```
 
 ### 3. Configure Settings & Environment
