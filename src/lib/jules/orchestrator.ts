@@ -528,7 +528,9 @@ export async function initializeJulesSession(
   // We will only delete it AFTER the user prompt is sent and we want to allow a NEW rejection.
 
   // Start processing events in the background
-  runJulesStream(session.id, thread, streamManager, initialSkipIds)
+  if (!usedPreWarmed) {
+    runJulesStream(session.id, thread, streamManager, initialSkipIds)
+  }
 
   if (usedPreWarmed) {
     await thread.send('🚀 **Ready session found! Processing your issue...**')
@@ -561,6 +563,10 @@ export async function initializeJulesSession(
     
     console.log(`[initializeJulesSession] Sending user prompt to session ${session.id}`)
     await session.send(promptWithMetadata)
+    
+    // Start processing events in the background for prewarmed session after sending the prompt
+    runJulesStream(session.id, thread, streamManager, initialSkipIds)
+    
     replenishPool(repoName, contextKey).catch(() => {})
   } else if (usePool) {
     replenishPool(repoName, contextKey).catch(() => {})

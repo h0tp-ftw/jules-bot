@@ -137,6 +137,10 @@ export const ALLOWED_ROLES: string[] = Array.isArray(accessControl.allowed_roles
   ? accessControl.allowed_roles.map(String)
   : (process.env.ALLOWED_ROLES || '').split(',').map((s: string) => s.trim()).filter(Boolean)
 
+export const ALLOW_SILENT = typeof accessControl.silent === 'boolean'
+  ? accessControl.silent
+  : false
+
 // Reactions mapping config
 const defaultReactions = {
   queued: "⏳",
@@ -333,6 +337,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     allow_all: boolean
     allowed_users: string[]
     allowed_roles: string[]
+    silent: boolean
   }
   reactions: Record<string, string>
   auto_reject: {
@@ -430,6 +435,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     allow_all: ALLOW_ALL,
     allowed_users: ALLOWED_USERS,
     allowed_roles: ALLOWED_ROLES,
+    silent: ALLOW_SILENT,
   }
 
   const parentAC = (parentOverride as any).access_control || {}
@@ -447,6 +453,10 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
   if (Array.isArray(parentAC.allowed_roles)) resolvedAccessControl.allowed_roles = parentAC.allowed_roles.map(String)
   if (Array.isArray(threadAC.allowed_roles)) resolvedAccessControl.allowed_roles = threadAC.allowed_roles.map(String)
   if (Array.isArray(roleAC.allowed_roles)) resolvedAccessControl.allowed_roles = roleAC.allowed_roles.map(String)
+
+  if (typeof parentAC.silent === 'boolean') resolvedAccessControl.silent = parentAC.silent
+  if (typeof threadAC.silent === 'boolean') resolvedAccessControl.silent = threadAC.silent
+  if (typeof roleAC.silent === 'boolean') resolvedAccessControl.silent = roleAC.silent
 
   const resolvedPrompt = (roleOverride as any).diagnostic_prompt ||
     (threadOverride as any).diagnostic_prompt ||
