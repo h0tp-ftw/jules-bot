@@ -474,6 +474,11 @@ export async function initializeJulesSession(
         await prisma.preWarmedSession.delete({
           where: { id: preWarmed.id },
         })
+        
+        // Even if we rejected a plan during pre-warming/initialization, 
+        // we want to ensure the FIRST plan generated for the USER'S ACTUAL PROMPT is also rejected.
+        autoRejectedSessions.delete(session.id)
+        
         usedPreWarmed = true
         console.log(`[initializeJulesSession] Consumed pre-warmed session ${session.id} for repo ${repoName} (Context: ${contextKey || 'global'})`)
       } catch (err) {
