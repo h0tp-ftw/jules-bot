@@ -1,4 +1,5 @@
 ## Open Pull Requests
+- #483 - Fix crash and bugs related to Monthly Challenge check (@h0tp-ftw) [3 files: database_manager.py,pokemon_trade.py,test_monthly_challenge_fixes.py]
 - #480 - feat: implement startup integrity check for outdated addon updates (@h0tp-ftw) [1 files: __init__.py]
 - #478 - Fix: TypeError in xp_share_gain_exp by using dot notation for PokemonObject attributes (@h0tp-ftw) [1 files: trainer_functions.py]
 - #474 - No changes needed: fix already present (@h0tp-ftw) [0 files: ]
@@ -18,4 +19,3 @@
 - #403 - Fix random pokemon generation hang and UI generation settings constraint (@h0tp-ftw) [2 files: encounter_functions.py,settings_window.py]
 - #400 - docs: create comprehensive developer guide (@h0tp-ftw) [0 files: ]
 - #396 - Fix SettingsWindow saving logic and changed_settings detection (@h0tp-ftw) [1 files: settings_window.py]
-- #393 - Updated Pokedex.json and pokemon.csv 01.05.2026 (@hakimh2) [2 files: pokedex.json,pokemon.csv]

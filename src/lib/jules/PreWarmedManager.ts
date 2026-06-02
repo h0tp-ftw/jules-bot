@@ -115,11 +115,9 @@ export async function replenishPool(repoName: string, contextKey: string | null 
 export async function initPreWarmedPools() {
   console.log('[Pool] Initializing pre-warmed session pools...')
 
-  // Cleanup any sessions that didn't finish warming from a previous run
+  // Cleanup all pre-warmed sessions on startup to ensure a fresh pool
   try {
-    const deleted = await prisma.preWarmedSession.deleteMany({
-      where: { ready: false }
-    })
+    const deleted = await prisma.preWarmedSession.deleteMany({})
     if (deleted.count > 0) {
       console.log(`[Pool] Cleaned up ${deleted.count} stale pre-warmed sessions.`)
     }
