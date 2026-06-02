@@ -4,6 +4,7 @@ import { StreamManager } from '../streams/StreamManager.js'
 import { prisma, getEffectiveConfig, yamlConfig } from '../../config.js'
 import { replenishPool } from './PreWarmedManager.js'
 import { processAttachments } from '../utils/docling.js'
+import { resolveMessageEmojis } from '../utils/emojis.js'
 
 export const activeStreams = new Set<string>()
 export const autoRejectedSessions = new Set<string>()
@@ -223,11 +224,12 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             const message = activity.message || (activity as any).agentMessaged?.message || ''
             if (message) {
               agentMessagedInThisTurn = true
+              const resolved = resolveMessageEmojis(thread.client, message)
               const lastHuman = await getLastHumanMessage(thread)
               if (lastHuman) {
-                await lastHuman.reply(message.slice(0, 2000))
+                await lastHuman.reply(resolved.slice(0, 2000))
               } else {
-                await thread.send(message.slice(0, 2000))
+                await thread.send(resolved.slice(0, 2000))
               }
             }
             break
