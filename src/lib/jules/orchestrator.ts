@@ -433,9 +433,12 @@ export async function initializeJulesSession(
         session = JulesClient.getSession(preWarmed.id)
         
         const info = await session.info()
+        console.log(`[initializeJulesSession] Session ${session.id} state at consumption: ${info.state}`)
         if (info.activities) {
+          console.log(`[initializeJulesSession] Session ${session.id} has ${info.activities.length} activities.`)
           initialSkipIds = new Set(info.activities.map((a: any) => a.id))
           for (const activity of info.activities) {
+            console.log(`[initializeJulesSession] Activity Type: ${activity.type}`)
             if (activity.type === 'agentMessaged') {
               const message = activity.message || (activity as any).agentMessaged?.message || ''
               if (message) {
@@ -445,6 +448,7 @@ export async function initializeJulesSession(
             } else if (activity.type === 'planGenerated') {
               const plan = activity.plan || (activity as any).planGenerated?.plan
               if (plan && plan.steps) {
+                console.log(`[initializeJulesSession] Found plan in history for session ${session.id}`)
                 const stepsText = plan.steps
                   .map((step: any, i: number) => `**${i + 1}.** ${step.title}`)
                   .join('\n')
@@ -453,12 +457,10 @@ export async function initializeJulesSession(
                   .setTitle(`${threadConfig.bot_emoji || '🐙'} Jules Proposed Diagnostic Plan`)
                   .setDescription(stepsText.slice(0, 4000) || 'No details provided.')
                   .setColor(0x00ae86)
-                  .setFooter({ text: 'Welcome plan auto-rejected.' })
+                  .setFooter({ text: 'Welcome plan detected in history.' })
 
                 await thread.send({ embeds: [embed] })
                 
-                // If auto-reject is enabled, we mark this for rejection even if Jules 
-                // already moved past the 'awaitingPlanApproval' state.
                 if (threadConfig.auto_reject?.enabled) {
                   welcomePlanRejected = true
                   welcomeFeedback = threadConfig.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
@@ -468,8 +470,9 @@ export async function initializeJulesSession(
           }
         }
 
-        // Only do this if it wasn't already caught by the activity loop above
+        // Check if we are CURRENTLY awaiting approval, even if no plan activity was in history (edge case)
         if (!welcomePlanRejected && info.state === 'awaitingPlanApproval' && threadConfig.auto_reject?.enabled) {
+          console.log(`[initializeJulesSession] Session ${session.id} is in awaitingPlanApproval state. Marking for rejection.`)
           welcomePlanRejected = true
           welcomeFeedback = threadConfig.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
         }
@@ -484,10 +487,6 @@ export async function initializeJulesSession(
         await prisma.preWarmedSession.delete({
           where: { id: preWarmed.id },
         })
-        
-        // Even if we rejected a plan during pre-warming/initialization, 
-        // we want to ensure the FIRST plan generated for the USER'S ACTUAL PROMPT is also rejected.
-        autoRejectedSessions.delete(session.id)
         
         usedPreWarmed = true
         console.log(`[initializeJulesSession] Consumed pre-warmed session ${session.id} for repo ${repoName} (Context: ${contextKey || 'global'})`)
@@ -517,6 +516,10 @@ export async function initializeJulesSession(
     },
   })
 
+  // Ensure autoRejectedSessions entry persists if we rejected a plan during initialization,
+  // so runJulesStream doesn't try to reject the SAME plan again.
+  // We will only delete it AFTER the user prompt is sent and we want to allow a NEW rejection.
+
   // Start processing events in the background
   runJulesStream(session.id, thread, streamManager, initialSkipIds)
 
@@ -527,6 +530,7 @@ export async function initializeJulesSession(
     if (welcomePlanRejected) {
       // Send rejection separately BEFORE the user prompt
       const rejectionDirective = `[System Directive: Auto-Reject Plan]\nFeedback: "${welcomeFeedback}"\n\nPlease do not create or refine an implementation plan. Respond directly to the user's prompt.`
+      console.log(`[initializeJulesSession] Sending auto-rejection directive for session ${session.id}`)
       await session.send(rejectionDirective)
       
       // Wait for it to process the rejection so it's ready for the prompt
@@ -535,8 +539,13 @@ export async function initializeJulesSession(
         if (info.state !== 'queued') break
         await new Promise(r => setTimeout(r, 1000))
       }
+      
+      // Now that we've rejected the welcome plan, we clear the set so that the 
+      // FIRST plan for the ACTUAL prompt can also be rejected.
+      autoRejectedSessions.delete(session.id)
     }
     
+    console.log(`[initializeJulesSession] Sending user prompt to session ${session.id}`)
     await session.send(promptWithMetadata)
     replenishPool(repoName, contextKey).catch(() => {})
   } else if (usePool) {
