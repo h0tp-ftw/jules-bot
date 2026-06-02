@@ -59,10 +59,42 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 
 ### 1. Prerequisites
 - **Node.js** (v18+)
+- **Python 3.10+** (Required for Docling document/image parsing)
 - A Discord Application token with proper intents.
 - A Google Jules API Key.
 
-### 2. Configure Settings & Environment
+### 2. Set Up Python Virtual Environment & Docling
+JulesBot uses **Docling** to parse files like PDFs, images, DOCX, etc., into Markdown. Setting up a local virtual environment (`.venv`) is required.
+
+1. **Create Virtual Environment:**
+   ```bash
+   python -m venv .venv
+   ```
+
+2. **Install Docling:**
+   *Tip: We recommend installing the CPU-only version of PyTorch to save disk space and resources on your bot host.*
+
+   - **Windows:**
+     ```powershell
+     .venv\Scripts\pip install docling --extra-index-url https://download.pytorch.org/whl/cpu
+     ```
+   - **macOS / Linux:**
+     ```bash
+     .venv/bin/pip install docling --extra-index-url https://download.pytorch.org/whl/cpu
+     ```
+
+3. **Pre-hydrate weights (Optional but Highly Recommended):**
+   Docling downloads layout and OCR model weights (approx. 300-500MB) on its first run. To prevent the bot from hitting process execution timeouts during active threads, run a manual conversion to cache the models beforehand:
+   - **Windows:**
+     ```powershell
+     .venv\Scripts\python scripts/parse_document.py bootstrap/bootstrap_pieces/image.png
+     ```
+   - **macOS / Linux:**
+     ```bash
+     .venv/bin/python scripts/parse_document.py bootstrap/bootstrap_pieces/image.png
+     ```
+
+### 3. Configure Settings & Environment
 1. Run the interactive setup script to copy default templates to their local gitignored files:
    ```bash
    npm run setup
@@ -82,13 +114,13 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 
 
 
-### 3. Initialize Database
+### 4. Initialize Database
 ```bash
 npm install
 npm run db:migrate -- --name init
 ```
 
-### 4. Start the Bot
+### 5. Start the Bot
 ```bash
 # Run in development mode (hot reload)
 npm run dev
