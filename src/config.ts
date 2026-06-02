@@ -106,6 +106,10 @@ try {
       ...(defaultYaml.roles || {}),
       ...(userYaml.roles || {}),
     },
+    presence: {
+      ...(defaultYaml.presence || {}),
+      ...(userYaml.presence || {}),
+    },
   }
 } catch (err) {
   console.error('Failed to parse config files, using empty defaults:', err)

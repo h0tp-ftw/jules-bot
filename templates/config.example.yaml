@@ -40,6 +40,13 @@ interactive_selection: false
 # Messages starting with this prefix will be completely ignored by the bot (e.g. "!")
 ignore_prefix: ""
 
+# Bot Presence Configuration
+presence:
+  status: "online" # online, idle, dnd, invisible
+  activity: "Diagnostic Logs"
+  activity_type: "Watching" # Playing, Watching, Listening, Competing, Streaming
+  # url: "https://twitch.tv/..." # Required for Streaming type
+
 # Pre-warmed session pool configuration (opt-in)
 pre_warmed_sessions:
   enabled: false

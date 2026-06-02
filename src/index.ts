@@ -1,5 +1,5 @@
-import { Client, GatewayIntentBits, Collection, REST, Routes, Events } from 'discord.js'
-import { DISCORD_TOKEN, prisma } from './config.js'
+import { Client, GatewayIntentBits, Collection, REST, Routes, Events, ActivityType, PresenceStatusData } from 'discord.js'
+import { DISCORD_TOKEN, prisma, yamlConfig } from './config.js'
 import linkRepoCmd from './commands/link-repo.js'
 import setupForumCmd from './commands/setup-forum.js'
 import approveCmd from './commands/approve.js'
@@ -89,6 +89,28 @@ client.once(Events.ClientReady, async () => {
   initPreWarmedPools().catch((err) => {
     console.error('Failed to initialize pre-warmed pools:', err)
   })
+
+  // Set configurable presence
+  const presence = yamlConfig.presence || {}
+  if (presence.status || presence.activity) {
+    let type = ActivityType.Playing
+    if (presence.activity_type) {
+      const t = presence.activity_type.toLowerCase()
+      if (t === 'watching') type = ActivityType.Watching
+      else if (t === 'listening') type = ActivityType.Listening
+      else if (t === 'competing') type = ActivityType.Competing
+      else if (t === 'streaming') type = ActivityType.Streaming
+    }
+
+    client.user?.setPresence({
+      status: (presence.status || 'online') as PresenceStatusData,
+      activities: presence.activity ? [{
+        name: presence.activity,
+        type: type,
+        url: presence.url
+      }] : []
+    })
+  }
 })
 
 // Connect to SQLite and Login bot
