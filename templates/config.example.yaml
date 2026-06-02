@@ -30,7 +30,7 @@ guilds:
 # Auto-reject proposed plans once per session
 auto_reject:
   enabled: false
-  message: "Please double check the proposed changes and ensure no unnecessary modifications are made."
+  message: "Please do not create or refine an implementation plan. Respond directly to the previous prompt and do not try to refine the implementation plan."
 
 # Force interactive repository and branch selection on thread creation.
 # If true, shows an embed with select menus allowing developers to pick a connected repo and branch.
