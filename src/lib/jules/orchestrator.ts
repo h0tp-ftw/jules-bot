@@ -162,7 +162,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             const shouldAutoReject = autoReject.enabled && !autoRejectedSessions.has(sessionId)
             if (shouldAutoReject) {
               autoRejectedSessions.add(sessionId)
-              const feedback = autoReject.message || 'Please revise the proposed plan.'
+              const feedback = autoReject.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
               await thread.send(`🤖 **Plan Automatically Rejected:**\nFeedback: "${feedback}"\nJules is revising the plan...`)
               await session.send(feedback)
               const target = await getLastHumanMessage(thread)
