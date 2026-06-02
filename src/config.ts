@@ -321,7 +321,7 @@ try {
 }
 
 // Resolve dynamic effective configuration for a given thread or channel
-export function getEffectiveConfig(thread?: any, member?: any): {
+export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: string): {
   diagnostic_prompt: string
   access_control: {
     allow_all: boolean
@@ -341,6 +341,9 @@ export function getEffectiveConfig(thread?: any, member?: any): {
   agents_personality?: string
   soul_personality?: string
   interactive_selection: boolean
+  default_repo?: string
+  default_branch?: string
+  ignore_prefix?: string
 } {
   const channelsConfig = yamlConfig.channels || {}
   
@@ -461,6 +464,57 @@ export function getEffectiveConfig(thread?: any, member?: any): {
         ? (parentOverride as any).interactive_selection
         : INTERACTIVE_SELECTION
 
+  // Resolve default_repo and default_branch
+  let resolvedDefaultRepo = yamlConfig.default_repo || dbDefaultRepo
+  let resolvedDefaultBranch = yamlConfig.default_branch
+
+  if (thread && thread.guildId) {
+    const yamlGuild = YAML_GUILDS[thread.guildId]
+    if (yamlGuild?.default_repo) {
+      resolvedDefaultRepo = yamlGuild.default_repo
+    }
+    if ((yamlGuild as any)?.default_branch) {
+      resolvedDefaultBranch = (yamlGuild as any).default_branch
+    }
+  }
+
+  // Parent channel override
+  if (parentOverride && (parentOverride as any).default_repo) {
+    resolvedDefaultRepo = (parentOverride as any).default_repo
+  }
+  if (parentOverride && (parentOverride as any).default_branch) {
+    resolvedDefaultBranch = (parentOverride as any).default_branch
+  }
+
+  // Thread override
+  if (threadOverride && (threadOverride as any).default_repo) {
+    resolvedDefaultRepo = (threadOverride as any).default_repo
+  }
+  if (threadOverride && (threadOverride as any).default_branch) {
+    resolvedDefaultBranch = (threadOverride as any).default_branch
+  }
+
+  // Role override
+  if (roleOverride && roleOverride.default_repo) {
+    resolvedDefaultRepo = roleOverride.default_repo
+  }
+  if (roleOverride && roleOverride.default_branch) {
+    resolvedDefaultBranch = roleOverride.default_branch
+  }
+
+  // Resolve ignore_prefix
+  let resolvedIgnorePrefix = yamlConfig.ignore_prefix
+
+  if (parentOverride && (parentOverride as any).ignore_prefix) {
+    resolvedIgnorePrefix = (parentOverride as any).ignore_prefix
+  }
+  if (threadOverride && (threadOverride as any).ignore_prefix) {
+    resolvedIgnorePrefix = (threadOverride as any).ignore_prefix
+  }
+  if (roleOverride && roleOverride.ignore_prefix) {
+    resolvedIgnorePrefix = roleOverride.ignore_prefix
+  }
+
   return {
     diagnostic_prompt: resolvedPrompt,
     access_control: resolvedAccessControl,
@@ -470,6 +524,9 @@ export function getEffectiveConfig(thread?: any, member?: any): {
     agents_personality: resolvedAgents,
     soul_personality: resolvedSoul,
     interactive_selection: resolvedInteractive,
+    default_repo: resolvedDefaultRepo,
+    default_branch: resolvedDefaultBranch,
+    ignore_prefix: resolvedIgnorePrefix,
   }
 }
 

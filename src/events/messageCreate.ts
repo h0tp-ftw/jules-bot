@@ -1,8 +1,9 @@
 import { Message, Events, ThreadChannel } from 'discord.js'
-import { prisma } from '../config.js'
+import { prisma, getEffectiveConfig } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { runJulesStream, activeStreams, updateReaction, busySessions, queuedMessages } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
+import { processAttachments } from '../lib/utils/docling.js'
 
 import { hasPermission } from '../lib/utils/permissions.js'
 
@@ -17,6 +18,11 @@ export default {
 
     const thread = message.channel as ThreadChannel
 
+    const threadConfig = getEffectiveConfig(thread, message.member)
+    if (threadConfig.ignore_prefix && message.content && message.content.startsWith(threadConfig.ignore_prefix)) {
+      return
+    }
+
     // Check if thread maps to a Jules session
     const sessionRecord = await prisma.debugSession.findUnique({
       where: { threadId: thread.id },
@@ -28,6 +34,17 @@ export default {
     if (!await hasPermission(message.member, message.author, thread)) {
       await message.reply('❌ **You do not have permission to interact with this diagnostic session.**')
       return
+    }
+
+    // Process attachments if any
+    let messageContent = message.content || ''
+    if (message.attachments.size > 0) {
+      const attachmentList = Array.from(message.attachments.values()).map(att => ({
+        name: att.name,
+        url: att.url
+      }))
+      const parsedAttachments = await processAttachments(attachmentList, thread)
+      messageContent += parsedAttachments
     }
 
     const isBusy = activeStreams.has(thread.id) && busySessions.has(thread.id)
@@ -45,7 +62,7 @@ export default {
         queued.push({
           authorNickname,
           messageTime,
-          content: message.content,
+          content: messageContent,
         })
 
         await message.reply('⏳ **Jules is currently busy. Your message has been queued and will be sent in the next turn.**')
@@ -72,7 +89,7 @@ export default {
       // Send the user prompt to Jules with metadata
       const authorNickname = message.member?.displayName || message.author.username
       const messageTime = message.createdAt.toISOString()
-      const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}]\n\n${message.content}`
+      const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}]\n\n${messageContent}`
 
       await session.send(promptWithMetadata)
     } catch (err) {

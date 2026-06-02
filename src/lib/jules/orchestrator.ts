@@ -3,6 +3,7 @@ import { JulesClient } from './JulesClient.js'
 import { StreamManager } from '../streams/StreamManager.js'
 import { prisma, getEffectiveConfig, yamlConfig } from '../../config.js'
 import { replenishPool } from './PreWarmedManager.js'
+import { processAttachments } from '../utils/docling.js'
 
 export const activeStreams = new Set<string>()
 export const autoRejectedSessions = new Set<string>()
@@ -319,7 +320,7 @@ export async function initializeJulesSession(
   streamManager: StreamManager
 ) {
   const starterMessage = await thread.fetchStarterMessage()
-  if (!starterMessage || !starterMessage.content) {
+  if (!starterMessage || (!starterMessage.content && starterMessage.attachments.size === 0)) {
     await thread.send('⚠️ **Could not retrieve the starter message for this thread. Please reply with your issue details to start.**')
     return
   }
@@ -328,7 +329,17 @@ export async function initializeJulesSession(
   const messageTime = starterMessage.createdAt.toISOString()
   const threadTitle = thread.name
   
-  const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterMessage.content}`
+  let starterContent = starterMessage.content || ''
+  if (starterMessage.attachments.size > 0) {
+    const attachmentList = Array.from(starterMessage.attachments.values()).map(att => ({
+      name: att.name,
+      url: att.url
+    }))
+    const parsedAttachments = await processAttachments(attachmentList, thread)
+    starterContent += parsedAttachments
+  }
+
+  const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterContent}`
 
   let session: any = null
   let usedPreWarmed = false

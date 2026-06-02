@@ -26,3 +26,9 @@ scratch_*
 
 # Local profiles
 profiles/
+
+# Virtual Environment
+.venv/
+
+# Scratch directory
+scratch/

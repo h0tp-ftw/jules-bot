@@ -34,6 +34,9 @@ auto_reject:
 # If false, automatically proceeds with default repository and branch.
 interactive_selection: false
 
+# Messages starting with this prefix will be completely ignored by the bot (e.g. "!")
+ignore_prefix: ""
+
 # Pre-warmed session pool configuration (opt-in)
 pre_warmed_sessions:
   enabled: false

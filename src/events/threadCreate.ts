@@ -43,23 +43,43 @@ export default {
       return
     }
 
-    const threadConfig = getEffectiveConfig(thread, starterMessage.member)
+    const threadConfig = getEffectiveConfig(thread, starterMessage.member, repo)
     const isInteractive = threadConfig.interactive_selection || !repo
 
     if (isInteractive) {
       try {
         const repos = await JulesClient.getConnectedRepos()
         if (repos.length > 0) {
+          const options: StringSelectMenuOptionBuilder[] = []
+          const defaultRepo = threadConfig.default_repo
+
+          if (defaultRepo) {
+            options.push(
+              new StringSelectMenuOptionBuilder()
+                .setLabel(`⭐ Default: ${defaultRepo}`)
+                .setValue(defaultRepo)
+            )
+          }
+
+          const filteredRepos = defaultRepo
+            ? repos.filter(r => r.name !== defaultRepo)
+            : repos
+
+          const maxOtherRepos = 25 - options.length
+          const displayRepos = filteredRepos.slice(0, maxOtherRepos)
+
+          for (const r of displayRepos) {
+            options.push(
+              new StringSelectMenuOptionBuilder()
+                .setLabel(r.name)
+                .setValue(r.name)
+            )
+          }
+
           const select = new StringSelectMenuBuilder()
             .setCustomId(`select-repo:${thread.id}`)
             .setPlaceholder('Choose a repository...')
-            .addOptions(
-              repos.slice(0, 25).map(r => 
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(r.name)
-                  .setValue(r.name)
-              )
-            )
+            .addOptions(options)
 
           const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)
           await thread.send({
@@ -67,9 +87,14 @@ export default {
             components: [row],
           })
           return
+        } else {
+          await thread.send('⚠️ **No connected repositories found in your Jules account.** Please connect a repository first.')
+          return
         }
       } catch (err) {
         console.error('Failed to load connected repos for selection:', err)
+        await thread.send('❌ **Failed to load connected repositories for selection.** Please verify your connection to Google Jules and try again.')
+        return
       }
     }
 
@@ -79,10 +104,11 @@ export default {
     }
 
     const repoName: string = repo
-    await thread.send(`🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\``)
+    const branchName = threadConfig.default_branch || 'main'
+    await thread.send(`🐙 **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`)
 
     try {
-      await initializeJulesSession(thread, repoName, 'main', streamManager)
+      await initializeJulesSession(thread, repoName, branchName, streamManager)
     } catch (err) {
       console.error('Failed to start Jules session:', err)
       await thread.send('❌ **Failed to start Jules diagnostic session. Please verify your repository configuration and permissions.**')
