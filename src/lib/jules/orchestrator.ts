@@ -534,11 +534,18 @@ export async function initializeJulesSession(
       await session.send(rejectionDirective)
       
       // Wait for it to process the rejection so it's ready for the prompt
-      for (let i = 0; i < 10; i++) {
+      console.log(`[initializeJulesSession] Waiting for session ${session.id} to process rejection...`)
+      for (let i = 0; i < 20; i++) {
         const info = await session.info()
-        if (info.state !== 'queued') break
+        if (info.state !== 'queued') {
+          console.log(`[initializeJulesSession] Session ${session.id} finished processing rejection (State: ${info.state})`)
+          break
+        }
         await new Promise(r => setTimeout(r, 1000))
       }
+      
+      // Briefly wait for any immediate follow-up activities to settle
+      await new Promise(r => setTimeout(r, 2000))
       
       // Now that we've rejected the welcome plan, we clear the set so that the 
       // FIRST plan for the ACTUAL prompt can also be rejected.
