@@ -79,15 +79,11 @@ export default {
     try {
       const session = JulesClient.getSession(sessionRecord.julesSessionId)
 
-      // Check session state to prevent sending messages to dead sessions
+      // Check session state to prevent sending messages to failed sessions
       const sessionInfo = await session.info()
-      if (
-        sessionInfo.outcome?.state === 'completed' ||
-        sessionInfo.state === 'failed' ||
-        sessionInfo.state === 'completed'
-      ) {
+      if (sessionInfo.state === 'failed') {
         await message.reply(
-          '⚠️ This session has ended. Jules cannot receive new messages on a completed session. Please open a new thread.'
+          '⚠️ This session has failed. Jules cannot receive new messages on a failed session. Please open a new thread.'
         )
         return
       }
