@@ -8,13 +8,6 @@ import { resolveMessageEmojis } from '../utils/emojis.js'
 
 export const activeStreams = new Set<string>()
 export const autoRejectedSessions = new Set<string>()
-export const busySessions = new Set<string>()
-export interface QueuedMessage {
-  authorNickname: string
-  messageTime: string
-  content: string
-}
-export const queuedMessages = new Map<string, QueuedMessage[]>()
 export const processedActivityIdsMap = new Map<string, Set<string>>()
 
 
@@ -90,7 +83,6 @@ export async function updateReaction(message: Message | null, newStage: string) 
 export async function runJulesStream(sessionId: string, thread: ThreadChannel, streamManager: StreamManager, initialProcessedIds?: Set<string>) {
   if (activeStreams.has(thread.id)) return
   activeStreams.add(thread.id)
-  busySessions.add(thread.id)
 
   let typingInterval: NodeJS.Timeout | null = null
 
@@ -135,8 +127,8 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
       // Wait until session is no longer queued to avoid 404 Not Found error on stream()
       let info = await session.info()
-      if (info && (info.state === 'completed' || info.state === 'failed')) {
-        console.log(`Session ${sessionId} is already ${info.state}. Exiting stream handler.`)
+      if (info && info.state === 'failed') {
+        console.log(`Session ${sessionId} is failed. Exiting stream handler.`)
         stopTyping()
         activeStreams.delete(thread.id)
         return
@@ -152,7 +144,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           console.error(`Session ${sessionId} stuck in queued state for too long. Aborting.`)
           await thread.send('⚠️ Jules session timed out waiting to start. Please open a new thread.')
           activeStreams.delete(thread.id)
-          busySessions.delete(thread.id)
           stopTyping()
           return
         }
@@ -177,7 +168,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         retryDelay = 5000
 
         const type = activity.type
-        let shouldTerminateTurn = false
 
         switch (type) {
           case 'planGenerated': {
@@ -200,7 +190,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
             const target = await getLastHumanMessage(thread)
             await updateReaction(target, 'awaiting_plan_approval')
-            busySessions.delete(thread.id)
 
             const stepsText = plan.steps
               .map((step: any, i: number) => `**${i + 1}.** ${step.title}`)
@@ -231,7 +220,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
               where: { threadId: thread.id },
               data: { planMessageId: msg.id },
             })
-            shouldTerminateTurn = true
             break
           }
 
@@ -251,7 +239,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           case 'agentMessaged': {
             const message = activity.message || (activity as any).agentMessaged?.message || ''
             if (message) {
-              agentMessagedInThisTurn = true
               const resolved = resolveMessageEmojis(thread.client, message)
               const lastHuman = await getLastHumanMessage(thread)
               if (lastHuman) {
@@ -259,8 +246,9 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
               } else {
                 await thread.send(resolved.slice(0, 2000))
               }
+              const target = await getLastHumanMessage(thread)
+              await updateReaction(target, 'responded')
             }
-            shouldTerminateTurn = true
             break
           }
 
@@ -269,8 +257,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             await updateReaction(target, 'completed')
             await streamManager.finalizeSession(thread.id, true)
             activeStreams.delete(thread.id)
-            busySessions.delete(thread.id)
-            queuedMessages.delete(thread.id)
             processedActivityIdsMap.delete(thread.id)
             stopTyping()
             return
@@ -282,27 +268,33 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
             await streamManager.finalizeSession(thread.id, false, reason)
             activeStreams.delete(thread.id)
-            busySessions.delete(thread.id)
-            queuedMessages.delete(thread.id)
             processedActivityIdsMap.delete(thread.id)
             stopTyping()
             return
           }
         }
 
-        if (shouldTerminateTurn) {
-          break
+        // Check session state to update typing status and exit if session ended
+        try {
+          const info = await session.info()
+          if (info.state === 'completed' || info.state === 'failed') {
+            stopTyping()
+            activeStreams.delete(thread.id)
+            processedActivityIdsMap.delete(thread.id)
+            return
+          }
+
+          if (info.state === 'awaitingPlanApproval' || info.state === 'awaitingUserFeedback') {
+            stopTyping()
+          } else {
+            startTyping()
+          }
+        } catch (infoErr) {
+          console.error('Failed to get session info for typing status:', infoErr)
         }
       }
 
-      // Stream loop finished for this turn
-      if (agentMessagedInThisTurn) {
-        const lastHuman = await getLastHumanMessage(thread)
-        await updateReaction(lastHuman, 'responded')
-      }
-
       stopTyping()
-      break
     } catch (err: any) {
       consecutiveFailures++
       console.error(`[Stream Retry ${consecutiveFailures}/${maxRetries}] Error in Jules stream for thread ${thread.id}:`, err)
@@ -322,32 +314,6 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
   }
 
   activeStreams.delete(thread.id)
-  busySessions.delete(thread.id)
-
-  // Flush queued messages if any exist
-  const queued = queuedMessages.get(thread.id)
-  if (queued && queued.length > 0) {
-    queuedMessages.delete(thread.id)
-    try {
-      const combinedPrompt = queued
-        .map((msg) => `[Message details - Author Nickname: ${msg.authorNickname}, Message Time: ${msg.messageTime}]\n\n${msg.content}`)
-        .join('\n\n---\n\n')
-
-      console.log(`[Queue] Flushing ${queued.length} queued messages for thread ${thread.id}`)
-      await thread.send('⚙️ **Sending queued messages to Jules...**')
-
-      const session = JulesClient.getSession(sessionId)
-      await session.send(combinedPrompt)
-
-      // Restart runJulesStream to process the next turn in the background
-      setTimeout(() => {
-        runJulesStream(sessionId, thread, streamManager)
-      }, 1000)
-    } catch (err) {
-      console.error(`Failed to send combined queued messages for thread ${thread.id}:`, err)
-      await thread.send('❌ **Failed to deliver queued messages to Jules.**')
-    }
-  }
 }
 
 export async function initializeJulesSession(

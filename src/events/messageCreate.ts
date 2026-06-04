@@ -1,7 +1,7 @@
 import { Message, Events, ThreadChannel } from 'discord.js'
 import { prisma, getEffectiveConfig } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { runJulesStream, activeStreams, updateReaction, busySessions, queuedMessages } from '../lib/jules/orchestrator.js'
+import { runJulesStream, activeStreams, updateReaction } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 import { processAttachments } from '../lib/utils/docling.js'
 
@@ -50,32 +50,6 @@ export default {
       messageContent += parsedAttachments
     }
 
-    const isBusy = activeStreams.has(thread.id) && busySessions.has(thread.id)
-
-    if (isBusy) {
-      try {
-        const authorNickname = message.member?.displayName || message.author.username
-        const messageTime = message.createdAt.toISOString()
-
-        let queued = queuedMessages.get(thread.id)
-        if (!queued) {
-          queued = []
-          queuedMessages.set(thread.id, queued)
-        }
-        queued.push({
-          authorNickname,
-          messageTime,
-          content: messageContent,
-        })
-
-        await message.reply('⏳ **Jules is currently busy. Your message has been queued and will be sent in the next turn.**')
-      } catch (err) {
-        console.error(`Failed to queue message for thread ${thread.id}:`, err)
-        await message.reply('❌ **Failed to queue message.**')
-      }
-      return
-    }
-
     try {
       const session = JulesClient.getSession(sessionRecord.julesSessionId)
 
@@ -94,6 +68,8 @@ export default {
         // Give the stream listener a moment to initialize
         await new Promise((resolve) => setTimeout(resolve, 1000))
       }
+
+      thread.sendTyping().catch(() => {})
 
       // Update reaction to 'in_progress' immediately
       await updateReaction(message, 'in_progress')
