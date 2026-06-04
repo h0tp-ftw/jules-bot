@@ -534,6 +534,7 @@ export async function initializeJulesSession(
         console.log(`[initializeJulesSession] Consumed pre-warmed session ${session.id} for repo ${repoName} (Context: ${contextKey || 'global'})`)
       } catch (err) {
         console.error(`[initializeJulesSession] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
+        session = null
       }
     }
   }
