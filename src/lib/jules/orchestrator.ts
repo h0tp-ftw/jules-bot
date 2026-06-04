@@ -162,6 +162,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         retryDelay = 5000
 
         const type = activity.type
+        let shouldTerminateTurn = false
 
         switch (type) {
           case 'planGenerated': {
@@ -215,6 +216,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
               where: { threadId: thread.id },
               data: { planMessageId: msg.id },
             })
+            shouldTerminateTurn = true
             break
           }
 
@@ -243,6 +245,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
                 await thread.send(resolved.slice(0, 2000))
               }
             }
+            shouldTerminateTurn = true
             break
           }
 
@@ -267,6 +270,18 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             queuedMessages.delete(thread.id)
             stopTyping()
             return
+          }
+        }
+
+        if (shouldTerminateTurn) {
+          const info = await session.info()
+          if (
+            info.state === 'awaitingPlanApproval' ||
+            info.state === 'awaitingUserFeedback' ||
+            info.state === 'completed' ||
+            info.state === 'failed'
+          ) {
+            break
           }
         }
       }
