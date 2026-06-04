@@ -276,7 +276,20 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
         // Check session state to update typing status and exit if session ended
         try {
-          const info = await session.info()
+          let info = await session.info()
+          const isTurnEndingActivity = type === 'agentMessaged' || type === 'planGenerated'
+          if (isTurnEndingActivity) {
+            const startTime = Date.now()
+            const timeoutMs = 10000 // 10 seconds max
+            while (
+              (info.state === 'inProgress' || info.state === 'planning' || info.state === 'queued') &&
+              Date.now() - startTime < timeoutMs
+            ) {
+              await new Promise((resolve) => setTimeout(resolve, 1000))
+              info = await session.info()
+            }
+          }
+
           if (info.state === 'completed' || info.state === 'failed') {
             stopTyping()
             activeStreams.delete(thread.id)
