@@ -15,6 +15,7 @@ export interface QueuedMessage {
   content: string
 }
 export const queuedMessages = new Map<string, QueuedMessage[]>()
+export const processedActivityIdsMap = new Map<string, Set<string>>()
 
 
 function parseEmojiForReaction(client: any, emojiStr: string): string {
@@ -108,7 +109,21 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
     }
   }
 
-  const processedActivityIds = initialProcessedIds || new Set<string>()
+  let processedActivityIds = processedActivityIdsMap.get(thread.id)
+  if (!processedActivityIds) {
+    processedActivityIds = initialProcessedIds || new Set<string>()
+    processedActivityIdsMap.set(thread.id, processedActivityIds)
+    if (!initialProcessedIds) {
+      try {
+        const session = JulesClient.getSession(sessionId)
+        for await (const act of session.history()) {
+          processedActivityIds.add(act.id)
+        }
+      } catch (err) {
+        console.error(`Failed to pre-populate processed activities for thread ${thread.id}:`, err)
+      }
+    }
+  }
   let consecutiveFailures = 0
   const maxRetries = 20
   let retryDelay = 5000
@@ -256,6 +271,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             activeStreams.delete(thread.id)
             busySessions.delete(thread.id)
             queuedMessages.delete(thread.id)
+            processedActivityIdsMap.delete(thread.id)
             stopTyping()
             return
           }
@@ -268,6 +284,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             activeStreams.delete(thread.id)
             busySessions.delete(thread.id)
             queuedMessages.delete(thread.id)
+            processedActivityIdsMap.delete(thread.id)
             stopTyping()
             return
           }
