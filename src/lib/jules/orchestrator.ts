@@ -274,15 +274,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         }
 
         if (shouldTerminateTurn) {
-          const info = await session.info()
-          if (
-            info.state === 'awaitingPlanApproval' ||
-            info.state === 'awaitingUserFeedback' ||
-            info.state === 'completed' ||
-            info.state === 'failed'
-          ) {
-            break
-          }
+          break
         }
       }
 
