@@ -122,10 +122,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
   while (consecutiveFailures < maxRetries) {
     try {
-      startTyping()
       const session = JulesClient.getSession(sessionId)
-
-      // Wait until session is no longer queued to avoid 404 Not Found error on stream()
       let info = await session.info()
       if (info && info.state === 'failed') {
         console.log(`Session ${sessionId} is failed. Exiting stream handler.`)
@@ -133,6 +130,16 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         activeStreams.delete(thread.id)
         return
       }
+
+      const threadConfig = getEffectiveConfig(thread)
+      const typingMode = threadConfig.typing_indicator_mode || 'until_response'
+
+      if (info && (info.state === 'inProgress' || info.state === 'planning' || info.state === 'queued')) {
+        startTyping()
+      } else {
+        stopTyping()
+      }
+
       if (info && info.state === 'queued') {
         const targetMessage = await getLastHumanMessage(thread)
         await updateReaction(targetMessage, 'queued')
@@ -155,6 +162,9 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
       const targetMessage = await getLastHumanMessage(thread)
       await updateReaction(targetMessage, 'in_progress')
+      if (info && (info.state === 'inProgress' || info.state === 'planning' || info.state === 'queued')) {
+        startTyping()
+      }
 
       let agentMessagedInThisTurn = false
 
@@ -272,38 +282,65 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
             stopTyping()
             return
           }
+
+          case 'userMessaged': {
+            // Handled below for typing indicators
+            break
+          }
         }
 
-        // Check session state to update typing status and exit if session ended
+        // Check session state/typing mode to update typing status
         try {
-          let info = await session.info()
-          const isTurnEndingActivity = type === 'agentMessaged' || type === 'planGenerated'
-          if (isTurnEndingActivity) {
-            const startTime = Date.now()
-            const timeoutMs = 10000 // 10 seconds max
-            while (
-              (info.state === 'inProgress' || info.state === 'planning' || info.state === 'queued') &&
-              Date.now() - startTime < timeoutMs
-            ) {
-              await new Promise((resolve) => setTimeout(resolve, 1000))
-              info = await session.info()
+          const threadConfig = getEffectiveConfig(thread)
+          const typingMode = threadConfig.typing_indicator_mode || 'until_response'
+
+          if (typingMode === 'strict_state') {
+            let info = await session.info()
+            const isTurnEndingActivity = type === 'agentMessaged' || type === 'planGenerated'
+            if (isTurnEndingActivity) {
+              const startTime = Date.now()
+              const timeoutMs = 10000 // 10 seconds max
+              while (
+                (info.state === 'inProgress' || info.state === 'planning' || info.state === 'queued') &&
+                Date.now() - startTime < timeoutMs
+              ) {
+                await new Promise((resolve) => setTimeout(resolve, 1000))
+                info = await session.info()
+              }
+            }
+
+            if (info.state === 'completed' || info.state === 'failed') {
+              stopTyping()
+              activeStreams.delete(thread.id)
+              processedActivityIdsMap.delete(thread.id)
+              return
+            }
+
+            if (info.state === 'inProgress' || info.state === 'planning' || info.state === 'queued') {
+              startTyping()
+            } else {
+              stopTyping()
+            }
+          } else {
+            // Default mode: until_response
+            // Start typing when a user message is sent (from Discord or Web UI)
+            if (type === 'userMessaged') {
+              startTyping()
+            } else if (type === 'agentMessaged' || type === 'planGenerated') {
+              stopTyping()
+            }
+
+            // Exit stream handler if session transitions to completed or failed
+            let info = await session.info()
+            if (info.state === 'completed' || info.state === 'failed') {
+              stopTyping()
+              activeStreams.delete(thread.id)
+              processedActivityIdsMap.delete(thread.id)
+              return
             }
           }
-
-          if (info.state === 'completed' || info.state === 'failed') {
-            stopTyping()
-            activeStreams.delete(thread.id)
-            processedActivityIdsMap.delete(thread.id)
-            return
-          }
-
-          if (info.state === 'awaitingPlanApproval' || info.state === 'awaitingUserFeedback') {
-            stopTyping()
-          } else {
-            startTyping()
-          }
         } catch (infoErr) {
-          console.error('Failed to get session info for typing status:', infoErr)
+          console.error('Failed to update typing status or check session state:', infoErr)
         }
       }
 

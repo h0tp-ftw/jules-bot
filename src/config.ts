@@ -356,6 +356,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
   default_branch?: string
   ignore_prefix?: string
   bot_emoji: string
+  typing_indicator_mode: string
 } {
   const channelsConfig = yamlConfig.channels || {}
   
@@ -545,6 +546,19 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     resolvedBotEmoji = roleOverride.bot_emoji
   }
 
+  // Resolve typing_indicator_mode
+  let resolvedTypingMode = yamlConfig.typing_indicator_mode || 'until_response'
+
+  if (parentOverride && (parentOverride as any).typing_indicator_mode) {
+    resolvedTypingMode = (parentOverride as any).typing_indicator_mode
+  }
+  if (threadOverride && (threadOverride as any).typing_indicator_mode) {
+    resolvedTypingMode = (threadOverride as any).typing_indicator_mode
+  }
+  if (roleOverride && roleOverride.typing_indicator_mode) {
+    resolvedTypingMode = roleOverride.typing_indicator_mode
+  }
+
   return {
     diagnostic_prompt: resolvedPrompt,
     access_control: resolvedAccessControl,
@@ -558,6 +572,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     default_branch: resolvedDefaultBranch,
     ignore_prefix: resolvedIgnorePrefix,
     bot_emoji: resolvedBotEmoji,
+    typing_indicator_mode: resolvedTypingMode,
   }
 }
 
