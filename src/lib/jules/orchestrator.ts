@@ -492,10 +492,20 @@ export async function initializeJulesSession(
           throw new Error(`Pre-warmed session ${session.id} is in ${info.state} state`)
         }
         
+        // Load history activities for the pre-warmed session to get greeting/plans
+        const activities: any[] = []
+        try {
+          for await (const act of session.history()) {
+            activities.push(act)
+          }
+        } catch (histErr) {
+          console.error(`[initializeJulesSession] Failed to fetch history for pre-warmed session ${session.id}:`, histErr)
+        }
+
         // If auto-reject is enabled, we check if there's any active plan to reject
         if (threadConfig.auto_reject?.enabled) {
-          const hasActivePlan = !!info.plan
-          const hasPlanInHistory = info.activities?.some((a: any) => a.type === 'planGenerated')
+          const hasActivePlan = !!(info as any).plan
+          const hasPlanInHistory = activities.some((a: any) => a.type === 'planGenerated')
           
           if (hasActivePlan || hasPlanInHistory || info.state === 'awaitingPlanApproval') {
             console.log(`[initializeJulesSession] Plan detected for session ${session.id} (Active: ${hasActivePlan}, History: ${hasPlanInHistory}, State: ${info.state}). Marking for rejection.`)
@@ -504,10 +514,10 @@ export async function initializeJulesSession(
           }
         }
 
-        if (info.activities) {
-          console.log(`[initializeJulesSession] Session ${session.id} has ${info.activities.length} activities.`)
-          initialSkipIds = new Set(info.activities.map((a: any) => a.id))
-          for (const activity of info.activities) {
+        if (activities.length > 0) {
+          console.log(`[initializeJulesSession] Session ${session.id} has ${activities.length} activities.`)
+          initialSkipIds = new Set(activities.map((a: any) => a.id))
+          for (const activity of activities) {
             console.log(`[initializeJulesSession] Activity Type: ${activity.type}`)
             if (activity.type === 'agentMessaged') {
               const message = activity.message || (activity as any).agentMessaged?.message || ''
