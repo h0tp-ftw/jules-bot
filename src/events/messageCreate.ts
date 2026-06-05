@@ -76,8 +76,10 @@ export default {
 
       // Send the user prompt to Jules with metadata
       const authorNickname = message.member?.displayName || message.author.username
+      const authorUsername = message.author.username
+      const authorId = message.author.id
       const messageTime = message.createdAt.toISOString()
-      const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}]\n\n${messageContent}`
+      const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Author Username: ${authorUsername}, Author Discord ID: ${authorId}, Message Time: ${messageTime}]\n\n${messageContent}`
 
       await session.send(promptWithMetadata)
     } catch (err) {

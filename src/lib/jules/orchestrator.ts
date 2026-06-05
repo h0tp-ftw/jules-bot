@@ -379,6 +379,8 @@ export async function initializeJulesSession(
   }
 
   const authorNickname = starterMessage.member?.displayName || starterMessage.author.username
+  const authorUsername = starterMessage.author.username
+  const authorId = starterMessage.author.id
   const messageTime = starterMessage.createdAt.toISOString()
   const threadTitle = thread.name
   
@@ -392,7 +394,7 @@ export async function initializeJulesSession(
     starterContent += parsedAttachments
   }
 
-  const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterContent}`
+  const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Author Username: ${authorUsername}, Author Discord ID: ${authorId}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterContent}`
 
   let session: any = null
   let usedPreWarmed = false
