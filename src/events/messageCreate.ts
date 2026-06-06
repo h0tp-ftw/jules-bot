@@ -50,11 +50,15 @@ export default {
       messageContent += parsedAttachments
     }
 
+    console.log(`[MessageCreate] Event triggered for thread ${thread.id}. Content length: ${messageContent.length}`)
+
     try {
       const session = JulesClient.getSession(sessionRecord.julesSessionId)
 
+      console.log(`[MessageCreate] Fetching session info for ${sessionRecord.julesSessionId}...`)
       // Check session state to prevent sending messages to failed sessions
       const sessionInfo = await session.info()
+      console.log(`[MessageCreate] Session state for ${sessionRecord.julesSessionId}: ${sessionInfo?.state}`)
       if (sessionInfo.state === 'failed') {
         await message.reply(
           '⚠️ This session has failed. Jules cannot receive new messages on a failed session. Please open a new thread.'
@@ -62,8 +66,10 @@ export default {
         return
       }
 
+      console.log(`[MessageCreate] activeStreams status for thread ${thread.id}: ${activeStreams.has(thread.id)}`)
       // Rehydrate stream listener if not already active (e.g. after bot restart)
       if (!activeStreams.has(thread.id)) {
+        console.log(`[MessageCreate] Rehydrating runJulesStream for thread ${thread.id}`)
         runJulesStream(sessionRecord.julesSessionId, thread, streamManager)
         // Give the stream listener a moment to initialize
         await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -81,7 +87,9 @@ export default {
       const messageTime = message.createdAt.toISOString()
       const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Author Username: ${authorUsername}, Author Discord ID: ${authorId}, Message Time: ${messageTime}]\n\n${messageContent}`
 
+      console.log(`[MessageCreate] Sending message to Jules session ${sessionRecord.julesSessionId}...`)
       await session.send(promptWithMetadata)
+      console.log(`[MessageCreate] Message sent successfully to Jules session ${sessionRecord.julesSessionId}`)
     } catch (err) {
       console.error(`Failed to send message to Jules for thread ${thread.id}:`, err)
       await message.reply('❌ **Failed to deliver message to Jules. Please make sure the session is still active.**')

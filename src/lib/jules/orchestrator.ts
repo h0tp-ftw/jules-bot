@@ -81,8 +81,12 @@ export async function updateReaction(message: Message | null, newStage: string) 
 
 
 export async function runJulesStream(sessionId: string, thread: ThreadChannel, streamManager: StreamManager, initialProcessedIds?: Set<string>) {
-  if (activeStreams.has(thread.id)) return
+  if (activeStreams.has(thread.id)) {
+    console.log(`[runJulesStream] activeStreams already has thread ${thread.id}. Exiting stream handler creation.`)
+    return
+  }
   activeStreams.add(thread.id)
+  console.log(`[runJulesStream] Starting stream handler for thread ${thread.id}, sessionId: ${sessionId}`)
 
   let typingInterval: NodeJS.Timeout | null = null
 
@@ -108,12 +112,16 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
     if (!initialProcessedIds) {
       try {
         const session = JulesClient.getSession(sessionId)
+        console.log(`[runJulesStream] Pre-populating processed activities for thread ${thread.id} from history...`)
         for await (const act of session.history()) {
           processedActivityIds.add(act.id)
         }
+        console.log(`[runJulesStream] Pre-populated ${processedActivityIds.size} activities.`)
       } catch (err) {
         console.error(`Failed to pre-populate processed activities for thread ${thread.id}:`, err)
       }
+    } else {
+      console.log(`[runJulesStream] Using provided initial processed activity IDs (count: ${processedActivityIds.size})`)
     }
   }
   let consecutiveFailures = 0
@@ -122,8 +130,10 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
   while (consecutiveFailures < maxRetries) {
     try {
+      console.log(`[runJulesStream] Fetching session info for ${sessionId}...`)
       const session = JulesClient.getSession(sessionId)
       let info = await session.info()
+      console.log(`[runJulesStream] Session ${sessionId} info: state=${info?.state}`)
       if (info && info.state === 'failed') {
         console.log(`Session ${sessionId} is failed. Exiting stream handler.`)
         stopTyping()
@@ -168,9 +178,12 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
       let agentMessagedInThisTurn = false
 
+      console.log(`[runJulesStream] Subscribing to session stream for ${sessionId}...`)
       for await (const activity of session.stream()) {
         const id = activity.id
+        console.log(`[runJulesStream] Received activity from stream: ${id} type=${activity.type} originator=${activity.originator}`)
         if (processedActivityIds.has(id)) {
+          console.log(`[runJulesStream] Activity ${id} already processed. Skipping.`)
           continue
         }
         processedActivityIds.add(id)
@@ -181,6 +194,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
         switch (type) {
           case 'planGenerated': {
+            console.log(`[runJulesStream] planGenerated for ${sessionId}`)
             const plan = activity.plan || (activity as any).planGenerated?.plan
             if (!plan || !plan.steps) break
 
@@ -234,6 +248,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           }
 
           case 'progressUpdated': {
+            console.log(`[runJulesStream] progressUpdated for ${sessionId}`)
             // If we were awaiting approval, go back to in_progress on updates
             const target = await getLastHumanMessage(thread)
             await updateReaction(target, 'in_progress')
@@ -247,6 +262,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           }
 
           case 'agentMessaged': {
+            console.log(`[runJulesStream] agentMessaged for ${sessionId}`)
             const message = activity.message || (activity as any).agentMessaged?.message || ''
             if (message) {
               const resolved = resolveMessageEmojis(thread.client, message)
@@ -263,6 +279,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           }
 
           case 'sessionCompleted': {
+            console.log(`[runJulesStream] sessionCompleted for ${sessionId}`)
             const target = await getLastHumanMessage(thread)
             await updateReaction(target, 'completed')
             await streamManager.finalizeSession(thread.id, true)
@@ -273,6 +290,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           }
 
           case 'sessionFailed': {
+            console.log(`[runJulesStream] sessionFailed for ${sessionId}`)
             const target = await getLastHumanMessage(thread)
             await updateReaction(target, 'failed')
             const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
@@ -284,6 +302,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
           }
 
           case 'userMessaged': {
+            console.log(`[runJulesStream] userMessaged for ${sessionId}`)
             // Handled below for typing indicators
             break
           }
@@ -309,6 +328,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
               }
             }
 
+            console.log(`[runJulesStream] strict_state check: state=${info.state}`)
             if (info.state === 'completed' || info.state === 'failed') {
               stopTyping()
               activeStreams.delete(thread.id)
@@ -332,6 +352,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
 
             // Exit stream handler if session transitions to completed or failed
             let info = await session.info()
+            console.log(`[runJulesStream] until_response check: state=${info.state}`)
             if (info.state === 'completed' || info.state === 'failed') {
               stopTyping()
               activeStreams.delete(thread.id)
@@ -344,10 +365,11 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
         }
       }
 
+      console.log(`[runJulesStream] Stream loop finished for ${sessionId}.`)
       stopTyping()
     } catch (err: any) {
       consecutiveFailures++
-      console.error(`[Stream Retry ${consecutiveFailures}/${maxRetries}] Error in Jules stream for thread ${thread.id}:`, err)
+      console.error(`[runJulesStream] [Stream Retry ${consecutiveFailures}/${maxRetries}] Error in Jules stream for thread ${thread.id}:`, err)
 
       if (consecutiveFailures >= maxRetries) {
         const errorMsg = err instanceof Error ? err.stack || err.message : String(err)
@@ -363,6 +385,7 @@ export async function runJulesStream(sessionId: string, thread: ThreadChannel, s
     }
   }
 
+  console.log(`[runJulesStream] Exited outer while loop for thread ${thread.id}`)
   activeStreams.delete(thread.id)
 }
 
