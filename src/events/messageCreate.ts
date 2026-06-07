@@ -1,7 +1,7 @@
 import { Message, Events, ThreadChannel } from 'discord.js'
 import { prisma, getEffectiveConfig } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { runJulesStream, activeStreams, updateReaction, getFreshSessionInfo } from '../lib/jules/orchestrator.js'
+import { runJulesStream, activeStreams, updateReaction } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 import { processAttachments } from '../lib/utils/docling.js'
 
@@ -55,16 +55,7 @@ export default {
     try {
       const session = JulesClient.getSession(sessionRecord.julesSessionId)
 
-      console.log(`[MessageCreate] Fetching session info for ${sessionRecord.julesSessionId}...`)
-      // Check session state to prevent sending messages to failed sessions
-      const sessionInfo = await getFreshSessionInfo(session)
-      console.log(`[MessageCreate] Session state for ${sessionRecord.julesSessionId}: ${sessionInfo?.state}`)
-      if (sessionInfo.state === 'failed') {
-        await message.reply(
-          '⚠️ This session has failed. Jules cannot receive new messages on a failed session. Please open a new thread.'
-        )
-        return
-      }
+      // State check is handled in the background stream listener
 
       console.log(`[MessageCreate] activeStreams status for thread ${thread.id}: ${activeStreams.has(thread.id)}`)
       // Rehydrate stream listener if not already active (e.g. after bot restart)

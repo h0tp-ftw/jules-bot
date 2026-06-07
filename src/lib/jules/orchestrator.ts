@@ -172,6 +172,14 @@ export async function runJulesStream(
 
   while (consecutiveFailures < maxRetries) {
     try {
+      if (thread.archived) {
+        console.log(`[runJulesStream] Thread ${thread.id} is archived. Exiting stream handler.`);
+        stopTyping();
+        activeStreams.delete(thread.id);
+        processedActivityIdsMap.delete(thread.id);
+        return;
+      }
+
       console.log(`[runJulesStream] Fetching session info for ${sessionId}...`);
       const session = JulesClient.getSession(sessionId);
       let info = await getFreshSessionInfo(session);
@@ -185,19 +193,6 @@ export async function runJulesStream(
         activeStreams.delete(thread.id);
         processedActivityIdsMap.delete(thread.id);
         return;
-      }
-
-      // If session is completed, poll until it becomes active or thread is archived
-      while (info && info.state === "completed") {
-        if (thread.archived) {
-          console.log(`[runJulesStream] Thread ${thread.id} is archived. Exiting stream handler.`);
-          stopTyping();
-          activeStreams.delete(thread.id);
-          processedActivityIdsMap.delete(thread.id);
-          return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        info = await getFreshSessionInfo(session);
       }
 
       if (info && info.state === "failed") {
