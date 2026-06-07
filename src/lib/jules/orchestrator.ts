@@ -278,6 +278,7 @@ export async function runJulesStream(
         retryDelay = 5000;
 
         const type = activity.type;
+        const typeStr = type as string;
 
         switch (type) {
           case "planGenerated": {
@@ -420,81 +421,38 @@ export async function runJulesStream(
           }
         }
 
-        // Check session state/typing mode to update typing status
+        // Check typing mode to update typing status (offline, no network calls)
         try {
           const threadConfig = getEffectiveConfig(thread);
           const typingMode =
             threadConfig.typing_indicator_mode || "until_response";
 
           if (typingMode === "strict_state") {
-            let info = await getFreshSessionInfo(session);
-            const isTurnEndingActivity =
-              type === "agentMessaged" || type === "planGenerated";
-            if (isTurnEndingActivity) {
-              const startTime = Date.now();
-              const timeoutMs = 10000; // 10 seconds max
-              while (
-                info &&
-                (info.state === "inProgress" ||
-                  info.state === "planning" ||
-                  info.state === "queued") &&
-                Date.now() - startTime < timeoutMs
-              ) {
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-                info = await getFreshSessionInfo(session);
-              }
-            }
-
-            console.log(
-              `[runJulesStream] strict_state check: state=${info?.state}`,
-            );
-            if (info && info.state === "failed") {
-              stopTyping();
-              activeStreams.delete(thread.id);
-              processedActivityIdsMap.delete(thread.id);
-              return;
-            }
-
-            if (info && info.state === "completed") {
-              stopTyping();
-            } else if (
-              info &&
-              (info.state === "inProgress" ||
-                info.state === "planning" ||
-                info.state === "queued")
-            ) {
+            // Strict state mode: keep typing active during progress updates,
+            // and only stop typing when the session is completed or failed.
+            if (typeStr === "userMessaged" || typeStr === "progressUpdated") {
               startTyping();
-            } else {
+            } else if (typeStr === "sessionCompleted" || typeStr === "sessionFailed") {
               stopTyping();
             }
           } else {
             // Default mode: until_response
-            // Start typing when a user message is sent (from Discord or Web UI)
-            if (type === "userMessaged") {
+            // Start typing when a user message is sent, stop when agent responds or session ends.
+            if (typeStr === "userMessaged") {
               startTyping();
-            } else if (type === "agentMessaged" || type === "planGenerated") {
-              stopTyping();
-            }
-
-            // Exit stream handler only if session transitions to failed
-            let info = await getFreshSessionInfo(session);
-            console.log(
-              `[runJulesStream] until_response check: state=${info?.state}`,
-            );
-            if (info && info.state === "failed") {
-              stopTyping();
-              activeStreams.delete(thread.id);
-              processedActivityIdsMap.delete(thread.id);
-              return;
-            }
-            if (info && info.state === "completed") {
+            } else if (
+              typeStr === "agentMessaged" ||
+              typeStr === "planGenerated" ||
+              typeStr === "sessionCompleted" ||
+              typeStr === "sessionFailed"
+            ) {
               stopTyping();
             }
           }
-        } catch (infoErr) {
+        } catch (typingErr) {
           console.error(
-            "Failed to update typing status or check session state:",
-            infoErr,
+            "[runJulesStream] Failed to update typing status:",
+            typingErr,
           );
         }
       }
