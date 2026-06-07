@@ -93,6 +93,17 @@ export async function updateReaction(
   }
 }
 
+export async function getFreshSessionInfo(session: any): Promise<any> {
+  try {
+    if (session && session.sessionStorage && typeof session.sessionStorage.delete === 'function') {
+      await session.sessionStorage.delete(session.id);
+    }
+  } catch (err) {
+    console.error(`[getFreshSessionInfo] Failed to delete cache for session ${session?.id}:`, err);
+  }
+  return await session.info();
+}
+
 export async function runJulesStream(
   sessionId: string,
   thread: ThreadChannel,
@@ -163,14 +174,37 @@ export async function runJulesStream(
     try {
       console.log(`[runJulesStream] Fetching session info for ${sessionId}...`);
       const session = JulesClient.getSession(sessionId);
-      let info = await session.info();
+      let info = await getFreshSessionInfo(session);
       console.log(
         `[runJulesStream] Session ${sessionId} info: state=${info?.state}`,
       );
+
+      if (!info) {
+        console.log(`Session ${sessionId} not found or deleted on backend. Exiting stream handler.`);
+        stopTyping();
+        activeStreams.delete(thread.id);
+        processedActivityIdsMap.delete(thread.id);
+        return;
+      }
+
+      // If session is completed, poll until it becomes active or thread is archived
+      while (info && info.state === "completed") {
+        if (thread.archived) {
+          console.log(`[runJulesStream] Thread ${thread.id} is archived. Exiting stream handler.`);
+          stopTyping();
+          activeStreams.delete(thread.id);
+          processedActivityIdsMap.delete(thread.id);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        info = await getFreshSessionInfo(session);
+      }
+
       if (info && info.state === "failed") {
         console.log(`Session ${sessionId} is failed. Exiting stream handler.`);
         stopTyping();
         activeStreams.delete(thread.id);
+        processedActivityIdsMap.delete(thread.id);
         return;
       }
 
@@ -206,10 +240,10 @@ export async function runJulesStream(
           stopTyping();
           return;
         }
-        console.log(`Session ${sessionId} is queued. Waiting 5s...`);
+        console.log(`[runJulesStream] is queued. Waiting 5s...`);
         await new Promise((resolve) => setTimeout(resolve, 5000));
         queuedWaitMs += 5000;
-        info = await session.info();
+        info = await getFreshSessionInfo(session);
       }
 
       const targetMessage = await getLastHumanMessage(thread);
@@ -362,10 +396,8 @@ export async function runJulesStream(
             const target = await getLastHumanMessage(thread);
             await updateReaction(target, "completed");
             await streamManager.finalizeSession(thread.id, true);
-            activeStreams.delete(thread.id);
-            processedActivityIdsMap.delete(thread.id);
             stopTyping();
-            return;
+            break;
           }
 
           case "sessionFailed": {
@@ -395,37 +427,41 @@ export async function runJulesStream(
             threadConfig.typing_indicator_mode || "until_response";
 
           if (typingMode === "strict_state") {
-            let info = await session.info();
+            let info = await getFreshSessionInfo(session);
             const isTurnEndingActivity =
               type === "agentMessaged" || type === "planGenerated";
             if (isTurnEndingActivity) {
               const startTime = Date.now();
               const timeoutMs = 10000; // 10 seconds max
               while (
+                info &&
                 (info.state === "inProgress" ||
                   info.state === "planning" ||
                   info.state === "queued") &&
                 Date.now() - startTime < timeoutMs
               ) {
                 await new Promise((resolve) => setTimeout(resolve, 1000));
-                info = await session.info();
+                info = await getFreshSessionInfo(session);
               }
             }
 
             console.log(
-              `[runJulesStream] strict_state check: state=${info.state}`,
+              `[runJulesStream] strict_state check: state=${info?.state}`,
             );
-            if (info.state === "completed" || info.state === "failed") {
+            if (info && info.state === "failed") {
               stopTyping();
               activeStreams.delete(thread.id);
               processedActivityIdsMap.delete(thread.id);
               return;
             }
 
-            if (
-              info.state === "inProgress" ||
-              info.state === "planning" ||
-              info.state === "queued"
+            if (info && info.state === "completed") {
+              stopTyping();
+            } else if (
+              info &&
+              (info.state === "inProgress" ||
+                info.state === "planning" ||
+                info.state === "queued")
             ) {
               startTyping();
             } else {
@@ -440,16 +476,19 @@ export async function runJulesStream(
               stopTyping();
             }
 
-            // Exit stream handler if session transitions to completed or failed
-            let info = await session.info();
+            // Exit stream handler only if session transitions to failed
+            let info = await getFreshSessionInfo(session);
             console.log(
-              `[runJulesStream] until_response check: state=${info.state}`,
+              `[runJulesStream] until_response check: state=${info?.state}`,
             );
-            if (info.state === "completed" || info.state === "failed") {
+            if (info && info.state === "failed") {
               stopTyping();
               activeStreams.delete(thread.id);
               processedActivityIdsMap.delete(thread.id);
               return;
+            }
+            if (info && info.state === "completed") {
+              stopTyping();
             }
           }
         } catch (infoErr) {
@@ -637,7 +676,7 @@ export async function initializeJulesSession(
       try {
         session = JulesClient.getSession(preWarmed.id);
 
-        const info = await session.info();
+        const info = await getFreshSessionInfo(session);
         console.log(
           `[initializeJulesSession] Session ${session.id} state at consumption: ${info.state}`,
         );
@@ -810,7 +849,7 @@ export async function initializeJulesSession(
         `[initializeJulesSession] Waiting for session ${session.id} to process rejection...`,
       );
       for (let i = 0; i < 20; i++) {
-        const info = await session.info();
+        const info = await getFreshSessionInfo(session);
         if (info.state !== "queued") {
           console.log(
             `[initializeJulesSession] Session ${session.id} finished processing rejection (State: ${info.state})`,
@@ -839,5 +878,43 @@ export async function initializeJulesSession(
     replenishPool(repoName, contextKey).catch(() => {});
   } else if (usePool) {
     replenishPool(repoName, contextKey).catch(() => {});
+  }
+}
+
+export async function rehydrateActiveStreams(client: any, streamManager: StreamManager) {
+  console.log('[rehydrateActiveStreams] Starting rehydration of active streams...');
+  try {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+    const sessions = await prisma.debugSession.findMany({
+      where: {
+        updatedAt: { gte: oneWeekAgo },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 50,
+    });
+
+    console.log(`[rehydrateActiveStreams] Found ${sessions.length} sessions in DB updated in the last 7 days.`);
+
+    for (const session of sessions) {
+      try {
+        const channel = await client.channels.fetch(session.threadId);
+        if (!channel || !channel.isThread()) continue;
+        const thread = channel as ThreadChannel;
+        if (thread.archived || thread.locked) {
+          console.log(`[rehydrateActiveStreams] Thread ${thread.id} is archived or locked. Skipping.`);
+          continue;
+        }
+
+        console.log(`[rehydrateActiveStreams] Rehydrating stream for thread ${thread.id}, sessionId: ${session.julesSessionId}`);
+        // runJulesStream checks if it's already active, so this is safe
+        runJulesStream(session.julesSessionId, thread, streamManager);
+      } catch (err) {
+        console.error(`[rehydrateActiveStreams] Failed to rehydrate session ${session.julesSessionId} for thread ${session.threadId}:`, err);
+      }
+    }
+  } catch (err) {
+    console.error('[rehydrateActiveStreams] Failed to query active sessions from database:', err);
   }
 }

@@ -8,6 +8,7 @@ import messageCreateEvt from './events/messageCreate.js'
 import interactionCreateEvt from './events/interactionCreate.js'
 import { StreamManager } from './lib/streams/StreamManager.js'
 import { initPreWarmedPools } from './lib/jules/PreWarmedManager.js'
+import { rehydrateActiveStreams } from './lib/jules/orchestrator.js'
 
 if (!DISCORD_TOKEN || DISCORD_TOKEN === 'YOUR_DISCORD_TOKEN') {
   console.error('Error: DISCORD_TOKEN is not configured in .env file.')
@@ -100,6 +101,11 @@ client.once(Events.ClientReady, async () => {
   // Initialize pre-warmed pools
   initPreWarmedPools().catch((err) => {
     console.error('Failed to initialize pre-warmed pools:', err)
+  })
+
+  // Rehydrate active streams
+  rehydrateActiveStreams(client, streamManager).catch((err) => {
+    console.error('Failed to rehydrate active streams:', err)
   })
 
   // Set configurable presence
