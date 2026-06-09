@@ -50,15 +50,11 @@ client.on(Events.Raw, (packet) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
-    // Check permission
-    const { authorized, silent } = await hasPermission(interaction.member, interaction.user, interaction.channel)
+    // Check permission. The reply is ephemeral, so only the unauthorized user
+    // sees it (the `silent` flag is only meaningful for non-ephemeral surfaces).
+    const { authorized } = await hasPermission(interaction.member, interaction.user, interaction.channel)
     if (!authorized) {
-      if (!silent) {
-        await interaction.reply({ content: '❌ **You do not have permission to run bot commands.**', ephemeral: true })
-      } else {
-        // Just ignore it, or reply with ephemeral hidden message if it's a command to not leave it hanging
-        await interaction.reply({ content: '❌ **You do not have permission to run bot commands.**', ephemeral: true })
-      }
+      await interaction.reply({ content: '❌ **You do not have permission to run bot commands.**', ephemeral: true })
       return
     }
 

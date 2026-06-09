@@ -254,6 +254,8 @@ export async function runJulesStream(
             "⚠️ Jules session timed out waiting to start. Please open a new thread.",
           );
           activeStreams.delete(thread.id);
+          processedActivityIdsMap.delete(thread.id);
+          autoRejectedSessions.delete(sessionId);
           stopTyping();
           return;
         }
@@ -414,6 +416,7 @@ export async function runJulesStream(
             const target = await getTarget();
             await updateReaction(target, "completed");
             await streamManager.finalizeSession(thread.id, true);
+            autoRejectedSessions.delete(sessionId);
             stopTyping();
             break;
           }
@@ -427,6 +430,7 @@ export async function runJulesStream(
             await streamManager.finalizeSession(thread.id, false, reason);
             activeStreams.delete(thread.id);
             processedActivityIdsMap.delete(thread.id);
+            autoRejectedSessions.delete(sessionId);
             stopTyping();
             return;
           }

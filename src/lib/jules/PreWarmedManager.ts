@@ -39,10 +39,16 @@ export async function preWarmSession(repoName: string, contextKey: string | null
 
     defaultPrompt += `\n\nSystem Directive:\n${preWarmingPrompt}`
 
-    console.log(`[Pre-warm] Creating session for ${repoName} (Context: ${contextKey || 'global'})...`)
+    // Pre-warm on the context's configured default branch so the warmed session
+    // matches the branch threads actually consume (threadCreate uses the same
+    // `default_branch || 'main'`). Defaults to 'main' when unset, so existing
+    // setups that don't configure a default branch are unaffected.
+    const baseBranch = config.default_branch || 'main'
+
+    console.log(`[Pre-warm] Creating session for ${repoName}@${baseBranch} (Context: ${contextKey || 'global'})...`)
     const session = await client.session({
       prompt: defaultPrompt,
-      source: { github: repoName, baseBranch: 'main' },
+      source: { github: repoName, baseBranch },
       title: contextKey ? `Pre-warmed Session (${repoName} - Context: ${contextKey})` : `Pre-warmed Session (${repoName})`,
       requireApproval: true,
     })

@@ -56,7 +56,13 @@ export default {
             components: [],
           })
         } else if (kind === 'plan-reject') {
-          // Reject the plan (User must describe what they want next in the thread)
+          // Rejecting a plan = don't approve and wait for the user's feedback. The
+          // follow-up message is what actually tells Jules to revise (session.send
+          // while awaiting approval). Make sure the stream listener is alive (e.g.
+          // after a restart) so the revised response is streamed back to the thread.
+          if (!activeStreams.has(thread.id)) {
+            runJulesStream(sessionRecord.julesSessionId, thread, streamManager)
+          }
           await interaction.update({
             content: '❌ **Plan rejected. Please describe the changes or alternative approach you want Jules to take.**',
             components: [],
