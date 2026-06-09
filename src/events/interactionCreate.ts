@@ -6,6 +6,61 @@ import { StreamManager } from '../lib/streams/StreamManager.js'
 
 import { hasPermission } from '../lib/utils/permissions.js'
 
+/**
+ * Builds the branch-selection dropdown row for a repo. Lists the default branch
+ * first (when present), then the remaining branches; if they would exceed
+ * Discord's 25-option cap, trims and appends Search/Custom entries.
+ */
+function buildBranchSelectRow(
+  threadId: string,
+  repoName: string,
+  branches: string[],
+  defaultBranch: string,
+): ActionRowBuilder<StringSelectMenuBuilder> {
+  const options: StringSelectMenuOptionBuilder[] = []
+
+  let hasDefault = false
+  if (defaultBranch && branches.includes(defaultBranch)) {
+    options.push(
+      new StringSelectMenuOptionBuilder()
+        .setLabel(`⭐ Default: ${defaultBranch}`)
+        .setValue(defaultBranch)
+    )
+    hasDefault = true
+  }
+
+  const regularBranches = hasDefault
+    ? branches.filter(b => b !== defaultBranch)
+    : branches
+
+  // If the default + regular branches exceed Discord's 25-option cap, trim and
+  // leave room for the Search and Custom entries.
+  const needsSearch = (regularBranches.length + (hasDefault ? 1 : 0)) > 25
+
+  if (needsSearch) {
+    const maxRegularSlots = 25 - (hasDefault ? 1 : 0) - 2
+    const displayBranches = regularBranches.slice(0, maxRegularSlots)
+    for (const b of displayBranches) {
+      options.push(new StringSelectMenuOptionBuilder().setLabel(b).setValue(b))
+    }
+    options.push(
+      new StringSelectMenuOptionBuilder().setLabel('🔍 Search Branches...').setValue('search-branch-prompt'),
+      new StringSelectMenuOptionBuilder().setLabel('✍️ Enter Custom Branch...').setValue('custom-branch-input')
+    )
+  } else {
+    for (const b of regularBranches) {
+      options.push(new StringSelectMenuOptionBuilder().setLabel(b).setValue(b))
+    }
+  }
+
+  const branchSelect = new StringSelectMenuBuilder()
+    .setCustomId(`select-branch:${threadId}:${repoName}`)
+    .setPlaceholder('Choose a branch...')
+    .addOptions(options)
+
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(branchSelect)
+}
+
 export default {
   name: Events.InteractionCreate,
   async execute(interaction: Interaction, streamManager: StreamManager) {
@@ -109,61 +164,7 @@ export default {
             await initializeJulesSession(thread, repoName, branch, streamManager)
           } else {
             const defaultBranch = threadConfig.default_branch || selectedRepo.defaultBranch || 'main'
-            const options: StringSelectMenuOptionBuilder[] = []
-
-            let hasDefault = false
-            if (defaultBranch && branches.includes(defaultBranch)) {
-              options.push(
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(`⭐ Default: ${defaultBranch}`)
-                  .setValue(defaultBranch)
-              )
-              hasDefault = true
-            }
-
-            const regularBranches = hasDefault
-              ? branches.filter(b => b !== defaultBranch)
-              : branches
-
-            // If regular branches + default branch is > 25, we need search/custom branch options
-            const needsSearch = (regularBranches.length + (hasDefault ? 1 : 0)) > 25
-
-            if (needsSearch) {
-              const maxRegularSlots = 25 - (hasDefault ? 1 : 0) - 2 // Leave 2 slots for Search and Custom
-              const displayBranches = regularBranches.slice(0, maxRegularSlots)
-
-              for (const b of displayBranches) {
-                options.push(
-                  new StringSelectMenuOptionBuilder()
-                    .setLabel(b)
-                    .setValue(b)
-                )
-              }
-
-              options.push(
-                new StringSelectMenuOptionBuilder()
-                  .setLabel('🔍 Search Branches...')
-                  .setValue('search-branch-prompt'),
-                new StringSelectMenuOptionBuilder()
-                  .setLabel('✍️ Enter Custom Branch...')
-                  .setValue('custom-branch-input')
-              )
-            } else {
-              for (const b of regularBranches) {
-                options.push(
-                  new StringSelectMenuOptionBuilder()
-                    .setLabel(b)
-                    .setValue(b)
-                )
-              }
-            }
-
-            const branchSelect = new StringSelectMenuBuilder()
-              .setCustomId(`select-branch:${thread.id}:${repoName}`)
-              .setPlaceholder('Choose a branch...')
-              .addOptions(options)
-
-            const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(branchSelect)
+            const row = buildBranchSelectRow(thread.id, repoName, branches, defaultBranch)
             await interaction.editReply({
               content: `📋 **Configure Jules Diagnostic Session**\nSelected Repository: \`${repoName}\`\nPlease select the branch to work on:`,
               components: [row],
@@ -226,48 +227,7 @@ export default {
             const branches = selectedRepo.branches || []
             const threadConfig = getEffectiveConfig(thread, interaction.member)
             const defaultBranch = threadConfig.default_branch || selectedRepo.defaultBranch || 'main'
-            const options: StringSelectMenuOptionBuilder[] = []
-
-            let hasDefault = false
-            if (defaultBranch && branches.includes(defaultBranch)) {
-              options.push(
-                new StringSelectMenuOptionBuilder()
-                  .setLabel(`⭐ Default: ${defaultBranch}`)
-                  .setValue(defaultBranch)
-              )
-              hasDefault = true
-            }
-
-            const regularBranches = hasDefault
-              ? branches.filter(b => b !== defaultBranch)
-              : branches
-
-            const needsSearch = (regularBranches.length + (hasDefault ? 1 : 0)) > 25
-
-            if (needsSearch) {
-              const maxRegularSlots = 25 - (hasDefault ? 1 : 0) - 2
-              const displayBranches = regularBranches.slice(0, maxRegularSlots)
-
-              for (const b of displayBranches) {
-                options.push(new StringSelectMenuOptionBuilder().setLabel(b).setValue(b))
-              }
-
-              options.push(
-                new StringSelectMenuOptionBuilder().setLabel('🔍 Search Branches...').setValue('search-branch-prompt'),
-                new StringSelectMenuOptionBuilder().setLabel('✍️ Enter Custom Branch...').setValue('custom-branch-input')
-              )
-            } else {
-              for (const b of regularBranches) {
-                options.push(new StringSelectMenuOptionBuilder().setLabel(b).setValue(b))
-              }
-            }
-
-            const branchSelect = new StringSelectMenuBuilder()
-              .setCustomId(`select-branch:${thread.id}:${repoName}`)
-              .setPlaceholder('Choose a branch...')
-              .addOptions(options)
-
-            const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(branchSelect)
+            const row = buildBranchSelectRow(thread.id, repoName, branches, defaultBranch)
             await interaction.editReply({
               content: `📋 **Configure Jules Diagnostic Session**\nSelected Repository: \`${repoName}\`\nPlease select the branch to work on:`,
               components: [row],

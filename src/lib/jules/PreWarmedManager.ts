@@ -1,9 +1,5 @@
-import { jules } from '@google/jules-sdk'
-import { prisma, YAML_GUILDS, PRE_WARMED_SESSIONS, JULES_API_KEY, DIAGNOSTIC_PROMPT, AGENT_PERSONALITY, SOUL_PERSONALITY, getBootstrapContext, yamlConfig, getEffectiveConfig } from '../../config.js'
-
-const client = JULES_API_KEY 
-  ? jules.with({ apiKey: JULES_API_KEY, config: { requestTimeoutMs: 180000 } }) 
-  : jules.with({ config: { requestTimeoutMs: 180000 } })
+import { prisma, YAML_GUILDS, getBootstrapContext, yamlConfig, getEffectiveConfig } from '../../config.js'
+import { julesApiClient as client } from './JulesClient.js'
 
 function getConfigForContext(contextKey: string | null) {
   if (!contextKey) return getEffectiveConfig()

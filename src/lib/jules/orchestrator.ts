@@ -225,9 +225,6 @@ export async function runJulesStream(
         return;
       }
 
-      const threadConfig = getEffectiveConfig(thread);
-      const typingMode = threadConfig.typing_indicator_mode || "until_response";
-
       if (
         info &&
         (info.state === "inProgress" ||
@@ -275,8 +272,6 @@ export async function runJulesStream(
       ) {
         startTyping();
       }
-
-      let agentMessagedInThisTurn = false;
 
       console.log(
         `[runJulesStream] Subscribing to session stream for ${sessionId}...`,
