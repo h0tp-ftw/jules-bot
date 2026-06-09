@@ -20,8 +20,10 @@ export function resolveMessageEmojis(client: Client, text: string): string {
     return match // Keep original if not found locally
   })
 
-  // 2. Resolve short formats: :name: (only if name matches a custom emoji in the client's cache)
-  resolved = resolved.replace(/:([a-zA-Z0-9_]+):/g, (match, name) => {
+  // 2. Resolve short formats: :name: (only if name matches a custom emoji in the client's cache).
+  // The `(?!\d)` lookahead prevents re-matching the ":name:" inside an already-resolved
+  // <:name:id> tag (where the closing colon is followed by the numeric id).
+  resolved = resolved.replace(/:([a-zA-Z0-9_]+):(?!\d)/g, (match, name) => {
     const cachedEmoji = client.emojis.cache.find(
       (e) => e.name?.toLowerCase() === name.toLowerCase()
     )
