@@ -17,6 +17,9 @@ import { splitMessage } from "../utils/messageSplitter.js";
 export const activeStreams = new Set<string>();
 export const autoRejectedSessions = new Set<string>();
 export const processedActivityIdsMap = new Map<string, Set<string>>();
+// Tracks the last reaction stage applied to a given message id so updateReaction
+// can skip redundant remove/re-add API calls when the stage hasn't changed.
+const messageReactionStage = new Map<string, string>();
 
 function parseEmojiForReaction(client: any, emojiStr: string): string {
   const trimmed = emojiStr.trim();
@@ -65,6 +68,8 @@ export async function updateReaction(
   newStage: string,
 ) {
   if (!message) return;
+  // Skip redundant work if this message is already showing the target stage.
+  if (messageReactionStage.get(message.id) === newStage) return;
   try {
     const botId = message.client.user?.id;
     if (botId) {
@@ -88,6 +93,7 @@ export async function updateReaction(
       const emoji = parseEmojiForReaction(message.client, emojiStr);
       await message.react(emoji);
     }
+    messageReactionStage.set(message.id, newStage);
   } catch (err) {
     console.error(`Failed to update reaction to stage ${newStage}:`, err);
   }
@@ -170,6 +176,22 @@ export async function runJulesStream(
   const maxRetries = 20;
   let retryDelay = 5000;
 
+  // Cache the "last human message" used as the reaction/reply target. Fetching it
+  // hits the Discord REST API, so fetch once and only refresh when a new user
+  // message arrives (userMessaged) instead of re-fetching on every activity.
+  let cachedTarget: Message | null = null;
+  let targetFetched = false;
+  const getTarget = async (forceRefresh = false): Promise<Message | null> => {
+    if (forceRefresh || !targetFetched) {
+      const fetched = await getLastHumanMessage(thread);
+      if (fetched) {
+        cachedTarget = fetched;
+        targetFetched = true;
+      }
+    }
+    return cachedTarget;
+  };
+
   while (consecutiveFailures < maxRetries) {
     try {
       if (thread.archived) {
@@ -218,7 +240,7 @@ export async function runJulesStream(
       }
 
       if (info && info.state === "queued") {
-        const targetMessage = await getLastHumanMessage(thread);
+        const targetMessage = await getTarget();
         await updateReaction(targetMessage, "queued");
       }
       let queuedWaitMs = 0;
@@ -241,7 +263,7 @@ export async function runJulesStream(
         info = await getFreshSessionInfo(session);
       }
 
-      const targetMessage = await getLastHumanMessage(thread);
+      const targetMessage = await getTarget();
       await updateReaction(targetMessage, "in_progress");
       if (
         info &&
@@ -281,7 +303,7 @@ export async function runJulesStream(
             const plan = activity.plan || (activity as any).planGenerated?.plan;
             if (!plan || !plan.steps) break;
 
-            const lastHuman = await getLastHumanMessage(thread);
+            const lastHuman = await getTarget();
             const threadConfig = getEffectiveConfig(thread, lastHuman?.member);
             const autoReject = threadConfig.auto_reject || {};
             const shouldAutoReject =
@@ -295,12 +317,12 @@ export async function runJulesStream(
                 `🤖 **Plan Automatically Rejected:**\nFeedback: "${feedback}"\nJules is revising the plan...`,
               );
               await session.send(feedback);
-              const target = await getLastHumanMessage(thread);
+              const target = await getTarget();
               await updateReaction(target, "in_progress");
               break;
             }
 
-            const target = await getLastHumanMessage(thread);
+            const target = await getTarget();
             await updateReaction(target, "awaiting_plan_approval");
 
             const stepsText = plan.steps
@@ -342,7 +364,7 @@ export async function runJulesStream(
           case "progressUpdated": {
             console.log(`[runJulesStream] progressUpdated for ${sessionId}`);
             // If we were awaiting approval, go back to in_progress on updates
-            const target = await getLastHumanMessage(thread);
+            const target = await getTarget();
             await updateReaction(target, "in_progress");
             const title =
               activity.title || (activity as any).progressUpdated?.title || "";
@@ -365,7 +387,7 @@ export async function runJulesStream(
               "";
             if (message) {
               const resolved = resolveMessageEmojis(thread.client, message);
-              const lastHuman = await getLastHumanMessage(thread);
+              const lastHuman = await getTarget();
               if (lastHuman) {
                 let splits = splitMessage(resolved, 2000);
                 for (let i = 0; i < splits.length; i++) {
@@ -381,7 +403,7 @@ export async function runJulesStream(
                   await thread.send(chunk);
                 }
               }
-              const target = await getLastHumanMessage(thread);
+              const target = await getTarget();
               await updateReaction(target, "responded");
             }
             break;
@@ -389,7 +411,7 @@ export async function runJulesStream(
 
           case "sessionCompleted": {
             console.log(`[runJulesStream] sessionCompleted for ${sessionId}`);
-            const target = await getLastHumanMessage(thread);
+            const target = await getTarget();
             await updateReaction(target, "completed");
             await streamManager.finalizeSession(thread.id, true);
             stopTyping();
@@ -398,7 +420,7 @@ export async function runJulesStream(
 
           case "sessionFailed": {
             console.log(`[runJulesStream] sessionFailed for ${sessionId}`);
-            const target = await getLastHumanMessage(thread);
+            const target = await getTarget();
             await updateReaction(target, "failed");
             const reason =
               activity.reason || (activity as any).sessionFailed?.reason || "";
@@ -411,7 +433,9 @@ export async function runJulesStream(
 
           case "userMessaged": {
             console.log(`[runJulesStream] userMessaged for ${sessionId}`);
-            // Handled below for typing indicators
+            // A new human message arrived — refresh the cached reaction/reply target.
+            await getTarget(true);
+            // Typing indicators handled below.
             break;
           }
         }
