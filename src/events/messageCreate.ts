@@ -44,8 +44,25 @@ export default {
     if (message.attachments.size > 0) {
       const attachmentList = Array.from(message.attachments.values()).map(att => ({
         name: att.name,
-        url: att.url
+        url: att.url,
+        contentType: att.contentType || undefined,
+        size: att.size || undefined
       }))
+
+      let attachmentMetadata = '\n\n📎 **Attachments Attached:**\n'
+      for (const att of attachmentList) {
+        attachmentMetadata += `- **Name:** \`${att.name}\`\n  **URL:** ${att.url}\n`
+        if (att.contentType) {
+          attachmentMetadata += `  **Type:** \`${att.contentType}\`\n`
+        }
+        if (att.size) {
+          attachmentMetadata += `  **Size:** \`${(att.size / 1024).toFixed(1)} KB\`\n`
+        }
+      }
+      attachmentMetadata += `\n*(Note to Jules: The raw attachment files/images listed above are accessible via their URLs. If you need to read/analyze them or view/read an image, you can download them inside your environment using tools like curl/wget or Python's requests/urllib with the provided URL.)*\n`
+
+      messageContent += attachmentMetadata
+
       const parsedAttachments = await processAttachments(attachmentList, thread)
       messageContent += parsedAttachments
     }

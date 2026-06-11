@@ -20,6 +20,8 @@ function getPythonExecutable(): string {
 export interface SimpleAttachment {
   name: string
   url: string
+  contentType?: string
+  size?: number
 }
 
 /**
