@@ -10,9 +10,9 @@ import { JulesClient } from "./JulesClient.js";
 import { StreamManager } from "../streams/StreamManager.js";
 import { prisma, getEffectiveConfig, yamlConfig } from "../../config.js";
 import { replenishPool } from "./PreWarmedManager.js";
-import { processAttachments } from "../utils/docling.js";
 import { resolveMessageEmojis } from "../utils/emojis.js";
 import { splitMessage } from "../utils/messageSplitter.js";
+import { formatAttachmentMetadata } from "../utils/attachments.js";
 
 export const activeStreams = new Set<string>();
 export const autoRejectedSessions = new Set<string>();
@@ -542,22 +542,7 @@ export async function initializeJulesSession(
       }),
     );
 
-    let attachmentMetadata = '\n\n📎 **Attachments Attached:**\n';
-    for (const att of attachmentList) {
-      attachmentMetadata += `- **Name:** \`${att.name}\`\n  **URL:** ${att.url}\n`;
-      if (att.contentType) {
-        attachmentMetadata += `  **Type:** \`${att.contentType}\`\n`;
-      }
-      if (att.size) {
-        attachmentMetadata += `  **Size:** \`${(att.size / 1024).toFixed(1)} KB\`\n`;
-      }
-    }
-    attachmentMetadata += `\n*(Note to Jules: The raw attachment files/images listed above are accessible via their URLs. If you need to read/analyze them or view/read an image, you can download them inside your environment using tools like curl/wget or Python's requests/urllib with the provided URL.)*\n`;
-
-    starterContent += attachmentMetadata;
-
-    const parsedAttachments = await processAttachments(attachmentList, thread);
-    starterContent += parsedAttachments;
+    starterContent += formatAttachmentMetadata(attachmentList);
   }
 
   const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Author Username: ${authorUsername}, Author Discord ID: ${authorId}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterContent}`;

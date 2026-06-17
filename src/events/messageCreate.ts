@@ -3,7 +3,7 @@ import { prisma, getEffectiveConfig } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { runJulesStream, activeStreams, updateReaction } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
-import { processAttachments } from '../lib/utils/docling.js'
+import { formatAttachmentMetadata } from '../lib/utils/attachments.js'
 
 import { hasPermission } from '../lib/utils/permissions.js'
 
@@ -49,22 +49,7 @@ export default {
         size: att.size || undefined
       }))
 
-      let attachmentMetadata = '\n\n📎 **Attachments Attached:**\n'
-      for (const att of attachmentList) {
-        attachmentMetadata += `- **Name:** \`${att.name}\`\n  **URL:** ${att.url}\n`
-        if (att.contentType) {
-          attachmentMetadata += `  **Type:** \`${att.contentType}\`\n`
-        }
-        if (att.size) {
-          attachmentMetadata += `  **Size:** \`${(att.size / 1024).toFixed(1)} KB\`\n`
-        }
-      }
-      attachmentMetadata += `\n*(Note to Jules: The raw attachment files/images listed above are accessible via their URLs. If you need to read/analyze them or view/read an image, you can download them inside your environment using tools like curl/wget or Python's requests/urllib with the provided URL.)*\n`
-
-      messageContent += attachmentMetadata
-
-      const parsedAttachments = await processAttachments(attachmentList, thread)
-      messageContent += parsedAttachments
+      messageContent += formatAttachmentMetadata(attachmentList)
     }
 
     console.log(`[MessageCreate] Event triggered for thread ${thread.id}. Content length: ${messageContent.length}`)

@@ -8,7 +8,7 @@ JulesBot is a Discord bot that turns each **forum thread** into an interactive *
 coding-agent session. It streams Jules's live activity into a Discord thread and gates any proposed
 plan behind **Approve / Reject** buttons — "diagnose first, change only on human approval."
 
-Stack: **TypeScript (ESM) · discord.js v14 · @google/jules-sdk · Prisma v7 + SQLite (better-sqlite3) · Python/Docling** (attachment parsing).
+Stack: **TypeScript (ESM) · discord.js v14 · @google/jules-sdk · Prisma v7 + SQLite (better-sqlite3)**.
 
 ## Commands
 
@@ -78,8 +78,7 @@ Key modules:
   (`preWarmSession`, `replenishPool`, `initPreWarmedPools` — which **wipes the pool on startup** then refills).
 - `src/lib/streams/StreamManager.ts` — one editable "status message" per thread; buffers progress lines,
   debounced 3s flush, `finalizeSession`.
-- `src/lib/utils/` — `permissions.ts` (allowlist + thread-creator context), `docling.ts`
-  (attachment → Markdown via the Python `.venv`), `emojis.ts`, `messageSplitter.ts`.
+- `src/lib/utils/` — `permissions.ts` (allowlist + thread-creator context), `emojis.ts`, `messageSplitter.ts`.
 
 ## How Jules is driven (SDK facts)
 
