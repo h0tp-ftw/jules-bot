@@ -1,6 +1,7 @@
 import { Client, GatewayIntentBits, Collection, REST, Routes, Events, ActivityType, PresenceStatusData } from 'discord.js'
 import { DISCORD_TOKEN, prisma, yamlConfig, MESSAGES } from './config.js'
 import { t } from './strings.js'
+import { formatErrorForDiscord } from './lib/utils/errors.js'
 import linkRepoCmd from './commands/link-repo.js'
 import setupForumCmd from './commands/setup-forum.js'
 import approveCmd from './commands/approve.js'
@@ -60,9 +61,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await command.execute(interaction, streamManager)
     } catch (err: any) {
       console.error(err)
-      const errorMsg = err instanceof Error ? err.stack || err.message : String(err)
       await interaction.reply({
-        content: t(MESSAGES.errors.command_execution_error, { error: errorMsg.slice(0, 1800) }),
+        content: t(MESSAGES.errors.command_execution_error, { error: formatErrorForDiscord(err) }),
         ephemeral: true,
       })
     }
