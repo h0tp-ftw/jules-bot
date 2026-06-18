@@ -192,7 +192,6 @@ roles:
 - **Secrets** (`DISCORD_TOKEN`, `JULES_API_KEY`) live only in `.env`, which is gitignored — never commit them. The same goes for your runtime `config.yaml`, `AGENTS.md`, and `SOUL.md`.
 - **Access** is gated by the `access_control` block (`allow_all`, `allowed_users`, `allowed_roles`), evaluated against commands, thread messages, **and** component interactions (Approve/Reject buttons, select menus). The thread creator can always use their own thread.
 - Set `silent: true` to ignore unauthorized messages without replying.
-- Found a vulnerability? Please report it privately — see [`SECURITY.md`](./SECURITY.md).
 
 ---
 
