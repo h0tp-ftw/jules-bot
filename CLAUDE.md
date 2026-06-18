@@ -18,7 +18,9 @@ Stack: **TypeScript (ESM) · discord.js v14 · @google/jules-sdk · Prisma v7 + 
 - `npm run setup` — copy `templates/*` → root runtime files (`.env`, `config.yaml`, `AGENTS.md`, `SOUL.md`). Skips files that already exist.
 - `npm run db:migrate` — `prisma migrate dev` (run after editing `prisma/schema.prisma`).
 - `npm run db:generate` — regenerate the Prisma client.
-- **Tests: none.** `npm test` is a stub that exits 1. Verify changes with `npm run build` + a manual `npm run dev`.
+- `npm test` — `node:test` unit suite over the pure utils + `strings.ts` (`test/*.test.ts`, DB-free). No
+  integration coverage of the Discord/Jules round-trip, so also verify with `npm run build` + a manual `npm run dev`.
+- CI (`.github/workflows/ci.yml`) runs `npm run build` + `npm test` on every push/PR to `main`.
 
 Required env (`.env`): `DISCORD_TOKEN`, `JULES_API_KEY`, `DATABASE_URL` (defaults to `file:./prisma/dev.db`).
 If the SQLite file is missing, `src/config.ts` auto-provisions it via `npx prisma db push` on boot.
