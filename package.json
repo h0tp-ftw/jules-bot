@@ -1,8 +1,8 @@
 {
   "name": "jules-bot",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "A Discord bot that turns forum threads into interactive Google Jules coding-agent sessions — diagnose first, change only on human approval.",
+  "main": "dist/index.js",
   "scripts": {
     "dev": "prisma generate && tsx src/index.ts",
     "build": "tsc",
@@ -12,9 +12,29 @@
     "db:generate": "prisma generate",
     "test": "node --import tsx --test test/messageSplitter.test.ts test/emojis.test.ts test/attachments.test.ts test/strings.test.ts test/sessionState.test.ts test/errors.test.ts"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "discord",
+    "discord-bot",
+    "discord.js",
+    "google-jules",
+    "jules",
+    "ai-agent",
+    "coding-agent",
+    "typescript"
+  ],
+  "author": "h0tp-ftw",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/h0tp-ftw/jules-bot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/h0tp-ftw/jules-bot/issues"
+  },
+  "homepage": "https://github.com/h0tp-ftw/jules-bot#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "dependencies": {
     "@google/jules-sdk": "^0.2.0",

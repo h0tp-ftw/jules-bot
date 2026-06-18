@@ -1,0 +1,57 @@
+name: 🐛 Bug Report
+description: Report something that isn't working as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report! Please **redact any tokens,
+        API keys, or private Discord IDs** before pasting logs or config.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When a thread is created in the forum channel, the bot...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a forum post in the configured channel
+        2. ...
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Console output from `npm run dev` / pm2. This is rendered as code, so no backticks needed.
+      render: shell
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      placeholder: "v22.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: run-mode
+    attributes:
+      label: How are you running the bot?
+      options:
+        - npm run dev (tsx)
+        - npm run start (compiled)
+        - pm2
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config (redacted)
+      description: The relevant part of your config.yaml with IDs/secrets removed.
+      render: yaml
