@@ -61,12 +61,23 @@ export default {
       // State check is handled in the background stream listener
 
       console.log(`[MessageCreate] activeStreams status for thread ${thread.id}: ${activeStreams.has(thread.id)}`)
-      // Rehydrate stream listener if not already active (e.g. after bot restart)
+      // Rehydrate the stream listener if not already active — e.g. after a bot
+      // restart, or when continuing an old/completed session whose handler is no
+      // longer running. Wait until the listener has replayed history into its
+      // skip set (the onReady signal) before sending, so the reply to THIS
+      // message isn't swallowed as "already seen". Capped at 5s so a slow or
+      // stuck history replay can't block message delivery indefinitely.
       if (!activeStreams.has(thread.id)) {
         console.log(`[MessageCreate] Rehydrating runJulesStream for thread ${thread.id}`)
-        runJulesStream(sessionRecord.julesSessionId, thread, streamManager)
-        // Give the stream listener a moment to initialize
-        await new Promise((resolve) => setTimeout(resolve, 1000))
+        let signalReady: () => void = () => {}
+        const ready = new Promise<void>((resolve) => {
+          signalReady = resolve
+        })
+        runJulesStream(sessionRecord.julesSessionId, thread, streamManager, undefined, signalReady)
+        await Promise.race([
+          ready,
+          new Promise((resolve) => setTimeout(resolve, 5000)),
+        ])
       }
 
       thread.sendTyping().catch(() => {})

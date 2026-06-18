@@ -15,6 +15,7 @@ import { resolveMessageEmojis } from "../utils/emojis.js";
 import { splitMessage } from "../utils/messageSplitter.js";
 import { formatAttachmentMetadata } from "../utils/attachments.js";
 import { reactionStageForState } from "../utils/sessionState.js";
+import { formatErrorForDiscord } from "../utils/errors.js";
 
 export const activeStreams = new Set<string>();
 export const autoRejectedSessions = new Set<string>();
@@ -136,6 +137,11 @@ export async function runJulesStream(
   thread: ThreadChannel,
   streamManager: StreamManager,
   initialProcessedIds?: Set<string>,
+  // Fired once the processed-activity skip set is populated (history replayed),
+  // i.e. when it's safe for a caller to session.send() a follow-up without the
+  // new activities being swallowed by history pre-population. Used by
+  // messageCreate to gate the send instead of racing a fixed timeout.
+  onReady?: () => void,
 ) {
   if (activeStreams.has(thread.id)) {
     console.log(
@@ -192,6 +198,14 @@ export async function runJulesStream(
         `[runJulesStream] Using provided initial processed activity IDs (count: ${processedActivityIds.size})`,
       );
     }
+  }
+
+  // Skip set is ready: any activity produced by a send() issued from here on is
+  // guaranteed to be treated as new rather than swallowed as "already seen".
+  try {
+    onReady?.();
+  } catch {
+    // A misbehaving ready callback must not take down the stream handler.
   }
   let consecutiveFailures = 0;
   const maxRetries = 20;
@@ -521,11 +535,9 @@ export async function runJulesStream(
       );
 
       if (consecutiveFailures >= maxRetries) {
-        const errorMsg =
-          err instanceof Error ? err.stack || err.message : String(err);
         await thread.send(
           t(getEffectiveConfig(thread).messages.session.analysis_failed_retries, {
-            error: errorMsg.slice(0, 1800),
+            error: formatErrorForDiscord(err),
           }),
         );
         break;
