@@ -217,15 +217,16 @@ The repo ships with `pm2` as a dependency for process supervision:
 npm ci
 npm run build
 DATABASE_URL="file:./prisma/dev.db" npx prisma migrate deploy   # apply committed migrations
-pm2 start dist/index.js --name jules-bot
+pm2 start ecosystem.config.cjs                                  # fork mode, single instance
 pm2 save
 ```
 
 Operational notes:
 
 - **Graceful shutdown** — `SIGINT`/`SIGTERM` flush pending status edits, destroy the Discord client, and disconnect Prisma, so `pm2 reload jules-bot` deploys cleanly. An uncaught exception shuts down and exits non-zero so pm2 restarts a fresh process.
-- **Single instance per token** — coordination state (active streams, dedup sets) is in-process, so run exactly **one** instance per bot token. Discord.js sharding is not supported.
-- **Back up `prisma/dev.db`** — it is the source of truth for the thread⇄session mapping used to rehydrate streams after a restart.
+- **Single instance per token** — coordination state (active streams, dedup sets) is in-process, so run exactly **one** instance per bot token. `ecosystem.config.cjs` pins fork mode + one instance; Discord.js sharding is not supported.
+- **Durable SQLite** — on boot the bot enables WAL mode (`synchronous=NORMAL`, `busy_timeout=5000ms`) so the database survives abrupt power loss far better — worth knowing on SD-card hosts like a Raspberry Pi.
+- **Back up `prisma/dev.db`** — it is the source of truth for the thread⇄session mapping used to rehydrate streams after a restart. (In WAL mode you'll also see transient `dev.db-wal` / `dev.db-shm` sidecar files.)
 - **Multiple bots** — use `--profile <name>` (or `BOT_PROFILE`) to isolate `.env`, `config.yaml`, persona files, `bootstrap/`, and the database under `profiles/<name>/`.
 
 ---
