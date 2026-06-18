@@ -572,13 +572,23 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
 
   // Resolve user-facing strings: code defaults <- global YAML <- parent channel
   // <- thread <- role. Each layer only needs to supply the keys it changes.
-  const resolvedMessages = deepMergeMessages(
-    DEFAULT_MESSAGES,
-    yamlConfig.messages || {},
-    (parentOverride as any).messages || {},
-    (threadOverride as any).messages || {},
-    (roleOverride as any).messages || {},
-  ) as Messages
+  // MESSAGES already folds DEFAULT_MESSAGES <- global YAML once at module load,
+  // so only the per-context layers need merging here. When a channel/thread/role
+  // supplies no `messages:` overrides (the common case) we return the shared
+  // MESSAGES object directly and skip deep-cloning the whole ~140-key catalog —
+  // getEffectiveConfig runs on the hot stream path (per activity/reaction).
+  const parentMessages = (parentOverride as any).messages
+  const threadMessages = (threadOverride as any).messages
+  const roleMessages = (roleOverride as any).messages
+  const resolvedMessages: Messages =
+    parentMessages || threadMessages || roleMessages
+      ? (deepMergeMessages(
+          MESSAGES,
+          parentMessages || {},
+          threadMessages || {},
+          roleMessages || {},
+        ) as Messages)
+      : MESSAGES
 
   return {
     diagnostic_prompt: resolvedPrompt,
