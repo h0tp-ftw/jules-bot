@@ -77,7 +77,8 @@ Key modules:
 - `src/lib/jules/JulesClient.ts` — thin `@google/jules-sdk` wrapper. Builds the full prompt =
   `diagnostic_prompt` + persona + soul + bootstrap + user issue. `createSession` / `getSession` / `getConnectedRepos`.
 - `src/lib/jules/PreWarmedManager.ts` — pre-warmed session pools to hide clone/queue latency
-  (`preWarmSession`, `replenishPool`, `initPreWarmedPools` — which **wipes the pool on startup** then refills).
+  (`preWarmSession`, `replenishPool`, `initPreWarmedPools` — which on startup removes only **orphaned
+  still-warming** sessions and **preserves `ready` ones** across restarts, then tops the pool back up).
 - `src/lib/streams/StreamManager.ts` — one editable "status message" per thread; buffers progress lines,
   debounced 3s flush, `finalizeSession`.
 - `src/lib/utils/` — `permissions.ts` (allowlist + thread-creator context), `emojis.ts`, `messageSplitter.ts`.

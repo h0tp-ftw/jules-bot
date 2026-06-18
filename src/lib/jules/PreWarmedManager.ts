@@ -146,14 +146,24 @@ export async function replenishPool(repoName: string, contextKey: string | null 
 export async function initPreWarmedPools() {
   console.log('[Pool] Initializing pre-warmed session pools...')
 
-  // Cleanup all pre-warmed sessions on startup to ensure a fresh pool
+  // On startup, drop only the sessions that were still warming when the process
+  // last stopped — their warming routine (waitForSettled) died with the process,
+  // so they'll never flip to ready. Sessions already marked `ready` are valid
+  // Jules sessions that survive a restart (consumption re-validates their state
+  // and discards any that went failed/completed), so we KEEP them instead of
+  // re-warming from scratch and burning Jules quota on every restart.
+  //
+  // Caveat: a `ready` session was warmed with the persona/prompt active at its
+  // creation; if you change the persona or diagnostic prompt and restart, already
+  // warmed sessions keep the old persona until they are consumed and the pool
+  // cycles. Clear the PreWarmedSession table manually if you need an immediate reset.
   try {
-    const deleted = await prisma.preWarmedSession.deleteMany({})
+    const deleted = await prisma.preWarmedSession.deleteMany({ where: { ready: false } })
     if (deleted.count > 0) {
-      console.log(`[Pool] Cleaned up ${deleted.count} stale pre-warmed sessions.`)
+      console.log(`[Pool] Removed ${deleted.count} orphaned (still-warming) pre-warmed session(s) from a previous run.`)
     }
   } catch (err) {
-    console.error('[Pool] Failed to cleanup stale sessions:', err)
+    console.error('[Pool] Failed to clean up orphaned pre-warmed sessions:', err)
   }
 
   const repos = new Set<string>()
