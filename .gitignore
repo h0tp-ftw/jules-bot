@@ -17,6 +17,8 @@ SOUL.md
 # Database
 prisma/dev.db
 prisma/dev.db-journal
+prisma/dev.db-wal
+prisma/dev.db-shm
 
 # Jules cache
 .jules/

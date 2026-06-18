@@ -135,6 +135,21 @@ async function start() {
     // Verify DB connection
     await prisma.$connect()
     console.log('Connected to Database.')
+
+    // SQLite durability hardening — matters most on SD-card / power-loss-prone
+    // hosts (e.g. a Raspberry Pi). WAL survives an abrupt power cut far better
+    // than the default rollback journal; synchronous=NORMAL stays durable under
+    // WAL while avoiding an fsync per write; busy_timeout prevents spurious
+    // SQLITE_BUSY errors when a write overlaps an in-flight read.
+    try {
+      await prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL;')
+      await prisma.$executeRawUnsafe('PRAGMA synchronous=NORMAL;')
+      await prisma.$executeRawUnsafe('PRAGMA busy_timeout=5000;')
+      console.log('[Database] SQLite pragmas applied (WAL, synchronous=NORMAL, busy_timeout=5000ms).')
+    } catch (err) {
+      console.error('[Database] Failed to apply SQLite pragmas:', err)
+    }
+
     await client.login(DISCORD_TOKEN)
   } catch (err) {
     console.error('Error starting bot:', err)
