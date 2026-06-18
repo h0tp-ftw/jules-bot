@@ -1,5 +1,5 @@
 import { Client, GatewayIntentBits, Collection, REST, Routes, Events, ActivityType, PresenceStatusData } from 'discord.js'
-import { DISCORD_TOKEN, prisma, yamlConfig, MESSAGES } from './config.js'
+import { DISCORD_TOKEN, JULES_API_KEY, prisma, yamlConfig, MESSAGES } from './config.js'
 import { t } from './strings.js'
 import { formatErrorForDiscord } from './lib/utils/errors.js'
 import linkRepoCmd from './commands/link-repo.js'
@@ -14,6 +14,11 @@ import { rehydrateActiveStreams } from './lib/jules/orchestrator.js'
 
 if (!DISCORD_TOKEN || DISCORD_TOKEN === 'YOUR_DISCORD_TOKEN') {
   console.error('Error: DISCORD_TOKEN is not configured in .env file.')
+  process.exit(1)
+}
+
+if (!JULES_API_KEY || JULES_API_KEY === 'YOUR_JULES_API_KEY') {
+  console.error('Error: JULES_API_KEY is not configured in .env file.')
   process.exit(1)
 }
 
@@ -137,13 +142,35 @@ async function start() {
   }
 }
 
-// Global error handlers to prevent bot from crashing on temporary network dropouts
+// Gracefully tear down on shutdown signals (pm2 reload/stop, Ctrl+C) so pending
+// status-message edits are dropped cleanly and the gateway/DB connections close
+// instead of being hard-killed mid-write.
+let shuttingDown = false
+async function shutdown(signal: string, exitCode = 0) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[Shutdown] ${signal} received — cleaning up...`)
+  try { streamManager.dispose() } catch (err) { console.error('[Shutdown] streamManager dispose failed:', err) }
+  try { await client.destroy() } catch (err) { console.error('[Shutdown] client destroy failed:', err) }
+  try { await prisma.$disconnect() } catch (err) { console.error('[Shutdown] prisma disconnect failed:', err) }
+  process.exit(exitCode)
+}
+
+process.on('SIGINT', () => { shutdown('SIGINT') })
+process.on('SIGTERM', () => { shutdown('SIGTERM') })
+
+// Network blips surface as unhandled rejections from awaited Discord/Jules calls;
+// log and keep running so a transient dropout doesn't take the bot down.
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason)
 })
 
+// An uncaught exception leaves the process in an undefined state — continuing
+// risks operating on corrupted in-memory state (active streams, buffers). Shut
+// down cleanly and let the process manager (pm2) restart us fresh.
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error)
+  shutdown('uncaughtException', 1)
 })
 
 start()

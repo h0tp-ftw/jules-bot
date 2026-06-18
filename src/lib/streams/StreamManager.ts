@@ -76,6 +76,19 @@ export class StreamManager {
     }
   }
 
+  /**
+   * Clears all pending debounce timers and in-memory buffers. Called on process
+   * shutdown so dangling 3s flush timers don't fire against a torn-down client.
+   */
+  dispose() {
+    for (const timer of this.timers.values()) {
+      clearTimeout(timer)
+    }
+    this.timers.clear()
+    this.buffers.clear()
+    this.activeSteps.clear()
+  }
+
   async finalizeSession(threadId: string, success: boolean, reason?: string) {
     // Clear any pending timers
     const timer = this.timers.get(threadId)
