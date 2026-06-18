@@ -40,8 +40,21 @@ export class JulesClient {
     return client.session(sessionId)
   }
 
-  static async getConnectedRepos(): Promise<{ name: string; id: string; defaultBranch?: string; branches: string[] }[]> {
-    const repos: { name: string; id: string; defaultBranch?: string; branches: string[] }[] = []
+  // A single interactive repo/branch-selection flow calls getConnectedRepos()
+  // several times (pick repo -> list branches -> search/clear), each a full
+  // network walk of client.sources(). Cache the result briefly to dedupe those
+  // back-to-back calls. Short TTL so a freshly connected repo/branch shows up
+  // quickly; the custom-branch input path can always reach any branch directly.
+  private static reposCache: { repos: ConnectedRepo[]; expiresAt: number } | null = null
+  private static readonly REPOS_CACHE_TTL_MS = 30_000
+
+  static async getConnectedRepos(forceRefresh = false): Promise<ConnectedRepo[]> {
+    const now = Date.now()
+    if (!forceRefresh && this.reposCache && this.reposCache.expiresAt > now) {
+      return this.reposCache.repos
+    }
+
+    const repos: ConnectedRepo[] = []
     try {
       for await (const source of client.sources()) {
         if (source.type === 'githubRepo') {
@@ -53,9 +66,20 @@ export class JulesClient {
           })
         }
       }
+      this.reposCache = { repos, expiresAt: now + this.REPOS_CACHE_TTL_MS }
     } catch (err) {
       console.error('[JulesClient] Failed to list connected sources:', err)
+      // Prefer returning a slightly stale list over an empty one when the
+      // network call fails mid-flow.
+      if (this.reposCache) return this.reposCache.repos
     }
     return repos
   }
+}
+
+interface ConnectedRepo {
+  name: string
+  id: string
+  defaultBranch?: string
+  branches: string[]
 }
