@@ -1,20 +1,21 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js'
-import { prisma } from '../config.js'
+import { prisma, MESSAGES } from '../config.js'
+import { t } from '../strings.js'
 
 export default {
   data: new SlashCommandBuilder()
     .setName('link-repo')
-    .setDescription('Link a GitHub repository to this server as the default for Jules diagnostic sessions')
+    .setDescription(MESSAGES.commands.link_repo_description)
     .addStringOption((option) =>
       option
         .setName('repository')
-        .setDescription('GitHub repository in owner/repo format (e.g. facebook/react)')
+        .setDescription(MESSAGES.commands.link_repo_option_description)
         .setRequired(true)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   async execute(interaction: ChatInputCommandInteraction) {
     if (!interaction.guildId) {
-      await interaction.reply({ content: '❌ This command can only be used in a server.', ephemeral: true })
+      await interaction.reply({ content: MESSAGES.errors.guild_only, ephemeral: true })
       return
     }
 
@@ -24,7 +25,7 @@ export default {
     const parts = repository.split('/')
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
       await interaction.reply({
-        content: '❌ Invalid repository format. Please use `owner/repo` format (e.g., `facebook/react`).',
+        content: MESSAGES.commands.link_repo_invalid_format,
         ephemeral: true,
       })
       return
@@ -41,11 +42,11 @@ export default {
       })
 
       await interaction.reply({
-        content: `✅ **Successfully linked repository \`${repository}\` to this server!** Jules will now analyze this repository for new debug threads.`,
+        content: t(MESSAGES.commands.link_repo_success, { repo: repository }),
       })
     } catch (err) {
       console.error('Failed to link repository:', err)
-      await interaction.reply({ content: '❌ Failed to link repository in the database.', ephemeral: true })
+      await interaction.reply({ content: MESSAGES.commands.link_repo_failed, ephemeral: true })
     }
   },
 }

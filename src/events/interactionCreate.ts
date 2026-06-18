@@ -1,5 +1,6 @@
 import { Interaction, Events, ThreadChannel, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js'
-import { prisma, getEffectiveConfig } from '../config.js'
+import { prisma, getEffectiveConfig, MESSAGES } from '../config.js'
+import { t, type Messages } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { runJulesStream, activeStreams, initializeJulesSession } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
@@ -16,6 +17,7 @@ function buildBranchSelectRow(
   repoName: string,
   branches: string[],
   defaultBranch: string,
+  messages: Messages,
 ): ActionRowBuilder<StringSelectMenuBuilder> {
   const options: StringSelectMenuOptionBuilder[] = []
 
@@ -23,7 +25,7 @@ function buildBranchSelectRow(
   if (defaultBranch && branches.includes(defaultBranch)) {
     options.push(
       new StringSelectMenuOptionBuilder()
-        .setLabel(`⭐ Default: ${defaultBranch}`)
+        .setLabel(t(messages.setup.default_branch_option, { branch: defaultBranch }))
         .setValue(defaultBranch)
     )
     hasDefault = true
@@ -44,8 +46,8 @@ function buildBranchSelectRow(
       options.push(new StringSelectMenuOptionBuilder().setLabel(b).setValue(b))
     }
     options.push(
-      new StringSelectMenuOptionBuilder().setLabel('🔍 Search Branches...').setValue('search-branch-prompt'),
-      new StringSelectMenuOptionBuilder().setLabel('✍️ Enter Custom Branch...').setValue('custom-branch-input')
+      new StringSelectMenuOptionBuilder().setLabel(messages.setup.search_branches_option).setValue('search-branch-prompt'),
+      new StringSelectMenuOptionBuilder().setLabel(messages.setup.custom_branch_option).setValue('custom-branch-input')
     )
   } else {
     for (const b of regularBranches) {
@@ -55,7 +57,7 @@ function buildBranchSelectRow(
 
   const branchSelect = new StringSelectMenuBuilder()
     .setCustomId(`select-branch:${threadId}:${repoName}`)
-    .setPlaceholder('Choose a branch...')
+    .setPlaceholder(messages.setup.branch_select_placeholder)
     .addOptions(options)
 
   return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(branchSelect)
@@ -73,7 +75,7 @@ export default {
 
     // Check permission
     if (!await hasPermission(interaction.member, interaction.user, interaction.channel)) {
-      await interaction.reply({ content: '❌ **You do not have permission to interact with this session.**', ephemeral: true })
+      await interaction.reply({ content: MESSAGES.errors.no_permission_interaction, ephemeral: true })
       return
     }
 
@@ -87,13 +89,14 @@ export default {
       })
 
       if (!sessionRecord) {
-        await interaction.reply({ content: '❌ Session not found.', ephemeral: true })
+        await interaction.reply({ content: MESSAGES.errors.session_not_found, ephemeral: true })
         return
       }
 
       try {
         const session = JulesClient.getSession(sessionRecord.julesSessionId)
         const thread = (await interaction.client.channels.fetch(threadId)) as ThreadChannel
+        const msgs = getEffectiveConfig(thread, interaction.member).messages
 
         if (kind === 'plan-approve') {
           // Approve the plan
@@ -107,7 +110,7 @@ export default {
           }
 
           await interaction.update({
-            content: '✅ **Plan approved. Jules is continuing the diagnostic steps...**',
+            content: msgs.plan.approved,
             components: [],
           })
         } else if (kind === 'plan-reject') {
@@ -119,13 +122,13 @@ export default {
             runJulesStream(sessionRecord.julesSessionId, thread, streamManager)
           }
           await interaction.update({
-            content: '❌ **Plan rejected. Please describe the changes or alternative approach you want Jules to take.**',
+            content: msgs.plan.rejected,
             components: [],
           })
         }
       } catch (err) {
         console.error(`Failed to process button interaction for thread ${threadId}:`, err)
-        await interaction.reply({ content: '❌ **An error occurred while communicating with Jules.**', ephemeral: true })
+        await interaction.reply({ content: MESSAGES.errors.jules_communication_error, ephemeral: true })
       }
     }
 
@@ -137,6 +140,8 @@ export default {
 
       try {
         const thread = (await interaction.client.channels.fetch(threadId)) as ThreadChannel
+        const threadConfig = getEffectiveConfig(thread, interaction.member)
+        const msgs = threadConfig.messages
 
         if (kind === 'select-repo') {
           const repoName = interaction.values[0]
@@ -147,26 +152,25 @@ export default {
           const selectedRepo = repos.find(r => r.name === repoName)
 
           if (!selectedRepo) {
-            await interaction.followUp({ content: '❌ Selected repository not found.', ephemeral: true })
+            await interaction.followUp({ content: msgs.errors.repo_not_found, ephemeral: true })
             return
           }
 
           const branches = selectedRepo.branches || []
-          const threadConfig = getEffectiveConfig(thread, interaction.member)
           const botEmoji = threadConfig.bot_emoji || '🐙'
           if (branches.length === 0) {
             const branch = selectedRepo.defaultBranch || 'main'
             await interaction.editReply({
-              content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branch}\`...`,
+              content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch }),
               components: [],
             })
 
             await initializeJulesSession(thread, repoName, branch, streamManager)
           } else {
             const defaultBranch = threadConfig.default_branch || selectedRepo.defaultBranch || 'main'
-            const row = buildBranchSelectRow(thread.id, repoName, branches, defaultBranch)
+            const row = buildBranchSelectRow(thread.id, repoName, branches, defaultBranch, msgs)
             await interaction.editReply({
-              content: `📋 **Configure Jules Diagnostic Session**\nSelected Repository: \`${repoName}\`\nPlease select the branch to work on:`,
+              content: t(msgs.setup.configure_select_branch, { repo: repoName }),
               components: [row],
             })
           }
@@ -177,13 +181,13 @@ export default {
           if (branchName === 'search-branch-prompt') {
             const modal = new ModalBuilder()
               .setCustomId(`modal-search-branch:${thread.id}:${repoName}`)
-              .setTitle('Search Branches')
+              .setTitle(msgs.setup.search_modal_title)
 
             const queryInput = new TextInputBuilder()
               .setCustomId('search-query')
-              .setLabel('Branch Name or Search Keyword')
+              .setLabel(msgs.setup.search_modal_input_label)
               .setRequired(true)
-              .setPlaceholder('e.g. feature/auth, main, develop')
+              .setPlaceholder(msgs.setup.search_modal_input_placeholder)
               .setStyle(TextInputStyle.Short)
 
             const actionRow = new ActionRowBuilder<TextInputBuilder>().addComponents(queryInput)
@@ -196,13 +200,13 @@ export default {
           if (branchName === 'custom-branch-input') {
             const modal = new ModalBuilder()
               .setCustomId(`modal-branch:${thread.id}:${repoName}`)
-              .setTitle('Enter Custom Branch')
+              .setTitle(msgs.setup.custom_branch_modal_title)
 
             const branchInput = new TextInputBuilder()
               .setCustomId('branch-input')
-              .setLabel('Exact Branch Name')
+              .setLabel(msgs.setup.custom_branch_modal_input_label)
               .setRequired(true)
-              .setPlaceholder('e.g. feature/cool-stuff')
+              .setPlaceholder(msgs.setup.custom_branch_modal_input_placeholder)
               .setStyle(TextInputStyle.Short)
 
             const actionRow = new ActionRowBuilder<TextInputBuilder>().addComponents(branchInput)
@@ -220,25 +224,23 @@ export default {
             const selectedRepo = repos.find(r => r.name === repoName)
 
             if (!selectedRepo) {
-              await interaction.editReply({ content: '❌ Selected repository not found.', components: [] })
+              await interaction.editReply({ content: msgs.errors.repo_not_found, components: [] })
               return
             }
 
             const branches = selectedRepo.branches || []
-            const threadConfig = getEffectiveConfig(thread, interaction.member)
             const defaultBranch = threadConfig.default_branch || selectedRepo.defaultBranch || 'main'
-            const row = buildBranchSelectRow(thread.id, repoName, branches, defaultBranch)
+            const row = buildBranchSelectRow(thread.id, repoName, branches, defaultBranch, msgs)
             await interaction.editReply({
-              content: `📋 **Configure Jules Diagnostic Session**\nSelected Repository: \`${repoName}\`\nPlease select the branch to work on:`,
+              content: t(msgs.setup.configure_select_branch, { repo: repoName }),
               components: [row],
             })
             return
           }
 
-          const threadConfig = getEffectiveConfig(thread, interaction.member)
           const botEmoji = threadConfig.bot_emoji || '🐙'
           await interaction.update({
-            content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`,
+            content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: branchName }),
             components: [],
           })
 
@@ -248,9 +250,9 @@ export default {
         console.error(`Failed to process select interaction for thread ${threadId}:`, err)
         try {
           if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ **An error occurred while setting up the session.**', ephemeral: true })
+            await interaction.reply({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
           } else {
-            await interaction.followUp({ content: '❌ **An error occurred while setting up the session.**', ephemeral: true })
+            await interaction.followUp({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
           }
         } catch (apiErr) {
           console.error('Failed to send error reply to expired interaction:', apiErr)
@@ -267,20 +269,21 @@ export default {
       try {
         const thread = (await interaction.client.channels.fetch(threadId)) as ThreadChannel
         const repoName = parts.slice(2).join(':')
+        const threadConfig = getEffectiveConfig(thread, interaction.member)
+        const msgs = threadConfig.messages
 
         if (kind === 'modal-branch') {
           const branchName = interaction.fields.getTextInputValue('branch-input')
-          const threadConfig = getEffectiveConfig(thread, interaction.member)
           const botEmoji = threadConfig.bot_emoji || '🐙'
 
           if (interaction.isFromMessage()) {
             await interaction.update({
-              content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`,
+              content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: branchName }),
               components: [],
             })
           } else {
             await interaction.reply({
-              content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`,
+              content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: branchName }),
               ephemeral: true,
             })
           }
@@ -301,28 +304,27 @@ export default {
 
           if (!selectedRepo) {
             if (interaction.isFromMessage()) {
-              await interaction.followUp({ content: '❌ Selected repository not found.', ephemeral: true })
+              await interaction.followUp({ content: msgs.errors.repo_not_found, ephemeral: true })
             } else {
-              await interaction.editReply({ content: '❌ Selected repository not found.' })
+              await interaction.editReply({ content: msgs.errors.repo_not_found })
             }
             return
           }
 
           const branches = selectedRepo.branches || []
-          
+
           // Check for exact case-insensitive match
           const exactMatch = branches.find(b => b === query || b.toLowerCase() === query.toLowerCase())
           if (exactMatch) {
-            const threadConfig = getEffectiveConfig(thread, interaction.member)
             const botEmoji = threadConfig.bot_emoji || '🐙'
             if (interaction.isFromMessage()) {
               await interaction.editReply({
-                content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${exactMatch}\`...`,
+                content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: exactMatch }),
                 components: [],
               })
             } else {
               await interaction.editReply({
-                content: `${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${exactMatch}\`...`,
+                content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: exactMatch }),
               })
             }
             await initializeJulesSession(thread, repoName, exactMatch, streamManager)
@@ -334,12 +336,12 @@ export default {
           if (filteredBranches.length === 0) {
             if (interaction.isFromMessage()) {
               await interaction.followUp({
-                content: `❌ **No branches matched your search query "${query}".** Please try again.`,
+                content: t(msgs.setup.no_branches_matched, { query }),
                 ephemeral: true,
               })
             } else {
               await interaction.editReply({
-                content: `❌ **No branches matched your search query "${query}".** Please try again.`,
+                content: t(msgs.setup.no_branches_matched, { query }),
               })
             }
             return
@@ -359,27 +361,27 @@ export default {
 
           options.push(
             new StringSelectMenuOptionBuilder()
-              .setLabel('🔍 Search Again...')
+              .setLabel(msgs.setup.search_again_option)
               .setValue('search-branch-prompt'),
             new StringSelectMenuOptionBuilder()
-              .setLabel('❌ Clear Search / Reset')
+              .setLabel(msgs.setup.clear_search_option)
               .setValue('clear-search')
           )
 
           const branchSelect = new StringSelectMenuBuilder()
             .setCustomId(`select-branch:${thread.id}:${repoName}`)
-            .setPlaceholder(`Search results for "${query}"...`)
+            .setPlaceholder(t(msgs.setup.branch_search_results_placeholder, { query }))
             .addOptions(options)
 
           const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(branchSelect)
           if (interaction.isFromMessage()) {
             await interaction.editReply({
-              content: `📋 **Configure Jules Diagnostic Session**\nSelected Repository: \`${repoName}\` (Search results for: \`${query}\`)\nPlease select the branch to work on:`,
+              content: t(msgs.setup.configure_select_branch_search, { repo: repoName, query }),
               components: [row],
             })
           } else {
             await interaction.editReply({
-              content: `📋 **Configure Jules Diagnostic Session**\nSelected Repository: \`${repoName}\` (Search results for: \`${query}\`)\nPlease select the branch to work on:`,
+              content: t(msgs.setup.configure_select_branch_search, { repo: repoName, query }),
               components: [row],
             })
           }
@@ -388,9 +390,9 @@ export default {
         console.error(`Failed to process modal submit for thread ${threadId}:`, err)
         try {
           if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ **An error occurred while setting up the session.**', ephemeral: true })
+            await interaction.reply({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
           } else {
-            await interaction.followUp({ content: '❌ **An error occurred while setting up the session.**', ephemeral: true })
+            await interaction.followUp({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
           }
         } catch (apiErr) {
           console.error('Failed to send error reply to expired interaction:', apiErr)

@@ -106,11 +106,23 @@ from `AGENTS.md` / `SOUL.md` (fallback to the templates). `bootstrap/` files (gi
 every prompt via `getBootstrapContext()`. **Profiles:** `--profile <name>` / `BOT_PROFILE` isolate `.env`,
 `config.yaml`, persona, `bootstrap/`, and `dev.db` under `profiles/<name>/` for running multiple instances.
 
+## User-facing strings (`src/strings.ts`)
+
+**All** user-facing Discord text and the substantive Jules-prompt fragments live in `src/strings.ts` as
+`DEFAULT_MESSAGES` (the single source of truth) — **do not hardcode them in other modules.** Add new strings
+to the catalog and reference them via `getEffectiveConfig(thread, member).messages.<group>.<key>` (thread
+context) or the global `MESSAGES` (no context, e.g. command registration / `index.ts`). Templated strings use
+`{placeholder}` tokens filled by `t(template, vars)` (e.g. `t(cfg.messages.session.initializing, { emoji, repo, branch })`).
+Every key is overridable via a `messages:` block in `config.yaml`, deep-merged with the same precedence as
+everything else (defaults → global → parent channel → thread → role). Only trivial prompt-assembly glue
+(`"\n\nUser Issue:\n"` in `JulesClient`/`PreWarmedManager`) stays inline. Tests: `test/strings.test.ts`.
+
 ## Conventions
 
 - Match surrounding style: explicit `.js` imports; commands `export default { data, execute }`; events
   `export default { name, execute }`; heavy `console.log('[Tag] …')` tracing; defensive `try/catch` around
   every Discord/Jules call.
-- User-facing strings use the configured `bot_emoji` (default 🐙) and bolded status lines.
+- User-facing strings use the configured `bot_emoji` (default 🐙) and bolded status lines. **Never hardcode
+  user-facing text** — it belongs in `src/strings.ts` (see the section above), referenced via `…messages.*` / `t()`.
 - Recent work (see git log) focused on **removing blocking network calls from hot paths** — avoid adding
   awaited network round-trips inside the `runJulesStream` loop or `messageCreate`.

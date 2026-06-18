@@ -6,6 +6,7 @@ import { parse } from 'yaml'
 import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from '@prisma/client'
 import { execSync } from 'child_process'
+import { DEFAULT_MESSAGES, deepMergeMessages, type Messages } from './strings.js'
 
 // Detect active profile from command line (--profile <name>) or BOT_PROFILE environment variable
 let profileName: string | undefined = process.env.BOT_PROFILE
@@ -110,10 +111,18 @@ try {
       ...(defaultYaml.presence || {}),
       ...(userYaml.presence || {}),
     },
+    // Deep-merged so a partial override (just one string) keeps the rest of
+    // the example file's overrides intact. Code defaults are layered on later.
+    messages: deepMergeMessages({}, defaultYaml.messages || {}, userYaml.messages || {}),
   }
 } catch (err) {
   console.error('Failed to parse config files, using empty defaults:', err)
 }
+
+// Centralized user-facing strings: code defaults (src/strings.ts) overlaid with
+// any global `messages:` overrides from YAML. Use this where there is no thread
+// context; for per-channel/thread/role resolution use getEffectiveConfig().messages.
+export const MESSAGES: Messages = deepMergeMessages(DEFAULT_MESSAGES, yamlConfig.messages || {}) as Messages
 
 
 
@@ -357,6 +366,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
   ignore_prefix?: string
   bot_emoji: string
   typing_indicator_mode: string
+  messages: Messages
 } {
   const channelsConfig = yamlConfig.channels || {}
   
@@ -405,6 +415,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
             ...(roleOverride.pre_warmed_sessions || {}),
             ...((roleVal as any).pre_warmed_sessions || {}),
           },
+          messages: deepMergeMessages(roleOverride.messages || {}, (roleVal as any).messages || {}),
         }
       }
     }
@@ -559,6 +570,16 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     resolvedTypingMode = roleOverride.typing_indicator_mode
   }
 
+  // Resolve user-facing strings: code defaults <- global YAML <- parent channel
+  // <- thread <- role. Each layer only needs to supply the keys it changes.
+  const resolvedMessages = deepMergeMessages(
+    DEFAULT_MESSAGES,
+    yamlConfig.messages || {},
+    (parentOverride as any).messages || {},
+    (threadOverride as any).messages || {},
+    (roleOverride as any).messages || {},
+  ) as Messages
+
   return {
     diagnostic_prompt: resolvedPrompt,
     access_control: resolvedAccessControl,
@@ -573,6 +594,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     ignore_prefix: resolvedIgnorePrefix,
     bot_emoji: resolvedBotEmoji,
     typing_indicator_mode: resolvedTypingMode,
+    messages: resolvedMessages,
   }
 }
 

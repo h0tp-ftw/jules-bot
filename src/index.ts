@@ -1,5 +1,6 @@
 import { Client, GatewayIntentBits, Collection, REST, Routes, Events, ActivityType, PresenceStatusData } from 'discord.js'
-import { DISCORD_TOKEN, prisma, yamlConfig } from './config.js'
+import { DISCORD_TOKEN, prisma, yamlConfig, MESSAGES } from './config.js'
+import { t } from './strings.js'
 import linkRepoCmd from './commands/link-repo.js'
 import setupForumCmd from './commands/setup-forum.js'
 import approveCmd from './commands/approve.js'
@@ -48,7 +49,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     // sees it (the `silent` flag is only meaningful for non-ephemeral surfaces).
     const { authorized } = await hasPermission(interaction.member, interaction.user, interaction.channel)
     if (!authorized) {
-      await interaction.reply({ content: '❌ **You do not have permission to run bot commands.**', ephemeral: true })
+      await interaction.reply({ content: MESSAGES.errors.no_permission_commands, ephemeral: true })
       return
     }
 
@@ -61,7 +62,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       console.error(err)
       const errorMsg = err instanceof Error ? err.stack || err.message : String(err)
       await interaction.reply({
-        content: `❌ **There was an error executing this command:**\n\`\`\`ts\n${errorMsg.slice(0, 1800)}\n\`\`\``,
+        content: t(MESSAGES.errors.command_execution_error, { error: errorMsg.slice(0, 1800) }),
         ephemeral: true,
       })
     }
@@ -114,7 +115,7 @@ client.once(Events.ClientReady, async () => {
     client.user?.setPresence({
       status: (presence.status || 'online') as PresenceStatusData,
       activities: presence.activity ? [{
-        name: type === ActivityType.Custom ? 'Custom Status' : presence.activity,
+        name: type === ActivityType.Custom ? MESSAGES.misc.custom_status_name : presence.activity,
         state: type === ActivityType.Custom ? presence.activity : undefined,
         type: type,
         url: presence.url

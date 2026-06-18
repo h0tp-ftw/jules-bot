@@ -4,6 +4,7 @@ import { JulesClient } from '../lib/jules/JulesClient.js'
 import { runJulesStream, activeStreams, updateReaction } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 import { formatAttachmentMetadata } from '../lib/utils/attachments.js'
+import { t } from '../strings.js'
 
 import { hasPermission } from '../lib/utils/permissions.js'
 
@@ -34,7 +35,7 @@ export default {
     const { authorized, silent } = await hasPermission(message.member, message.author, thread)
     if (!authorized) {
       if (!silent) {
-        await message.reply('❌ **You do not have permission to interact with this diagnostic session.**')
+        await message.reply(threadConfig.messages.errors.no_permission_session)
       }
       return
     }
@@ -49,7 +50,7 @@ export default {
         size: att.size || undefined
       }))
 
-      messageContent += formatAttachmentMetadata(attachmentList)
+      messageContent += formatAttachmentMetadata(attachmentList, threadConfig.messages.attachments)
     }
 
     console.log(`[MessageCreate] Event triggered for thread ${thread.id}. Content length: ${messageContent.length}`)
@@ -78,14 +79,20 @@ export default {
       const authorUsername = message.author.username
       const authorId = message.author.id
       const messageTime = message.createdAt.toISOString()
-      const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Author Username: ${authorUsername}, Author Discord ID: ${authorId}, Message Time: ${messageTime}]\n\n${messageContent}`
+      const promptWithMetadata = t(threadConfig.messages.prompts.metadata_header, {
+        nickname: authorNickname,
+        username: authorUsername,
+        id: authorId,
+        time: messageTime,
+        content: messageContent,
+      })
 
       console.log(`[MessageCreate] Sending message to Jules session ${sessionRecord.julesSessionId}...`)
       await session.send(promptWithMetadata)
       console.log(`[MessageCreate] Message sent successfully to Jules session ${sessionRecord.julesSessionId}`)
     } catch (err) {
       console.error(`Failed to send message to Jules for thread ${thread.id}:`, err)
-      await message.reply('❌ **Failed to deliver message to Jules. Please make sure the session is still active.**')
+      await message.reply(threadConfig.messages.session.message_delivery_failed)
     }
   },
 }

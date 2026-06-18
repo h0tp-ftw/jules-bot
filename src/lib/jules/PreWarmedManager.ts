@@ -1,4 +1,5 @@
 import { prisma, YAML_GUILDS, getBootstrapContext, yamlConfig, getEffectiveConfig } from '../../config.js'
+import { t } from '../../strings.js'
 import { julesApiClient as client } from './JulesClient.js'
 
 function getConfigForContext(contextKey: string | null) {
@@ -30,8 +31,8 @@ export async function preWarmSession(repoName: string, contextKey: string | null
       defaultPrompt += `\n\nBootstrap Knowledge and Context:\n${bootstrapContext}`
     }
 
-    const preWarmingPrompt = config.pre_warmed_sessions.pre_warming_prompt || 
-      `You are a diagnostic assistant. The user is connecting and has just sent their initial response. Acknowledge that you are showing this message now that they have replied. Share a random cool Pokémon fact, and let them know you are actively analyzing the codebase and working on their query right now. Even though you don't see their query yet, respond as if you have received a query from the user and are working on it. Do NOT propose code changes yet; generate the initial plan to welcome them and begin investigation.`
+    const preWarmingPrompt = config.pre_warmed_sessions.pre_warming_prompt ||
+      config.messages.prompts.prewarm_default
 
     defaultPrompt += `\n\nSystem Directive:\n${preWarmingPrompt}`
 
@@ -45,7 +46,9 @@ export async function preWarmSession(repoName: string, contextKey: string | null
     const session = await client.session({
       prompt: defaultPrompt,
       source: { github: repoName, baseBranch },
-      title: contextKey ? `Pre-warmed Session (${repoName} - Context: ${contextKey})` : `Pre-warmed Session (${repoName})`,
+      title: contextKey
+        ? t(config.messages.prompts.prewarm_title_context, { repo: repoName, context: contextKey })
+        : t(config.messages.prompts.prewarm_title, { repo: repoName }),
       requireApproval: true,
     })
 
@@ -85,8 +88,8 @@ export async function preWarmSession(repoName: string, contextKey: string | null
     if (info && info.state === 'awaitingPlanApproval' && config.auto_reject?.enabled) {
       console.log(`[Pre-warm] Plan detected (State: ${info.state}) for session ${session.id}. Automatically rejecting with welcome feedback...`)
       
-      const feedback = config.auto_reject?.message || 'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.'
-      const rejectionPrompt = `[System Directive: Auto-Reject Plan]\nFeedback: "${feedback}"\n\nPlease do not create or refine an implementation plan. Respond directly to the previous prompt and do not try to refine the implementation plan.`
+      const feedback = config.auto_reject?.message || config.messages.prompts.auto_reject_default
+      const rejectionPrompt = t(config.messages.prompts.auto_reject_directive_prewarm, { feedback })
       await session.send(rejectionPrompt)
 
       // Wait again for it to process the rejection

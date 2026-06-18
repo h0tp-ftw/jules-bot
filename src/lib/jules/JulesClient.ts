@@ -31,7 +31,7 @@ export class JulesClient {
     return await client.session({
       prompt: sessionPrompt,
       source: { github: options.repo, baseBranch: options.branch || 'main' },
-      title: options.title || 'Diagnostic Session',
+      title: options.title || threadConfig.messages.session.default_title,
       requireApproval: true,
     })
   }

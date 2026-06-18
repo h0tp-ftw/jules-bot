@@ -1,21 +1,22 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits, ChannelType } from 'discord.js'
-import { prisma } from '../config.js'
+import { prisma, MESSAGES } from '../config.js'
+import { t } from '../strings.js'
 
 export default {
   data: new SlashCommandBuilder()
     .setName('setup-forum')
-    .setDescription('Set the designated Forum channel where Jules will monitor debug threads')
+    .setDescription(MESSAGES.commands.setup_forum_description)
     .addChannelOption((option) =>
       option
         .setName('channel')
-        .setDescription('The Forum channel to monitor')
+        .setDescription(MESSAGES.commands.setup_forum_option_description)
         .addChannelTypes(ChannelType.GuildForum)
         .setRequired(true)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   async execute(interaction: ChatInputCommandInteraction) {
     if (!interaction.guildId) {
-      await interaction.reply({ content: '❌ This command can only be used in a server.', ephemeral: true })
+      await interaction.reply({ content: MESSAGES.errors.guild_only, ephemeral: true })
       return
     }
 
@@ -37,11 +38,11 @@ export default {
       })
 
       await interaction.reply({
-        content: `✅ **Successfully set debug forum channel to <#${channel.id}>!** Any new threads created here will initialize a Jules session.`,
+        content: t(MESSAGES.commands.setup_forum_success, { channel: channel.id }),
       })
     } catch (err) {
       console.error('Failed to setup forum channel:', err)
-      await interaction.reply({ content: '❌ Failed to save forum channel configuration in the database.', ephemeral: true })
+      await interaction.reply({ content: MESSAGES.commands.setup_forum_failed, ephemeral: true })
     }
   },
 }

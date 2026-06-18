@@ -1,3 +1,5 @@
+import { DEFAULT_MESSAGES, t, type Messages } from '../../strings.js'
+
 export interface SimpleAttachment {
   name: string
   url: string
@@ -6,22 +8,28 @@ export interface SimpleAttachment {
 }
 
 /**
- * Formats attachment details into a descriptive markdown list with instructions for Jules.
+ * Formats attachment details into a descriptive markdown list with instructions
+ * for Jules. Strings come from the resolved message catalog; pass
+ * `cfg.messages.attachments` to honor per-channel/role overrides, otherwise the
+ * built-in defaults are used.
  */
-export function formatAttachmentMetadata(attachments: SimpleAttachment[]): string {
+export function formatAttachmentMetadata(
+  attachments: SimpleAttachment[],
+  messages: Messages['attachments'] = DEFAULT_MESSAGES.attachments,
+): string {
   if (attachments.length === 0) return ''
 
-  let attachmentMetadata = '\n\n📎 **Attachments Attached:**\n'
+  let attachmentMetadata = messages.header
   for (const att of attachments) {
-    attachmentMetadata += `- **Name:** \`${att.name}\`\n  **URL:** ${att.url}\n`
+    attachmentMetadata += t(messages.item, { name: att.name, url: att.url })
     if (att.contentType) {
-      attachmentMetadata += `  **Type:** \`${att.contentType}\`\n`
+      attachmentMetadata += t(messages.type, { type: att.contentType })
     }
     if (att.size) {
-      attachmentMetadata += `  **Size:** \`${(att.size / 1024).toFixed(1)} KB\`\n`
+      attachmentMetadata += t(messages.size, { size: (att.size / 1024).toFixed(1) })
     }
   }
-  attachmentMetadata += `\n*(Note to Jules: If you need to inspect or analyze the attachments listed above, you should download them inside your workspace. For example, you can run \`curl -o "filename" "URL"\` or use a download script to save the file. Once downloaded locally in your workspace, you can use your native read/view tools on the downloaded file. If it is an image or PDF, your native read tool can handle it multimodally.)*\n`
+  attachmentMetadata += messages.instructions
 
   return attachmentMetadata
 }

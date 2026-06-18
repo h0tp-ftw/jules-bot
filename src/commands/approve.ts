@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js'
-import { prisma } from '../config.js'
+import { prisma, getEffectiveConfig, MESSAGES } from '../config.js'
+import { t } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { runJulesStream, activeStreams } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
@@ -7,21 +8,23 @@ import { StreamManager } from '../lib/streams/StreamManager.js'
 export default {
   data: new SlashCommandBuilder()
     .setName('approve')
-    .setDescription('Approve the proposed plan for this diagnostic session'),
+    .setDescription(MESSAGES.commands.approve_description),
   async execute(interaction: ChatInputCommandInteraction, streamManager: StreamManager) {
     if (!interaction.guildId) {
-      await interaction.reply({ content: '❌ This command can only be used in a server.', ephemeral: true })
+      await interaction.reply({ content: MESSAGES.errors.guild_only, ephemeral: true })
       return
     }
 
     const thread = interaction.channel
     if (!thread || !thread.isThread()) {
       await interaction.reply({
-        content: '❌ This command can only be used inside a Jules diagnostic thread.',
+        content: MESSAGES.commands.approve_thread_only,
         ephemeral: true,
       })
       return
     }
+
+    const msgs = getEffectiveConfig(thread, interaction.member).messages
 
     // Get session record
     const sessionRecord = await prisma.debugSession.findUnique({
@@ -30,7 +33,7 @@ export default {
 
     if (!sessionRecord) {
       await interaction.reply({
-        content: '❌ No active Jules session found for this thread.',
+        content: msgs.commands.approve_no_active_session,
         ephemeral: true,
       })
       return
@@ -44,7 +47,7 @@ export default {
 
       if (info.state !== 'awaitingPlanApproval') {
         await interaction.editReply({
-          content: `❌ **Cannot approve plan.** Current session state is \`${info.state}\` (needs to be \`awaitingPlanApproval\`).`,
+          content: t(msgs.commands.approve_cannot_approve_state, { state: info.state }),
         })
         return
       }
@@ -58,12 +61,12 @@ export default {
       }
 
       await interaction.editReply({
-        content: '✅ **Plan approved via slash command! Jules is continuing the diagnostic steps...**',
+        content: msgs.plan.approved_via_command,
       })
     } catch (err) {
       console.error(`Failed to approve plan via command for thread ${thread.id}:`, err)
       await interaction.editReply({
-        content: '❌ **Failed to approve plan. An error occurred while communicating with Jules.**',
+        content: msgs.commands.approve_failed,
       })
     }
   },

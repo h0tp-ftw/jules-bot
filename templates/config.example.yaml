@@ -91,4 +91,28 @@ pre_warmed_sessions:
 #     diagnostic_prompt: |
 #       You are a technical assistant. Provide deep code explanations.
 
+# Customizable text strings
+# Every user-facing string (and the substantive Jules-prompt fragments) lives in
+# `src/strings.ts` as the default. Override any of them here — you only need to
+# list the keys you want to change; everything else falls back to the defaults.
+# Templated strings use {placeholder} tokens (e.g. {emoji}, {repo}, {branch},
+# {error}, {feedback}); keep the placeholders you need in your override.
+#
+# Like the other settings above, `messages:` can also be nested under a specific
+# channel/forum (`channels:`) or role (`roles:`) block to override strings only
+# in that context. The precedence is: defaults -> global -> channel -> thread -> role.
+#
+# messages:
+#   errors:
+#     no_permission_session: "🚫 Sorry, you can't use this diagnostic session."
+#   session:
+#     initializing: "{emoji} Spinning up Jules against `{repo}` (`{branch}`)…"
+#     prewarmed_ready: "⚡ Got a warm session — on it!"
+#   plan:
+#     approve_button: "Looks good ✅"
+#     reject_button: "Not quite ❌"
+#   stream:
+#     completed: "✅ All done!"
+#   # See src/strings.ts for the full list of keys you can override.
+
 

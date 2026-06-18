@@ -1,5 +1,6 @@
 import { Client, ThreadChannel } from 'discord.js'
 import { prisma, getEffectiveConfig } from '../../config.js'
+import { t } from '../../strings.js'
 
 export class StreamManager {
   private buffers = new Map<string, string[]>()
@@ -21,7 +22,7 @@ export class StreamManager {
     if (!statusMessageId) {
       const threadConfig = getEffectiveConfig(thread)
       const botEmoji = threadConfig.bot_emoji || '🐙'
-      const msg = await thread.send(`${botEmoji} **Jules is analyzing the workspace...**\n\n*Logs will stream below:*`)
+      const msg = await thread.send(t(threadConfig.messages.stream.initial_status, { emoji: botEmoji }))
       statusMessageId = msg.id
       await prisma.debugSession.update({
         where: { threadId },
@@ -52,18 +53,19 @@ export class StreamManager {
 
     const threadConfig = getEffectiveConfig(thread)
     const botEmoji = threadConfig.bot_emoji || '🐙'
+    const m = threadConfig.messages.stream
 
-    let content = `${botEmoji} **Jules is analyzing the workspace...**\n\n`
+    let content = t(m.analyzing_header, { emoji: botEmoji }) + '\n\n'
     if (activeStep) {
-      content += `⚡ **Current Step:**\n> **${activeStep.title}**\n`
+      content += t(m.current_step, { title: activeStep.title }) + '\n'
       if (activeStep.description) {
-        content += `> *${activeStep.description}*\n`
+        content += t(m.current_step_description, { description: activeStep.description }) + '\n'
       }
       content += '\n'
     }
 
     if (buf.length > 0) {
-      content += '**Execution Logs:**\n```\n' + buf.join('\n') + '\n```'
+      content += m.execution_logs_header + '\n```\n' + buf.join('\n') + '\n```'
     }
 
     try {
@@ -91,13 +93,14 @@ export class StreamManager {
       const thread = (await this.client.channels.fetch(threadId)) as ThreadChannel
       if (!thread) return
 
+      const m = getEffectiveConfig(thread).messages.stream
       const buf = this.buffers.get(threadId) ?? []
       const statusText = success
-        ? '✅ **Jules analysis completed successfully.**'
-        : `❌ **Jules analysis failed.**${reason ? ` Reason: ${reason}` : ''}`
+        ? m.completed
+        : `${m.failed}${reason ? t(m.failed_reason_suffix, { reason }) : ''}`
 
       const logsBlock = buf.length > 0
-        ? `\n\n**Final execution logs:**\n\`\`\`\n${buf.join('\n')}\n\`\`\``
+        ? `\n\n${m.final_logs_header}\n\`\`\`\n${buf.join('\n')}\n\`\`\``
         : ''
 
       const msg = await thread.messages.fetch(session.statusMessageId)

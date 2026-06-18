@@ -9,6 +9,7 @@ import {
 import { JulesClient } from "./JulesClient.js";
 import { StreamManager } from "../streams/StreamManager.js";
 import { prisma, getEffectiveConfig, yamlConfig } from "../../config.js";
+import { t } from "../../strings.js";
 import { replenishPool } from "./PreWarmedManager.js";
 import { resolveMessageEmojis } from "../utils/emojis.js";
 import { splitMessage } from "../utils/messageSplitter.js";
@@ -248,7 +249,7 @@ export async function runJulesStream(
             `Session ${sessionId} stuck in queued state for too long. Aborting.`,
           );
           await thread.send(
-            "⚠️ Jules session timed out waiting to start. Please open a new thread.",
+            getEffectiveConfig(thread).messages.session.queued_timeout,
           );
           activeStreams.delete(thread.id);
           processedActivityIdsMap.delete(thread.id);
@@ -309,9 +310,12 @@ export async function runJulesStream(
               autoRejectedSessions.add(sessionId);
               const feedback =
                 autoReject.message ||
-                "Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.";
+                threadConfig.messages.prompts.auto_reject_default;
               await thread.send(
-                `🤖 **Plan Automatically Rejected:**\nFeedback: "${feedback}"\nJules is revising the plan...`,
+                t(threadConfig.messages.plan.auto_rejected_notice, {
+                  emoji: "🤖",
+                  feedback,
+                }),
               );
               await session.send(feedback);
               const target = await getTarget();
@@ -323,26 +327,34 @@ export async function runJulesStream(
             await updateReaction(target, "awaiting_plan_approval");
 
             const stepsText = plan.steps
-              .map((step: any, i: number) => `**${i + 1}.** ${step.title}`)
+              .map((step: any, i: number) =>
+                t(threadConfig.messages.plan.step_line, {
+                  number: i + 1,
+                  title: step.title,
+                }),
+              )
               .join("\n");
 
             const embed = new EmbedBuilder()
               .setTitle(
-                `${threadConfig.bot_emoji || "🐙"} Jules Proposed Diagnostic Plan`,
+                t(threadConfig.messages.plan.embed_title, {
+                  emoji: threadConfig.bot_emoji || "🐙",
+                }),
               )
               .setDescription(
-                stepsText.slice(0, 4000) || "No details provided.",
+                stepsText.slice(0, 4000) ||
+                  threadConfig.messages.plan.embed_no_details,
               )
               .setColor(0x00ae86);
 
             const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
               new ButtonBuilder()
                 .setCustomId(`plan-approve:${thread.id}`)
-                .setLabel("Approve Plan")
+                .setLabel(threadConfig.messages.plan.approve_button)
                 .setStyle(ButtonStyle.Success),
               new ButtonBuilder()
                 .setCustomId(`plan-reject:${thread.id}`)
-                .setLabel("Reject Plan")
+                .setLabel(threadConfig.messages.plan.reject_button)
                 .setStyle(ButtonStyle.Danger),
             );
 
@@ -488,7 +500,9 @@ export async function runJulesStream(
         const errorMsg =
           err instanceof Error ? err.stack || err.message : String(err);
         await thread.send(
-          `❌ **The diagnostic analysis session failed after multiple reconnection attempts:**\n\`\`\`ts\n${errorMsg.slice(0, 1800)}\n\`\`\``,
+          t(getEffectiveConfig(thread).messages.session.analysis_failed_retries, {
+            error: errorMsg.slice(0, 1800),
+          }),
         );
         break;
       }
@@ -519,7 +533,7 @@ export async function initializeJulesSession(
     (!starterMessage.content && starterMessage.attachments.size === 0)
   ) {
     await thread.send(
-      "⚠️ **Could not retrieve the starter message for this thread. Please reply with your issue details to start.**",
+      getEffectiveConfig(thread).messages.session.starter_message_unavailable,
     );
     return;
   }
@@ -530,6 +544,8 @@ export async function initializeJulesSession(
   const authorId = starterMessage.author.id;
   const messageTime = starterMessage.createdAt.toISOString();
   const threadTitle = thread.name;
+
+  const threadConfig = getEffectiveConfig(thread, starterMessage.member);
 
   let starterContent = starterMessage.content || "";
   if (starterMessage.attachments.size > 0) {
@@ -542,18 +558,29 @@ export async function initializeJulesSession(
       }),
     );
 
-    starterContent += formatAttachmentMetadata(attachmentList);
+    starterContent += formatAttachmentMetadata(
+      attachmentList,
+      threadConfig.messages.attachments,
+    );
   }
 
-  const promptWithMetadata = `[Message details - Author Nickname: ${authorNickname}, Author Username: ${authorUsername}, Author Discord ID: ${authorId}, Message Time: ${messageTime}, Issue/Thread Title: ${threadTitle}]\n\n${starterContent}`;
+  const promptWithMetadata = t(
+    threadConfig.messages.prompts.metadata_header_with_title,
+    {
+      nickname: authorNickname,
+      username: authorUsername,
+      id: authorId,
+      time: messageTime,
+      title: threadTitle,
+      content: starterContent,
+    },
+  );
 
   let session: any = null;
   let usedPreWarmed = false;
   let initialSkipIds: Set<string> | undefined;
   let welcomePlanRejected = false;
   let welcomeFeedback = "";
-
-  const threadConfig = getEffectiveConfig(thread, starterMessage.member);
 
   // Determine matching contextKey and pool eligibility
   let contextKey: string | null = null;
@@ -634,7 +661,7 @@ export async function initializeJulesSession(
       });
       if (warming) {
         const statusMsg = await thread.send(
-          "⏳ **A session is currently pre-warming. Waiting for it to become ready...**",
+          threadConfig.messages.session.prewarming_wait,
         );
         for (let attempt = 0; attempt < 12; attempt++) {
           await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -700,7 +727,7 @@ export async function initializeJulesSession(
             welcomePlanRejected = true;
             welcomeFeedback =
               threadConfig.auto_reject?.message ||
-              "Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.";
+              threadConfig.messages.prompts.auto_reject_default;
           }
         }
 
@@ -733,18 +760,26 @@ export async function initializeJulesSession(
                   `[initializeJulesSession] Rendering plan from history for session ${session.id}`,
                 );
                 const stepsText = plan.steps
-                  .map((step: any, i: number) => `**${i + 1}.** ${step.title}`)
+                  .map((step: any, i: number) =>
+                    t(threadConfig.messages.plan.step_line, {
+                      number: i + 1,
+                      title: step.title,
+                    }),
+                  )
                   .join("\n");
 
                 const embed = new EmbedBuilder()
                   .setTitle(
-                    `${threadConfig.bot_emoji || "🐙"} Jules Proposed Diagnostic Plan`,
+                    t(threadConfig.messages.plan.embed_title, {
+                      emoji: threadConfig.bot_emoji || "🐙",
+                    }),
                   )
                   .setDescription(
-                    stepsText.slice(0, 4000) || "No details provided.",
+                    stepsText.slice(0, 4000) ||
+                      threadConfig.messages.plan.embed_no_details,
                   )
                   .setColor(0x00ae86)
-                  .setFooter({ text: "Welcome plan detected." });
+                  .setFooter({ text: threadConfig.messages.plan.welcome_footer });
 
                 await thread.send({ embeds: [embed] });
               }
@@ -759,7 +794,10 @@ export async function initializeJulesSession(
             `[initializeJulesSession] Automatically rejecting welcome plan for pre-warmed session ${session.id}`,
           );
           await thread.send(
-            `${botEmoji} **Plan Automatically Rejected:**\nFeedback: "${welcomeFeedback}"\nJules is revising the plan...`,
+            t(threadConfig.messages.plan.auto_rejected_notice, {
+              emoji: botEmoji,
+              feedback: welcomeFeedback,
+            }),
           );
         }
 
@@ -811,12 +849,15 @@ export async function initializeJulesSession(
   }
 
   if (usedPreWarmed) {
-    await thread.send("🚀 **Ready session found! Processing your issue...**");
+    await thread.send(threadConfig.messages.session.prewarmed_ready);
     thread.sendTyping().catch(() => {});
 
     if (welcomePlanRejected) {
       // Send rejection separately BEFORE the user prompt
-      const rejectionDirective = `[System Directive: Auto-Reject Plan]\nFeedback: "${welcomeFeedback}"\n\nPlease do not create or refine an implementation plan. Respond directly to the user's prompt.`;
+      const rejectionDirective = t(
+        threadConfig.messages.prompts.auto_reject_directive_welcome,
+        { feedback: welcomeFeedback },
+      );
       console.log(
         `[initializeJulesSession] Sending auto-rejection directive for session ${session.id}`,
       );

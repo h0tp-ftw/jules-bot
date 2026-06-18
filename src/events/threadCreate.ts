@@ -1,5 +1,6 @@
 import { ThreadChannel, Events, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder } from 'discord.js'
 import { prisma, YAML_GUILDS, getEffectiveConfig } from '../config.js'
+import { t } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { initializeJulesSession, updateReaction } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
@@ -52,7 +53,7 @@ export default {
     }
 
     if (!starterMessage || (!starterMessage.content && starterMessage.attachments.size === 0)) {
-      await thread.send('⚠️ **Could not retrieve the starter message for this thread. Please reply with your issue details to start.**')
+      await thread.send(getEffectiveConfig(thread).messages.session.starter_message_unavailable)
       return
     }
 
@@ -72,7 +73,7 @@ export default {
           if (defaultRepo) {
             options.push(
               new StringSelectMenuOptionBuilder()
-                .setLabel(`⭐ Default: ${defaultRepo}`)
+                .setLabel(t(threadConfig.messages.setup.default_repo_option, { repo: defaultRepo }))
                 .setValue(defaultRepo)
             )
           }
@@ -94,41 +95,41 @@ export default {
 
           const select = new StringSelectMenuBuilder()
             .setCustomId(`select-repo:${thread.id}`)
-            .setPlaceholder('Choose a repository...')
+            .setPlaceholder(threadConfig.messages.setup.repo_select_placeholder)
             .addOptions(options)
 
           const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)
           await thread.send({
-            content: '📋 **Configure Jules Diagnostic Session**\nPlease select the repository you want to run diagnostics against:',
+            content: threadConfig.messages.setup.configure_select_repo,
             components: [row],
           })
           return
         } else {
-          await thread.send('⚠️ **No connected repositories found in your Jules account.** Please connect a repository first.')
+          await thread.send(threadConfig.messages.setup.no_connected_repos)
           return
         }
       } catch (err) {
         console.error('Failed to load connected repos for selection:', err)
-        await thread.send('❌ **Failed to load connected repositories for selection.** Please verify your connection to Google Jules and try again.')
+        await thread.send(threadConfig.messages.setup.load_repos_failed)
         return
       }
     }
 
     if (!repo) {
-      await thread.send('⚠️ **No default repository has been set for this server.** Please use the `/link-repo` command to set a default repository.')
+      await thread.send(threadConfig.messages.setup.no_default_repo)
       return
     }
 
     const repoName: string = repo
     const branchName = threadConfig.default_branch || 'main'
     const botEmoji = threadConfig.bot_emoji || '🐙'
-    await thread.send(`${botEmoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: \`${repoName}\` on branch \`${branchName}\`...`)
+    await thread.send(t(threadConfig.messages.session.initializing, { emoji: botEmoji, repo: repoName, branch: branchName }))
 
     try {
       await initializeJulesSession(thread, repoName, branchName, streamManager)
     } catch (err) {
       console.error('Failed to start Jules session:', err)
-      await thread.send('❌ **Failed to start Jules diagnostic session. Please verify your repository configuration and permissions.**')
+      await thread.send(threadConfig.messages.session.start_failed)
     }
   },
 }
