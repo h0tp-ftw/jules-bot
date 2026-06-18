@@ -1,3 +1,4 @@
+import { logger } from '../utils/logger.js'
 import { prisma, YAML_GUILDS, getBootstrapContext, yamlConfig, getEffectiveConfig } from '../../config.js'
 import { t } from '../../strings.js'
 import { julesApiClient as client } from './JulesClient.js'
@@ -42,7 +43,7 @@ export async function preWarmSession(repoName: string, contextKey: string | null
     // setups that don't configure a default branch are unaffected.
     const baseBranch = config.default_branch || 'main'
 
-    console.log(`[Pre-warm] Creating session for ${repoName}@${baseBranch} (Context: ${contextKey || 'global'})...`)
+    logger.debug(`[Pre-warm] Creating session for ${repoName}@${baseBranch} (Context: ${contextKey || 'global'})...`)
     const session = await client.session({
       prompt: defaultPrompt,
       source: { github: repoName, baseBranch },
@@ -61,7 +62,7 @@ export async function preWarmSession(repoName: string, contextKey: string | null
       }
     })
 
-    console.log(`[Pre-warm] Created session ${session.id} for ${repoName} (Context: ${contextKey || 'global'}). Waiting for ready...`)
+    logger.debug(`[Pre-warm] Created session ${session.id} for ${repoName} (Context: ${contextKey || 'global'}). Waiting for ready...`)
 
     // Helper to wait until session reaches a settled state
     const waitForSettled = async (sess: any) => {
@@ -78,7 +79,7 @@ export async function preWarmSession(repoName: string, contextKey: string | null
 
     if (info && info.state === 'failed') {
       const reason = (info as any).reason || 'Unknown failure during initialization'
-      console.error(`[Pre-warm] Session ${session.id} failed during initialization: ${reason}`)
+      logger.error(`[Pre-warm] Session ${session.id} failed during initialization: ${reason}`)
       await prisma.preWarmedSession.delete({ where: { id: session.id } })
       return
     }
@@ -86,7 +87,7 @@ export async function preWarmSession(repoName: string, contextKey: string | null
     // If it proposed a plan (awaitingPlanApproval), 
     // and auto-reject is enabled, we MUST send the rejection directive to force it back to diagnostic conversation.
     if (info && info.state === 'awaitingPlanApproval' && config.auto_reject?.enabled) {
-      console.log(`[Pre-warm] Plan detected (State: ${info.state}) for session ${session.id}. Automatically rejecting with welcome feedback...`)
+      logger.debug(`[Pre-warm] Plan detected (State: ${info.state}) for session ${session.id}. Automatically rejecting with welcome feedback...`)
       
       const feedback = config.auto_reject?.message || config.messages.prompts.auto_reject_default
       const rejectionPrompt = t(config.messages.prompts.auto_reject_directive_prewarm, { feedback })
@@ -97,7 +98,7 @@ export async function preWarmSession(repoName: string, contextKey: string | null
 
       if (info && info.state === 'failed') {
         const reason = (info as any).reason || 'Unknown failure during plan rejection'
-        console.error(`[Pre-warm] Session ${session.id} failed after rejection: ${reason}`)
+        logger.error(`[Pre-warm] Session ${session.id} failed after rejection: ${reason}`)
         await prisma.preWarmedSession.delete({ where: { id: session.id } })
         return
       }
@@ -118,9 +119,9 @@ export async function preWarmSession(repoName: string, contextKey: string | null
       }
     })
 
-    console.log(`[Pre-warm] Session ${session.id} is now fully warm and ready in ${info?.state || 'unknown'} state.`)
+    logger.debug(`[Pre-warm] Session ${session.id} is now fully warm and ready in ${info?.state || 'unknown'} state.`)
   } catch (err) {
-    console.error(`[Pre-warm] Failed to pre-warm session for ${repoName} (Context: ${contextKey || 'global'}):`, err)
+    logger.error(`[Pre-warm] Failed to pre-warm session for ${repoName} (Context: ${contextKey || 'global'}):`, err)
   }
 }
 
@@ -136,7 +137,7 @@ export async function replenishPool(repoName: string, contextKey: string | null 
   const targetCount = config.pre_warmed_sessions.pool_size
   if (count < targetCount) {
     const needed = targetCount - count
-    console.log(`[Pool] Replenishing pre-warmed pool for ${repoName} (Context: ${contextKey || 'global'}). Current: ${count}, Target: ${targetCount}. Spawning ${needed} session(s) in background.`)
+    logger.debug(`[Pool] Replenishing pre-warmed pool for ${repoName} (Context: ${contextKey || 'global'}). Current: ${count}, Target: ${targetCount}. Spawning ${needed} session(s) in background.`)
     for (let i = 0; i < needed; i++) {
       preWarmSession(repoName, contextKey).catch(() => {})
     }
@@ -144,7 +145,7 @@ export async function replenishPool(repoName: string, contextKey: string | null 
 }
 
 export async function initPreWarmedPools() {
-  console.log('[Pool] Initializing pre-warmed session pools...')
+  logger.debug('[Pool] Initializing pre-warmed session pools...')
 
   // On startup, drop only the sessions that were still warming when the process
   // last stopped — their warming routine (waitForSettled) died with the process,
@@ -160,10 +161,10 @@ export async function initPreWarmedPools() {
   try {
     const deleted = await prisma.preWarmedSession.deleteMany({ where: { ready: false } })
     if (deleted.count > 0) {
-      console.log(`[Pool] Removed ${deleted.count} orphaned (still-warming) pre-warmed session(s) from a previous run.`)
+      logger.debug(`[Pool] Removed ${deleted.count} orphaned (still-warming) pre-warmed session(s) from a previous run.`)
     }
   } catch (err) {
-    console.error('[Pool] Failed to clean up orphaned pre-warmed sessions:', err)
+    logger.error('[Pool] Failed to clean up orphaned pre-warmed sessions:', err)
   }
 
   const repos = new Set<string>()
@@ -184,7 +185,7 @@ export async function initPreWarmedPools() {
       }
     }
   } catch (err) {
-    console.error('[Pool] Failed to fetch guild configs from database on startup:', err)
+    logger.error('[Pool] Failed to fetch guild configs from database on startup:', err)
   }
 
   // Collect contexts to warm

@@ -1,3 +1,4 @@
+import { logger } from './lib/utils/logger.js'
 import { Client, GatewayIntentBits, Collection, REST, Routes, Events, ActivityType, PresenceStatusData } from 'discord.js'
 import { DISCORD_TOKEN, JULES_API_KEY, prisma, yamlConfig, MESSAGES } from './config.js'
 import { t } from './strings.js'
@@ -13,12 +14,12 @@ import { initPreWarmedPools } from './lib/jules/PreWarmedManager.js'
 import { rehydrateActiveStreams } from './lib/jules/orchestrator.js'
 
 if (!DISCORD_TOKEN || DISCORD_TOKEN === 'YOUR_DISCORD_TOKEN') {
-  console.error('Error: DISCORD_TOKEN is not configured in .env file.')
+  logger.error('Error: DISCORD_TOKEN is not configured in .env file.')
   process.exit(1)
 }
 
 if (!JULES_API_KEY || JULES_API_KEY === 'YOUR_JULES_API_KEY') {
-  console.error('Error: JULES_API_KEY is not configured in .env file.')
+  logger.error('Error: JULES_API_KEY is not configured in .env file.')
   process.exit(1)
 }
 
@@ -65,7 +66,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       await command.execute(interaction, streamManager)
     } catch (err: any) {
-      console.error(err)
+      logger.error(err)
       await interaction.reply({
         content: t(MESSAGES.errors.command_execution_error, { error: formatErrorForDiscord(err) }),
         ephemeral: true,
@@ -78,30 +79,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
 })
 
 client.once(Events.ClientReady, async () => {
-  console.log(`🐙 Bot logged in as ${client.user?.tag}`)
+  logger.info(`🐙 Bot logged in as ${client.user?.tag}`)
 
   // Automatically register slash commands globally
   try {
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN)
     const commandData = Array.from(commands.values()).map((cmd) => cmd.data.toJSON())
 
-    console.log('Refreshing application (/) commands...')
+    logger.debug('Refreshing application (/) commands...')
     await rest.put(Routes.applicationCommands(client.user!.id), {
       body: commandData,
     })
-    console.log('Successfully reloaded application (/) commands.')
+    logger.debug('Successfully reloaded application (/) commands.')
   } catch (error) {
-    console.error('Failed to register application commands:', error)
+    logger.error('Failed to register application commands:', error)
   }
 
   // Initialize pre-warmed pools
   initPreWarmedPools().catch((err) => {
-    console.error('Failed to initialize pre-warmed pools:', err)
+    logger.error('Failed to initialize pre-warmed pools:', err)
   })
 
   // Rehydrate active streams
   rehydrateActiveStreams(client, streamManager).catch((err) => {
-    console.error('Failed to rehydrate active streams:', err)
+    logger.error('Failed to rehydrate active streams:', err)
   })
 
   // Set configurable presence
@@ -134,7 +135,7 @@ async function start() {
   try {
     // Verify DB connection
     await prisma.$connect()
-    console.log('Connected to Database.')
+    logger.info('Connected to Database.')
 
     // SQLite durability hardening — matters most on SD-card / power-loss-prone
     // hosts (e.g. a Raspberry Pi). WAL survives an abrupt power cut far better
@@ -145,14 +146,14 @@ async function start() {
       await prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL;')
       await prisma.$executeRawUnsafe('PRAGMA synchronous=NORMAL;')
       await prisma.$executeRawUnsafe('PRAGMA busy_timeout=5000;')
-      console.log('[Database] SQLite pragmas applied (WAL, synchronous=NORMAL, busy_timeout=5000ms).')
+      logger.debug('[Database] SQLite pragmas applied (WAL, synchronous=NORMAL, busy_timeout=5000ms).')
     } catch (err) {
-      console.error('[Database] Failed to apply SQLite pragmas:', err)
+      logger.error('[Database] Failed to apply SQLite pragmas:', err)
     }
 
     await client.login(DISCORD_TOKEN)
   } catch (err) {
-    console.error('Error starting bot:', err)
+    logger.error('Error starting bot:', err)
     process.exit(1)
   }
 }
@@ -164,10 +165,10 @@ let shuttingDown = false
 async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return
   shuttingDown = true
-  console.log(`[Shutdown] ${signal} received — cleaning up...`)
-  try { streamManager.dispose() } catch (err) { console.error('[Shutdown] streamManager dispose failed:', err) }
-  try { await client.destroy() } catch (err) { console.error('[Shutdown] client destroy failed:', err) }
-  try { await prisma.$disconnect() } catch (err) { console.error('[Shutdown] prisma disconnect failed:', err) }
+  logger.info(`[Shutdown] ${signal} received — cleaning up...`)
+  try { streamManager.dispose() } catch (err) { logger.error('[Shutdown] streamManager dispose failed:', err) }
+  try { await client.destroy() } catch (err) { logger.error('[Shutdown] client destroy failed:', err) }
+  try { await prisma.$disconnect() } catch (err) { logger.error('[Shutdown] prisma disconnect failed:', err) }
   process.exit(exitCode)
 }
 
@@ -177,14 +178,14 @@ process.on('SIGTERM', () => { shutdown('SIGTERM') })
 // Network blips surface as unhandled rejections from awaited Discord/Jules calls;
 // log and keep running so a transient dropout doesn't take the bot down.
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason)
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason)
 })
 
 // An uncaught exception leaves the process in an undefined state — continuing
 // risks operating on corrupted in-memory state (active streams, buffers). Shut
 // down cleanly and let the process manager (pm2) restart us fresh.
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error)
+  logger.error('Uncaught Exception:', error)
   shutdown('uncaughtException', 1)
 })
 

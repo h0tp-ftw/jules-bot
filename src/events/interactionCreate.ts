@@ -1,3 +1,4 @@
+import { logger } from '../lib/utils/logger.js'
 import { Interaction, Events, ThreadChannel, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js'
 import { prisma, getEffectiveConfig, MESSAGES } from '../config.js'
 import { t, type Messages } from '../strings.js'
@@ -132,7 +133,7 @@ export default {
           })
         }
       } catch (err) {
-        console.error(`Failed to process button interaction for thread ${threadId}:`, err)
+        logger.error(`Failed to process button interaction for thread ${threadId}:`, err)
         await interaction.reply({ content: MESSAGES.errors.jules_communication_error, ephemeral: true })
       }
     }
@@ -252,7 +253,7 @@ export default {
           await initializeJulesSession(thread, repoName, branchName, streamManager)
         }
       } catch (err) {
-        console.error(`Failed to process select interaction for thread ${threadId}:`, err)
+        logger.error(`Failed to process select interaction for thread ${threadId}:`, err)
         try {
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
@@ -260,7 +261,7 @@ export default {
             await interaction.followUp({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
           }
         } catch (apiErr) {
-          console.error('Failed to send error reply to expired interaction:', apiErr)
+          logger.error('Failed to send error reply to expired interaction:', apiErr)
         }
       }
     }
@@ -392,7 +393,7 @@ export default {
           }
         }
       } catch (err) {
-        console.error(`Failed to process modal submit for thread ${threadId}:`, err)
+        logger.error(`Failed to process modal submit for thread ${threadId}:`, err)
         try {
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
@@ -400,7 +401,7 @@ export default {
             await interaction.followUp({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
           }
         } catch (apiErr) {
-          console.error('Failed to send error reply to expired interaction:', apiErr)
+          logger.error('Failed to send error reply to expired interaction:', apiErr)
         }
       }
     }

@@ -1,3 +1,4 @@
+import { logger } from '../lib/utils/logger.js'
 import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js'
 import { prisma, MESSAGES } from '../config.js'
 import { t } from '../strings.js'
@@ -45,7 +46,7 @@ export default {
         content: t(MESSAGES.commands.link_repo_success, { repo: repository }),
       })
     } catch (err) {
-      console.error('Failed to link repository:', err)
+      logger.error('Failed to link repository:', err)
       await interaction.reply({ content: MESSAGES.commands.link_repo_failed, ephemeral: true })
     }
   },

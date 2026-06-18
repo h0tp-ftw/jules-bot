@@ -1,3 +1,4 @@
+import { logger } from '../lib/utils/logger.js'
 import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits, ChannelType } from 'discord.js'
 import { prisma, MESSAGES } from '../config.js'
 import { t } from '../strings.js'
@@ -41,7 +42,7 @@ export default {
         content: t(MESSAGES.commands.setup_forum_success, { channel: channel.id }),
       })
     } catch (err) {
-      console.error('Failed to setup forum channel:', err)
+      logger.error('Failed to setup forum channel:', err)
       await interaction.reply({ content: MESSAGES.commands.setup_forum_failed, ephemeral: true })
     }
   },

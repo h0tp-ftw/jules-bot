@@ -4,7 +4,7 @@
   "description": "A Discord bot that turns forum threads into interactive Google Jules coding-agent sessions — diagnose first, change only on human approval.",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "prisma generate && tsx src/index.ts",
+    "dev": "prisma generate && LOG_LEVEL=debug tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "setup": "node scripts/setup.js",

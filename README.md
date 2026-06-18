@@ -112,6 +112,7 @@ InteractionCreate (Approve/Reject) ──────────▶ runJulesStr
    DATABASE_URL="file:./prisma/dev.db"
    DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
    JULES_API_KEY="YOUR_JULES_API_KEY"
+   LOG_LEVEL="info"   # debug | info | warn | error
    ```
    > The bot validates both tokens on startup and exits early with a clear message if either is missing.
 
@@ -227,6 +228,7 @@ Operational notes:
 - **Single instance per token** — coordination state (active streams, dedup sets) is in-process, so run exactly **one** instance per bot token. `ecosystem.config.cjs` pins fork mode + one instance; Discord.js sharding is not supported.
 - **Durable SQLite** — on boot the bot enables WAL mode (`synchronous=NORMAL`, `busy_timeout=5000ms`) so the database survives abrupt power loss far better — worth knowing on SD-card hosts like a Raspberry Pi.
 - **Back up `prisma/dev.db`** — it is the source of truth for the thread⇄session mapping used to rehydrate streams after a restart. (In WAL mode you'll also see transient `dev.db-wal` / `dev.db-shm` sidecar files.)
+- **Log verbosity** — set `LOG_LEVEL` (`debug`/`info`/`warn`/`error`, default `info`). `info` keeps production to lifecycle + warnings + errors; `debug` shows the full per-activity trace (`npm run dev` enables it automatically).
 - **Multiple bots** — use `--profile <name>` (or `BOT_PROFILE`) to isolate `.env`, `config.yaml`, persona files, `bootstrap/`, and the database under `profiles/<name>/`.
 
 ---

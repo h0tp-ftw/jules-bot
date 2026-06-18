@@ -1,3 +1,4 @@
+import { logger } from '../utils/logger.js'
 import { Client, ThreadChannel } from 'discord.js'
 import { prisma, getEffectiveConfig } from '../../config.js'
 import { t } from '../../strings.js'
@@ -72,7 +73,7 @@ export class StreamManager {
       const msg = await thread.messages.fetch(statusMessageId)
       await msg.edit({ content: content.slice(0, 1990) })
     } catch (err) {
-      console.error('Failed to update status message:', err)
+      logger.error('Failed to update status message:', err)
     }
   }
 
@@ -119,7 +120,7 @@ export class StreamManager {
       const msg = await thread.messages.fetch(session.statusMessageId)
       await msg.edit({ content: `${statusText}${logsBlock}`.slice(0, 1990) })
     } catch (err) {
-      console.error('Failed to finalize status message:', err)
+      logger.error('Failed to finalize status message:', err)
     }
 
     // Clean up in-memory buffer

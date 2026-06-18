@@ -1,3 +1,4 @@
+import { logger } from '../lib/utils/logger.js'
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js'
 import { prisma, getEffectiveConfig, MESSAGES } from '../config.js'
 import { t } from '../strings.js'
@@ -64,7 +65,7 @@ export default {
         content: msgs.plan.approved_via_command,
       })
     } catch (err) {
-      console.error(`Failed to approve plan via command for thread ${thread.id}:`, err)
+      logger.error(`Failed to approve plan via command for thread ${thread.id}:`, err)
       await interaction.editReply({
         content: msgs.commands.approve_failed,
       })

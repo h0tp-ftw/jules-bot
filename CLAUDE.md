@@ -123,8 +123,9 @@ everything else (defaults → global → parent channel → thread → role). On
 ## Conventions
 
 - Match surrounding style: explicit `.js` imports; commands `export default { data, execute }`; events
-  `export default { name, execute }`; heavy `console.log('[Tag] …')` tracing; defensive `try/catch` around
-  every Discord/Jules call.
+  `export default { name, execute }`; heavy `[Tag] …` tracing via `logger.debug` (`src/lib/utils/logger.js`,
+  level-gated by `LOG_LEVEL`; use `logger.info` for lifecycle, `logger.error/warn` for problems — not raw
+  `console.*`); defensive `try/catch` around every Discord/Jules call.
 - User-facing strings use the configured `bot_emoji` (default 🐙) and bolded status lines. **Never hardcode
   user-facing text** — it belongs in `src/strings.ts` (see the section above), referenced via `…messages.*` / `t()`.
 - Recent work (see git log) focused on **removing blocking network calls from hot paths** — avoid adding

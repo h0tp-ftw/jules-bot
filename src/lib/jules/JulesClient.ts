@@ -1,3 +1,4 @@
+import { logger } from '../utils/logger.js'
 import { jules } from '@google/jules-sdk'
 import { JULES_API_KEY, getBootstrapContext, getEffectiveConfig } from '../../config.js'
 
@@ -68,7 +69,7 @@ export class JulesClient {
       }
       this.reposCache = { repos, expiresAt: now + this.REPOS_CACHE_TTL_MS }
     } catch (err) {
-      console.error('[JulesClient] Failed to list connected sources:', err)
+      logger.error('[JulesClient] Failed to list connected sources:', err)
       // Prefer returning a slightly stale list over an empty one when the
       // network call fails mid-flow.
       if (this.reposCache) return this.reposCache.repos

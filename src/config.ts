@@ -1,3 +1,4 @@
+import { logger } from './lib/utils/logger.js'
 import 'dotenv/config'
 import dotenv from 'dotenv'
 import fs from 'fs'
@@ -44,9 +45,9 @@ if (isProfileActive && profileDir) {
     if (!fs.existsSync(destPath) && fs.existsSync(srcPath)) {
       try {
         fs.copyFileSync(srcPath, destPath)
-        console.log(`[Profile] Copied template ${src} to ${destPath}`)
+        logger.debug(`[Profile] Copied template ${src} to ${destPath}`)
       } catch (err) {
-        console.error(`[Profile] Failed to copy template ${src} to ${destPath}:`, err)
+        logger.error(`[Profile] Failed to copy template ${src} to ${destPath}:`, err)
       }
     }
   }
@@ -116,7 +117,7 @@ try {
     messages: deepMergeMessages({}, defaultYaml.messages || {}, userYaml.messages || {}),
   }
 } catch (err) {
-  console.error('Failed to parse config files, using empty defaults:', err)
+  logger.error('Failed to parse config files, using empty defaults:', err)
 }
 
 // Centralized user-facing strings: code defaults (src/strings.ts) overlaid with
@@ -192,20 +193,20 @@ process.env.DATABASE_URL = DATABASE_URL
 if (DATABASE_URL.startsWith('file:')) {
   const dbPath = path.resolve(DATABASE_URL.slice(5))
   if (!fs.existsSync(dbPath)) {
-    console.log(`[Database] SQLite file not found at ${dbPath}. Auto-provisioning...`)
+    logger.info(`[Database] SQLite file not found at ${dbPath}. Auto-provisioning...`)
     const dbDir = path.dirname(dbPath)
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true })
     }
     try {
-      console.log(`[Database] Running 'npx prisma db push' to provision database...`)
+      logger.debug(`[Database] Running 'npx prisma db push' to provision database...`)
       execSync('npx prisma db push', {
         env: { ...process.env, DATABASE_URL: DATABASE_URL },
         stdio: 'inherit'
       })
-      console.log(`[Database] Successfully provisioned SQLite database at ${dbPath}`)
+      logger.info(`[Database] Successfully provisioned SQLite database at ${dbPath}`)
     } catch (err) {
-      console.error('[Database] Failed to auto-provision SQLite database:', err)
+      logger.error('[Database] Failed to auto-provision SQLite database:', err)
     }
   }
 }
@@ -235,7 +236,7 @@ try {
     agentsContent = fs.readFileSync(agentsExamplePath, 'utf8')
   }
 } catch (err) {
-  console.error('Failed to load agent personality file:', err)
+  logger.error('Failed to load agent personality file:', err)
 }
 
 export const AGENT_PERSONALITY = agentsContent
@@ -254,7 +255,7 @@ try {
     soulContent = fs.readFileSync(soulExamplePath, 'utf8')
   }
 } catch (err) {
-  console.error('Failed to load agent soul file:', err)
+  logger.error('Failed to load agent soul file:', err)
 }
 
 export const SOUL_PERSONALITY = soulContent
@@ -287,7 +288,7 @@ function getFilesRecursively(dir: string, baseDir: string = dir): { relativePath
         const content = fs.readFileSync(filePath, 'utf8')
         results.push({ relativePath, content })
       } catch (err) {
-        console.error(`Failed to read file ${filePath}:`, err)
+        logger.error(`Failed to read file ${filePath}:`, err)
       }
     }
   }
@@ -316,7 +317,7 @@ export function getBootstrapContext(): string {
     }
     return blocks.join('\n\n')
   } catch (err) {
-    console.error('Failed to build bootstrap context:', err)
+    logger.error('Failed to build bootstrap context:', err)
     return ''
   }
 }
@@ -333,10 +334,10 @@ try {
   if (fs.existsSync(bootstrapDir)) {
     const files = getFilesRecursively(bootstrapDir)
     const totalSize = files.reduce((acc, f) => acc + f.content.length, 0)
-    console.log(`[Bootstrap] Initialized with ${files.length} bootstrap files. Total size: ${totalSize} chars.`)
+    logger.info(`[Bootstrap] Initialized with ${files.length} bootstrap files. Total size: ${totalSize} chars.`)
   }
 } catch (err) {
-  console.error('Failed to log bootstrap status on startup:', err)
+  logger.error('Failed to log bootstrap status on startup:', err)
 }
 
 // Resolve dynamic effective configuration for a given thread or channel

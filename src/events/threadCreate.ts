@@ -1,3 +1,4 @@
+import { logger } from '../lib/utils/logger.js'
 import { ThreadChannel, Events, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder } from 'discord.js'
 import { prisma, YAML_GUILDS, getEffectiveConfig } from '../config.js'
 import { t } from '../strings.js'
@@ -12,10 +13,10 @@ export default {
   async execute(thread: ThreadChannel, streamManager: StreamManager) {
     if (!thread.guildId) return
 
-    console.log(`[Event: ThreadCreate] New thread "${thread.name}" (${thread.id}) created in parent ${thread.parentId}`)
+    logger.debug(`[Event: ThreadCreate] New thread "${thread.name}" (${thread.id}) created in parent ${thread.parentId}`)
 
     if (pendingThreads.has(thread.id)) {
-      console.log(`[Event: ThreadCreate] Thread ${thread.id} is already being initialized. Skipping.`)
+      logger.debug(`[Event: ThreadCreate] Thread ${thread.id} is already being initialized. Skipping.`)
       return
     }
     pendingThreads.add(thread.id)
@@ -49,7 +50,7 @@ export default {
     try {
       starterMessage = await thread.fetchStarterMessage()
     } catch (err) {
-      console.error('Failed to fetch starter message:', err)
+      logger.error('Failed to fetch starter message:', err)
     }
 
     if (!starterMessage || (!starterMessage.content && starterMessage.attachments.size === 0)) {
@@ -109,7 +110,7 @@ export default {
           return
         }
       } catch (err) {
-        console.error('Failed to load connected repos for selection:', err)
+        logger.error('Failed to load connected repos for selection:', err)
         await thread.send(threadConfig.messages.setup.load_repos_failed)
         return
       }
@@ -128,7 +129,7 @@ export default {
     try {
       await initializeJulesSession(thread, repoName, branchName, streamManager)
     } catch (err) {
-      console.error('Failed to start Jules session:', err)
+      logger.error('Failed to start Jules session:', err)
       await thread.send(threadConfig.messages.session.start_failed)
     }
   },
