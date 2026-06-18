@@ -14,6 +14,7 @@ import { replenishPool } from "./PreWarmedManager.js";
 import { resolveMessageEmojis } from "../utils/emojis.js";
 import { splitMessage } from "../utils/messageSplitter.js";
 import { formatAttachmentMetadata } from "../utils/attachments.js";
+import { reactionStageForState } from "../utils/sessionState.js";
 
 export const activeStreams = new Set<string>();
 export const autoRejectedSessions = new Set<string>();
@@ -21,6 +22,21 @@ export const processedActivityIdsMap = new Map<string, Set<string>>();
 // Tracks the last reaction stage applied to a given message id so updateReaction
 // can skip redundant remove/re-add API calls when the stage hasn't changed.
 const messageReactionStage = new Map<string, string>();
+// Bound for messageReactionStage so a long-lived process doesn't leak one entry
+// per message that ever received a reaction. Map preserves insertion order, so we
+// evict the oldest key once over the cap.
+const MAX_REACTION_STAGE_ENTRIES = 5000;
+
+// Release all per-thread module state for a stream handler that is exiting for
+// good (failed / archived / deleted / retries exhausted). Centralized so every
+// exit path cleans up the same sets — previously some paths leaked
+// autoRejectedSessions or processedActivityIdsMap. NOTE: a *completed* session
+// deliberately does NOT tear down — its stream stays alive to handle follow-ups.
+function teardownStreamState(threadId: string, sessionId?: string) {
+  activeStreams.delete(threadId);
+  processedActivityIdsMap.delete(threadId);
+  if (sessionId) autoRejectedSessions.delete(sessionId);
+}
 
 function parseEmojiForReaction(client: any, emojiStr: string): string {
   const trimmed = emojiStr.trim();
@@ -95,6 +111,10 @@ export async function updateReaction(
       await message.react(emoji);
     }
     messageReactionStage.set(message.id, newStage);
+    if (messageReactionStage.size > MAX_REACTION_STAGE_ENTRIES) {
+      const oldest = messageReactionStage.keys().next().value;
+      if (oldest !== undefined) messageReactionStage.delete(oldest);
+    }
   } catch (err) {
     console.error(`Failed to update reaction to stage ${newStage}:`, err);
   }
@@ -198,8 +218,7 @@ export async function runJulesStream(
       if (thread.archived) {
         console.log(`[runJulesStream] Thread ${thread.id} is archived. Exiting stream handler.`);
         stopTyping();
-        activeStreams.delete(thread.id);
-        processedActivityIdsMap.delete(thread.id);
+        teardownStreamState(thread.id, sessionId);
         return;
       }
 
@@ -213,16 +232,14 @@ export async function runJulesStream(
       if (!info) {
         console.log(`Session ${sessionId} not found or deleted on backend. Exiting stream handler.`);
         stopTyping();
-        activeStreams.delete(thread.id);
-        processedActivityIdsMap.delete(thread.id);
+        teardownStreamState(thread.id, sessionId);
         return;
       }
 
       if (info && info.state === "failed") {
         console.log(`Session ${sessionId} is failed. Exiting stream handler.`);
         stopTyping();
-        activeStreams.delete(thread.id);
-        processedActivityIdsMap.delete(thread.id);
+        teardownStreamState(thread.id, sessionId);
         return;
       }
 
@@ -251,9 +268,7 @@ export async function runJulesStream(
           await thread.send(
             getEffectiveConfig(thread).messages.session.queued_timeout,
           );
-          activeStreams.delete(thread.id);
-          processedActivityIdsMap.delete(thread.id);
-          autoRejectedSessions.delete(sessionId);
+          teardownStreamState(thread.id, sessionId);
           stopTyping();
           return;
         }
@@ -264,7 +279,15 @@ export async function runJulesStream(
       }
 
       const targetMessage = await getTarget();
-      await updateReaction(targetMessage, "in_progress");
+      // Reflect the *actual* session state on (re)connect instead of always
+      // stamping "in_progress". The 20x reconnect logic means the stream can
+      // re-subscribe at any point in the lifecycle; unconditionally setting
+      // in_progress here would clobber an awaiting-approval or completed reaction
+      // every time a transient disconnect happened.
+      const reconnectStage = reactionStageForState(info?.state);
+      if (reconnectStage) {
+        await updateReaction(targetMessage, reconnectStage);
+      }
       if (
         info &&
         (info.state === "inProgress" ||
@@ -273,6 +296,11 @@ export async function runJulesStream(
       ) {
         startTyping();
       }
+
+      // Typing mode is process-level config (loaded at boot, not hot-reloaded),
+      // so resolve it once per connect instead of re-resolving for every activity.
+      const typingMode =
+        getEffectiveConfig(thread).typing_indicator_mode || "until_response";
 
       console.log(
         `[runJulesStream] Subscribing to session stream for ${sessionId}...`,
@@ -381,9 +409,15 @@ export async function runJulesStream(
               activity.description ||
               (activity as any).progressUpdated?.description ||
               "";
-            const logLine = description ? `${title}\n${description}` : title;
-            if (logLine) {
-              await streamManager.handleProgress(thread.id, logLine);
+            // Pass title and description separately so StreamManager can render
+            // the current step and its description distinctly. Fall back to using
+            // the description as the title when no title is present.
+            if (title || description) {
+              await streamManager.handleProgress(
+                thread.id,
+                title || description,
+                title ? description || undefined : undefined,
+              );
             }
             break;
           }
@@ -435,9 +469,7 @@ export async function runJulesStream(
             const reason =
               activity.reason || (activity as any).sessionFailed?.reason || "";
             await streamManager.finalizeSession(thread.id, false, reason);
-            activeStreams.delete(thread.id);
-            processedActivityIdsMap.delete(thread.id);
-            autoRejectedSessions.delete(sessionId);
+            teardownStreamState(thread.id, sessionId);
             stopTyping();
             return;
           }
@@ -451,39 +483,31 @@ export async function runJulesStream(
           }
         }
 
-        // Check typing mode to update typing status (offline, no network calls)
-        try {
-          const threadConfig = getEffectiveConfig(thread);
-          const typingMode =
-            threadConfig.typing_indicator_mode || "until_response";
-
-          if (typingMode === "strict_state") {
-            // Strict state mode: keep typing active during progress updates,
-            // and only stop typing when the session is completed or failed.
-            if (typeStr === "userMessaged" || typeStr === "progressUpdated") {
-              startTyping();
-            } else if (typeStr === "sessionCompleted" || typeStr === "sessionFailed") {
-              stopTyping();
-            }
-          } else {
-            // Default mode: until_response
-            // Start typing when a user message is sent, stop when agent responds or session ends.
-            if (typeStr === "userMessaged") {
-              startTyping();
-            } else if (
-              typeStr === "agentMessaged" ||
-              typeStr === "planGenerated" ||
-              typeStr === "sessionCompleted" ||
-              typeStr === "sessionFailed"
-            ) {
-              stopTyping();
-            }
+        // Update typing status based on the (pre-resolved) typing mode.
+        if (typingMode === "strict_state") {
+          // Strict state mode: keep typing active during progress updates,
+          // and only stop typing when the session is completed or failed.
+          if (typeStr === "userMessaged" || typeStr === "progressUpdated") {
+            startTyping();
+          } else if (
+            typeStr === "sessionCompleted" ||
+            typeStr === "sessionFailed"
+          ) {
+            stopTyping();
           }
-        } catch (typingErr) {
-          console.error(
-            "[runJulesStream] Failed to update typing status:",
-            typingErr,
-          );
+        } else {
+          // Default mode: until_response
+          // Start typing when a user message is sent, stop when agent responds or session ends.
+          if (typeStr === "userMessaged") {
+            startTyping();
+          } else if (
+            typeStr === "agentMessaged" ||
+            typeStr === "planGenerated" ||
+            typeStr === "sessionCompleted" ||
+            typeStr === "sessionFailed"
+          ) {
+            stopTyping();
+          }
         }
       }
 
@@ -518,7 +542,7 @@ export async function runJulesStream(
   console.log(
     `[runJulesStream] Exited outer while loop for thread ${thread.id}`,
   );
-  activeStreams.delete(thread.id);
+  teardownStreamState(thread.id, sessionId);
 }
 
 export async function initializeJulesSession(

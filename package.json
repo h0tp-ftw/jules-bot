@@ -10,7 +10,7 @@
     "setup": "node scripts/setup.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "test": "node --import tsx --test test/messageSplitter.test.ts test/emojis.test.ts test/attachments.test.ts test/strings.test.ts"
+    "test": "node --import tsx --test test/messageSplitter.test.ts test/emojis.test.ts test/attachments.test.ts test/strings.test.ts test/sessionState.test.ts"
   },
   "keywords": [],
   "author": "",
