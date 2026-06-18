@@ -73,8 +73,13 @@ export default {
 
     if (!interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit()) return
 
-    // Check permission
-    if (!await hasPermission(interaction.member, interaction.user, interaction.channel)) {
+    // Check permission. hasPermission resolves to an object, so a bare
+    // `!await hasPermission(...)` is ALWAYS false (objects are truthy) — which
+    // previously let any user who could see the buttons/menus drive plan
+    // approval and repo/branch selection regardless of the allowlist. Destructure
+    // `authorized` like the other call sites (index.ts, messageCreate.ts).
+    const { authorized } = await hasPermission(interaction.member, interaction.user, interaction.channel)
+    if (!authorized) {
       await interaction.reply({ content: MESSAGES.errors.no_permission_interaction, ephemeral: true })
       return
     }
