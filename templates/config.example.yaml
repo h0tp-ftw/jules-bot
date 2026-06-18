@@ -9,9 +9,8 @@ bot_emoji: "🐙"
 access_control:
   allow_all: false
   silent: false # If true, unauthorized interactions are silently ignored
-  allowed_users:
-    - "445586026451173377"
-  allowed_roles: []
+  allowed_users: [] # e.g. ["123456789012345678"]
+  allowed_roles: [] # e.g. ["112233445566778899"]
 
 # Status Reactions Emojis (Supports Unicode, <:name:id>, name:id, or raw ID)
 reactions:
@@ -23,10 +22,10 @@ reactions:
   failed: "❌"
 
 # Optional Guild-specific mappings (Overrides database slash command configuration)
-guilds:
-  "1467678405586714822":
-    default_repo: "h0tp-ftw/ankimon"
-    forum_channel_id: "1510691541465694529"
+guilds: {}
+  # "YOUR_GUILD_ID":
+  #   default_repo: "owner/repo"
+  #   forum_channel_id: "YOUR_FORUM_CHANNEL_ID"
 
 # Auto-reject proposed plans once per session
 auto_reject:
@@ -65,7 +64,7 @@ pre_warmed_sessions:
 # You can override any global configuration options (e.g., diagnostic_prompt, access_control, reactions, auto_reject)
 # at the Channel ID level or Thread ID level.
 # channels:
-#   "1510691541465694529": # Channel or Forum ID
+#   "YOUR_CHANNEL_OR_FORUM_ID": # Channel or Forum ID
 #     diagnostic_prompt: |
 #       You are a diagnostic assistant. Please write extremely concise replies.
 #     access_control:
