@@ -104,12 +104,12 @@ client.once(Events.ClientReady, async () => {
   if (presence.status || presence.activity) {
     let type = ActivityType.Playing
     if (presence.activity_type) {
-      const t = presence.activity_type.toLowerCase()
-      if (t === 'watching') type = ActivityType.Watching
-      else if (t === 'listening') type = ActivityType.Listening
-      else if (t === 'competing') type = ActivityType.Competing
-      else if (t === 'streaming') type = ActivityType.Streaming
-      else if (t === 'custom') type = ActivityType.Custom
+      const activityType = presence.activity_type.toLowerCase()
+      if (activityType === 'watching') type = ActivityType.Watching
+      else if (activityType === 'listening') type = ActivityType.Listening
+      else if (activityType === 'competing') type = ActivityType.Competing
+      else if (activityType === 'streaming') type = ActivityType.Streaming
+      else if (activityType === 'custom') type = ActivityType.Custom
     }
 
     client.user?.setPresence({
