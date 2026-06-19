@@ -143,6 +143,21 @@ npm run build
 npm run start
 ```
 
+### 🐳 Run with Docker (alternative)
+
+Prefer containers? After `npm run setup` (to create `.env`):
+
+```bash
+docker compose up -d        # build the image and start the bot
+docker compose logs -f      # follow logs
+```
+
+- The SQLite database persists in **`./data`** on the host — easy to back up.
+- Compose enables the `/health` endpoint on port `3000` and wires it into the
+  container healthcheck (`docker ps` then shows `healthy` / `unhealthy`).
+- To use a custom `config.yaml` / `AGENTS.md` / `SOUL.md`, uncomment the bind
+  mounts in `docker-compose.yml`; without them the baked-in template defaults apply.
+
 ---
 
 ## ⚙️ Configuration File (config.yaml)

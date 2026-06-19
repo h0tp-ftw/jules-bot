@@ -1,0 +1,32 @@
+# Run JulesBot in a container:
+#   1. npm run setup         # create .env (prompts for your tokens)
+#   2. docker compose up -d   # build the image and start the bot
+#
+# The SQLite database persists in ./data on the host (easy to back up). Customise
+# behaviour by editing config.yaml / AGENTS.md / SOUL.md and uncommenting the
+# read-only mounts below — otherwise the image's baked-in template defaults apply.
+services:
+  jules-bot:
+    build: .
+    image: jules-bot
+    container_name: jules-bot
+    restart: unless-stopped
+    init: true # reap zombies + forward SIGTERM for the graceful-shutdown handler
+    env_file: .env # DISCORD_TOKEN, JULES_API_KEY, LOG_LEVEL, access control, ...
+    environment:
+      # Overrides any DATABASE_URL in .env so the DB lands on the ./data volume
+      # (and not inside the image, where it would shadow prisma/ migrations).
+      DATABASE_URL: "file:/app/data/dev.db"
+      HEALTHCHECK_PORT: "3000"
+    volumes:
+      - ./data:/app/data
+      # Bring your own config / persona (must exist on the host first):
+      # - ./config.yaml:/app/config.yaml:ro
+      # - ./AGENTS.md:/app/AGENTS.md:ro
+      # - ./SOUL.md:/app/SOUL.md:ro
+    healthcheck:
+      test: ["CMD", "node", "scripts/healthcheck.js"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3

@@ -1,0 +1,32 @@
+# Build artifacts & deps (rebuilt inside the image)
+node_modules
+dist
+
+# VCS / CI
+.git
+.github
+.gitignore
+
+# Secrets & local runtime config (injected at runtime, never baked in)
+.env
+.env.*
+config.yaml
+AGENTS.md
+SOUL.md
+bootstrap
+bootstrap_pieces
+profiles
+
+# Persisted data / databases (mounted as a volume)
+data
+prisma/dev.db
+prisma/dev.db-journal
+prisma/dev.db-wal
+prisma/dev.db-shm
+
+# Misc
+.jules
+scratch
+scratch_*
+*.log
+test
