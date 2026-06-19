@@ -224,14 +224,53 @@ function writeEnv({ discordToken, julesKey, logLevel, devGuildId }) {
   console.log(`  ✨  Wrote ${ENV_DEST}`)
 }
 
+// No-prompt path for scripted installs / CI. Sources tokens from the
+// environment (DISCORD_TOKEN, JULES_API_KEY, LOG_LEVEL, DEV_GUILD_ID).
+async function runNonInteractive({ full }) {
+  console.log(`Non-interactive setup${full ? ' (--yes)' : ' shell'}.\n`)
+
+  // .env — substitute any tokens provided via env; leave placeholders for the
+  // rest. Never clobber an existing .env.
+  if (fs.existsSync(path.resolve(ENV_DEST))) {
+    console.log('  ✅  .env already exists — left untouched.')
+  } else {
+    writeEnv({
+      discordToken: process.env.DISCORD_TOKEN,
+      julesKey: process.env.JULES_API_KEY,
+      logLevel: process.env.LOG_LEVEL,
+      devGuildId: process.env.DEV_GUILD_ID,
+    })
+    const missing = ['DISCORD_TOKEN', 'JULES_API_KEY'].filter((k) => !process.env[k])
+    if (missing.length) {
+      console.log(`  ⚠️   ${missing.join(' / ')} not in env — placeholder(s) left in .env.`)
+    }
+  }
+
+  for (const { src, dest } of templateFiles) copyIfMissing(src, dest)
+
+  // --yes also installs deps + provisions the DB; a bare non-TTY run only writes
+  // config so it can't surprise a pipeline with a long install.
+  if (full) {
+    if (!fs.existsSync(path.resolve('node_modules'))) {
+      run('npm install', 'Installing dependencies (npm install)…')
+    }
+    if (fs.existsSync(path.resolve('node_modules/.bin/prisma'))) {
+      process.env.DATABASE_URL = readEnvValue('DATABASE_URL') || DEFAULT_DATABASE_URL
+      run('npx prisma generate', 'Generating Prisma client…')
+      run('npx prisma migrate deploy', 'Provisioning the database…')
+    }
+  }
+
+  console.log('\n✅ Setup complete. Start with: npm run dev  (or  npm run build && npm start)')
+}
+
 async function main() {
   console.log('🐙 JulesBot setup\n')
 
-  // Non-interactive (CI / piped): copy templates only and exit.
-  if (!process.stdin.isTTY) {
-    console.log('Non-interactive shell — copying templates only.')
-    copyIfMissing(ENV_TEMPLATE, ENV_DEST)
-    for (const { src, dest } of templateFiles) copyIfMissing(src, dest)
+  const args = process.argv.slice(2)
+  const yes = args.includes('--yes') || args.includes('-y')
+  if (yes || !process.stdin.isTTY) {
+    await runNonInteractive({ full: yes })
     return
   }
 
@@ -300,12 +339,22 @@ async function main() {
     run('npx prisma migrate deploy', 'Provisioning the database…')
   }
 
-  // 6. Done — offer to start.
+  // 6. Done — offer to start (dev or production).
   console.log('\n✅ Setup complete.')
-  if (depsReady && (await askYesNo('\nStart the bot now (npm run dev)?', true))) {
+  if (depsReady && (await askYesNo('\nStart the bot now?', true))) {
+    const prod = await askYesNo(
+      '  Production mode (build + start)? Otherwise dev (hot reload).',
+      false,
+    )
     console.log('\nStarting JulesBot… (Ctrl+C to stop)\n')
     try {
-      execSync('npm run dev', { stdio: 'inherit', env: process.env })
+      if (prod) {
+        if (run('npm run build', 'Building (tsc)…')) {
+          execSync('npm start', { stdio: 'inherit', env: process.env })
+        }
+      } else {
+        execSync('npm run dev', { stdio: 'inherit', env: process.env })
+      }
     } catch {
       // bot process exited (e.g. Ctrl+C) — nothing to clean up here
     }

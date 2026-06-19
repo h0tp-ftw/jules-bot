@@ -119,6 +119,13 @@ shell (CI) it just copies the templates.
 > the **Message Content Intent** toggle. The wizard reminds you. The bot also validates both
 > tokens on startup and exits early with a clear message if either is missing.
 
+**Unattended / scripted install?** Skip every prompt with `--yes` — it reads tokens from the
+environment, writes `.env`, installs dependencies, and provisions the database:
+
+```bash
+DISCORD_TOKEN="…" JULES_API_KEY="…" npm run setup -- --yes
+```
+
 ### Day-to-day commands
 
 ```bash
