@@ -9,7 +9,14 @@ import {
   ActivityType,
   PresenceStatusData,
 } from 'discord.js'
-import { DISCORD_TOKEN, JULES_API_KEY, prisma, yamlConfig, MESSAGES } from './config.js'
+import {
+  DISCORD_TOKEN,
+  JULES_API_KEY,
+  prisma,
+  yamlConfig,
+  MESSAGES,
+  YAML_GUILDS,
+} from './config.js'
 import { t } from './strings.js'
 import { formatErrorForDiscord } from './lib/utils/errors.js'
 import linkRepoCmd from './commands/link-repo.js'
@@ -119,6 +126,30 @@ client.once(Events.ClientReady, async () => {
     }
   } catch (error) {
     logger.error('Failed to register application commands:', error)
+  }
+
+  // Surface per-guild setup state so an operator can see what's left after
+  // inviting the bot — a forum thread does nothing until both a forum channel
+  // (/setup-forum) and a repo (/link-repo) are configured for that guild.
+  try {
+    const configs = await prisma.guildConfig.findMany()
+    const byId = new Map(configs.map((c) => [c.guildId, c]))
+    for (const guild of client.guilds.cache.values()) {
+      const yamlGuild = YAML_GUILDS[guild.id] || {}
+      const cfg = byId.get(guild.id)
+      const repo = yamlGuild.default_repo || cfg?.defaultRepo
+      const forum = yamlGuild.forum_channel_id || cfg?.forumChannelId
+      const missing: string[] = []
+      if (!forum) missing.push('forum channel (/setup-forum)')
+      if (!repo) missing.push('repo (/link-repo)')
+      if (missing.length) {
+        logger.warn(`[Setup] "${guild.name}" not ready — still needs: ${missing.join(' + ')}`)
+      } else {
+        logger.info(`[Setup] "${guild.name}" ready — repo ${repo}, forum channel ${forum}`)
+      }
+    }
+  } catch (err) {
+    logger.error('[Setup] Failed to compute guild setup status:', err)
   }
 
   // Initialize pre-warmed pools
