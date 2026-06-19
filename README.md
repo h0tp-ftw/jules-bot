@@ -154,6 +154,24 @@ docker compose logs -f      # follow logs
 
 ---
 
+## 🎬 Your first session
+
+Once the bot is **running and invited** to your server:
+
+1. **Create a Discord Forum channel** for debug/support threads (a *Forum*, not a text channel).
+2. **Point the bot at it:** `/setup-forum #your-forum` (requires *Manage Server*).
+3. **Link a repo:** `/link-repo owner/repo` — the GitHub repo Jules will work in. *(It must already be connected in Jules.)*
+4. **Open a thread:** create a post in that forum describing your issue. The bot spins up a Jules session and streams live progress into a status message.
+5. **Gate the plan:** when Jules proposes a plan, use the **Approve** / **Reject** buttons (or `/approve`).
+
+On startup the bot logs each server's readiness, so a missed step is visible — e.g.
+`[Setup] "My Server" not ready — still needs: repo (/link-repo)`.
+
+> Slash commands registered globally can take up to ~1 hour to appear. For instant testing,
+> set `DEV_GUILD_ID` in `.env` (the setup wizard offers this).
+
+---
+
 ## ⚙️ Configuration File (config.yaml)
 
 The `config.yaml` file allows you to customize the bot's behavior. Below are the key configuration blocks:
