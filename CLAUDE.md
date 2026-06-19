@@ -15,15 +15,23 @@ Stack: **TypeScript (ESM) · discord.js v14 · @google/jules-sdk · Prisma v7 + 
 - `npm run dev` — run from source via tsx (`prisma generate && tsx src/index.ts`). Primary dev loop.
 - `npm run build` — `tsc` → `dist/`. **Use this to typecheck** (strict mode is on).
 - `npm run start` — run compiled output (`node dist/index.js`). Production (`pm2` is a dependency).
-- `npm run setup` — copy `templates/*` → root runtime files (`.env`, `config.yaml`, `AGENTS.md`, `SOUL.md`). Skips files that already exist.
+- `npm run setup` — interactive first-run wizard: prompts for + validates the tokens, prints the bot invite
+  URL, copies `templates/*` → root runtime files, installs deps, provisions the DB, offers to start. `--yes`
+  (or any non-TTY shell) runs non-interactively with tokens from env. `npm run doctor` is a pre-flight check.
 - `npm run db:migrate` — `prisma migrate dev` (run after editing `prisma/schema.prisma`).
 - `npm run db:generate` — regenerate the Prisma client.
-- `npm test` — `node:test` unit suite over the pure utils + `strings.ts` (`test/*.test.ts`, DB-free). No
-  integration coverage of the Discord/Jules round-trip, so also verify with `npm run build` + a manual `npm run dev`.
-- CI (`.github/workflows/ci.yml`) runs `npm run build` + `npm test` on every push/PR to `main`.
+- `npm run lint` / `npm run format` — ESLint + Prettier (CI-gated; `format:check` to verify without writing).
+- `npm test` — `node:test` suite over the pure utils, `strings.ts`, the `getEffectiveConfig` precedence
+  resolver, the `hasPermission` allowlist, and the level-gated `logger` (`test/*.test.ts`). The
+  config/permissions suites import `config.ts`; `test/_ensureDb.ts` (imported *before* `config.js`) keeps them
+  DB-free by pre-creating an empty SQLite file so no provisioning runs. No integration coverage of the
+  Discord/Jules round-trip, so also verify with `npm run build` + a manual `npm run dev`.
+- CI (`.github/workflows/ci.yml`) runs `npm run build` + `npm run lint` + `npm run format:check` + `npm test`
+  on every push/PR to `main`.
 
 Required env (`.env`): `DISCORD_TOKEN`, `JULES_API_KEY`, `DATABASE_URL` (defaults to `file:./prisma/dev.db`).
-If the SQLite file is missing, `src/config.ts` auto-provisions it via `npx prisma db push` on boot.
+If the SQLite file is missing, `src/config.ts` auto-provisions it on boot via `npx prisma migrate deploy`
+(falling back to `db push`); `prisma` is a runtime dependency so this works under `npm ci --omit=dev`.
 
 ## ⚠️ Repo-specific landmines
 
