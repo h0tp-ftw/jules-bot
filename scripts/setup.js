@@ -1,10 +1,18 @@
 import fs from 'fs'
 import path from 'path'
 import readline from 'node:readline'
+import { execSync } from 'node:child_process'
 
-// Interactive first-run setup. Copies the gitignored runtime files from their
-// committed templates and, on a fresh install, prompts for the two required
-// secrets so `.env` comes out ready to run — no hand-editing required.
+// Interactive, plug-n-play first-run wizard for non-Docker installs. From a fresh
+// clone, `npm run setup` will:
+//   1. prompt for the Discord token and validate it live (then print a
+//      ready-to-click invite link with the exact permissions the bot needs),
+//   2. prompt for + validate the Jules API key (lists your connected repos),
+//   3. write .env + copy the runtime config templates,
+//   4. install dependencies and provision the SQLite database,
+//   5. offer to start the bot.
+// It uses only Node built-ins (+ global fetch) so it runs before `npm install`,
+// and falls back to copy-only in a non-interactive shell (CI).
 
 const templateFiles = [
   { src: 'templates/config.example.yaml', dest: 'config.yaml' },
@@ -14,24 +22,28 @@ const templateFiles = [
 
 const ENV_TEMPLATE = 'templates/.env.example'
 const ENV_DEST = '.env'
+const DEFAULT_DATABASE_URL = 'file:./prisma/dev.db'
 
-function copyIfMissing(src, dest) {
-  const srcPath = path.resolve(src)
-  const destPath = path.resolve(dest)
-  if (!fs.existsSync(srcPath)) {
-    console.warn(`⚠️  Source file ${src} does not exist. Skipping.`)
-    return
-  }
-  if (fs.existsSync(destPath)) {
-    console.log(`✅  ${dest} already exists — left untouched.`)
-    return
-  }
-  try {
-    fs.copyFileSync(srcPath, destPath)
-    console.log(`✨  Created ${dest} from ${src}`)
-  } catch (err) {
-    console.error(`❌  Failed to copy ${src} to ${dest}:`, err)
-  }
+// Permissions the bot needs (see README → Discord Developer Portal), as a BigInt
+// bitfield for the OAuth2 invite URL.
+const INVITE_PERMISSIONS = [
+  1n << 6n, // Add Reactions
+  1n << 10n, // View Channels
+  1n << 11n, // Send Messages
+  1n << 13n, // Manage Messages
+  1n << 14n, // Embed Links
+  1n << 16n, // Read Message History
+  1n << 31n, // Use Application Commands
+  1n << 38n, // Send Messages in Threads
+].reduce((acc, bit) => acc | bit, 0n)
+
+function inviteUrl(clientId) {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    permissions: INVITE_PERMISSIONS.toString(),
+    scope: 'bot applications.commands',
+  })
+  return `https://discord.com/oauth2/authorize?${params.toString()}`
 }
 
 // Prompt helper. When `mask` is set, typed characters are hidden (for secrets).
@@ -58,51 +70,252 @@ function ask(query, { mask = false } = {}) {
   })
 }
 
-async function writeEnv() {
-  const destPath = path.resolve(ENV_DEST)
-  if (fs.existsSync(destPath)) {
-    console.log('✅  .env already exists — skipping token prompts (delete it to re-run).')
-    return
+async function askYesNo(query, defaultYes = true) {
+  const answer = (await ask(`${query} ${defaultYes ? '[Y/n]' : '[y/N]'} `)).toLowerCase()
+  if (!answer) return defaultYes
+  return answer === 'y' || answer === 'yes'
+}
+
+function readEnvValue(key) {
+  const envPath = path.resolve(ENV_DEST)
+  if (!fs.existsSync(envPath)) return undefined
+  const line = fs
+    .readFileSync(envPath, 'utf8')
+    .split('\n')
+    .find((l) => l.trim().startsWith(`${key}=`))
+  if (!line) return undefined
+  let val = line.slice(line.indexOf('=') + 1).trim()
+  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+    val = val.slice(1, -1)
   }
+  return val
+}
 
-  const srcPath = path.resolve(ENV_TEMPLATE)
-  if (!fs.existsSync(srcPath)) {
-    console.warn(`⚠️  ${ENV_TEMPLATE} not found. Skipping .env generation.`)
-    return
-  }
-
-  console.log('\nLet’s fill in your .env (press Enter to leave a value as the placeholder):\n')
-  const discordToken = await ask('  Discord bot token       › ', { mask: true })
-  const julesKey = await ask('  Jules API key            › ', { mask: true })
-  const logLevel = (await ask('  Log level [info]         › ')) || 'info'
-  const devGuildId = await ask('  Dev guild ID (optional)  › ')
-
-  let content = fs.readFileSync(srcPath, 'utf8')
-  if (discordToken) content = content.replace('YOUR_DISCORD_TOKEN', discordToken)
-  if (julesKey) content = content.replace('YOUR_JULES_API_KEY', julesKey)
-  content = content.replace(/^LOG_LEVEL=.*$/m, `LOG_LEVEL="${logLevel}"`)
-  if (devGuildId) {
-    content = content.replace(/^#?\s*DEV_GUILD_ID=.*$/m, `DEV_GUILD_ID="${devGuildId}"`)
-  }
-
+async function validateDiscordToken(token) {
+  if (typeof fetch !== 'function') return { ok: false, skipped: true }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10000)
   try {
-    fs.writeFileSync(destPath, content)
-    console.log(`✨  Created ${ENV_DEST}`)
+    const res = await fetch('https://discord.com/api/v10/users/@me', {
+      headers: { Authorization: `Bot ${token}` },
+      signal: controller.signal,
+    })
+    if (!res.ok) return { ok: false, status: res.status }
+    return { ok: true, user: await res.json() }
   } catch (err) {
-    console.error(`❌  Failed to write ${ENV_DEST}:`, err)
+    return { ok: false, error: err }
+  } finally {
+    clearTimeout(timer)
   }
 }
 
-async function main() {
-  console.log('🐙 Initializing JulesBot local environment...\n')
+async function validateJulesKey(key) {
+  try {
+    const { jules } = await import('@google/jules-sdk')
+    const client = jules.with({ apiKey: key, config: { requestTimeoutMs: 15000 } })
+    const repos = []
+    for await (const source of client.sources()) {
+      if (source.type === 'githubRepo') {
+        repos.push(`${source.githubRepo.owner}/${source.githubRepo.repo}`)
+      }
+      if (repos.length >= 25) break
+    }
+    return { ok: true, repos }
+  } catch (err) {
+    return { ok: false, error: err }
+  }
+}
 
-  await writeEnv()
-  for (const { src, dest } of templateFiles) {
-    copyIfMissing(src, dest)
+function run(cmd, label) {
+  try {
+    console.log(`\n  ▸ ${label || cmd}`)
+    execSync(cmd, { stdio: 'inherit', env: process.env })
+    return true
+  } catch {
+    console.error(`  ❌  Command failed: ${cmd}`)
+    return false
+  }
+}
+
+function copyIfMissing(src, dest) {
+  const srcPath = path.resolve(src)
+  const destPath = path.resolve(dest)
+  if (!fs.existsSync(srcPath)) {
+    console.warn(`  ⚠️   Template ${src} not found. Skipping.`)
+    return
+  }
+  if (fs.existsSync(destPath)) {
+    console.log(`  ✅  ${dest} already exists — left untouched.`)
+    return
+  }
+  try {
+    fs.copyFileSync(srcPath, destPath)
+    console.log(`  ✨  Created ${dest}`)
+  } catch (err) {
+    console.error(`  ❌  Failed to copy ${src} → ${dest}:`, err)
+  }
+}
+
+async function promptDiscord() {
+  console.log('\n🔑 Discord credentials')
+  console.log('   • Create an app + bot:  https://discord.com/developers/applications')
+  console.log('   • On the Bot page, enable the "Message Content Intent" toggle')
+  console.log('   • Reset/copy the bot token, then paste it below\n')
+
+  let token
+  let clientId = ''
+  for (let attempt = 1; ; attempt++) {
+    token = await ask('  Discord bot token  › ', { mask: true })
+    if (!token) {
+      console.log('  (skipped — set DISCORD_TOKEN in .env later)')
+      break
+    }
+    process.stdout.write('  …validating… ')
+    const result = await validateDiscordToken(token)
+    if (result.ok) {
+      const u = result.user
+      clientId = u.id
+      const tag =
+        u.discriminator && u.discriminator !== '0' ? `${u.username}#${u.discriminator}` : u.username
+      console.log(`✓ logged in as ${tag}`)
+      break
+    }
+    if (result.skipped) {
+      console.log('(fetch unavailable — skipping validation)')
+      break
+    }
+    const why =
+      result.status === 401
+        ? 'Discord rejected it (401 Unauthorized)'
+        : result.status
+          ? `HTTP ${result.status}`
+          : 'network error'
+    console.log(`✗ ${why}`)
+    if (attempt >= 3 || !(await askYesNo('  Try a different token?', true))) {
+      console.log('  Keeping the token as entered — double-check it in .env.')
+      break
+    }
   }
 
-  console.log('\n🎉  Setup complete.')
-  console.log('    Next: `npm install` → `npm run doctor` → `npm run dev`')
+  if (!clientId) {
+    const provided = await ask('  Application (Client) ID for the invite link (optional) › ')
+    if (provided) clientId = provided
+  }
+  if (clientId) {
+    console.log('\n  📨 Invite the bot to your server (grants the permissions it needs):')
+    console.log(`     ${inviteUrl(clientId)}`)
+  }
+  return token
+}
+
+function writeEnv({ discordToken, julesKey, logLevel, devGuildId }) {
+  const srcPath = path.resolve(ENV_TEMPLATE)
+  if (!fs.existsSync(srcPath)) {
+    console.warn(`  ⚠️   ${ENV_TEMPLATE} not found — cannot create .env.`)
+    return
+  }
+  let content = fs.readFileSync(srcPath, 'utf8')
+  if (discordToken) content = content.replace('YOUR_DISCORD_TOKEN', discordToken)
+  if (julesKey) content = content.replace('YOUR_JULES_API_KEY', julesKey)
+  if (logLevel) content = content.replace(/^LOG_LEVEL=.*$/m, `LOG_LEVEL="${logLevel}"`)
+  if (devGuildId)
+    content = content.replace(/^#?\s*DEV_GUILD_ID=.*$/m, `DEV_GUILD_ID="${devGuildId}"`)
+  fs.writeFileSync(path.resolve(ENV_DEST), content)
+  console.log(`  ✨  Wrote ${ENV_DEST}`)
+}
+
+async function main() {
+  console.log('🐙 JulesBot setup\n')
+
+  // Non-interactive (CI / piped): copy templates only and exit.
+  if (!process.stdin.isTTY) {
+    console.log('Non-interactive shell — copying templates only.')
+    copyIfMissing(ENV_TEMPLATE, ENV_DEST)
+    for (const { src, dest } of templateFiles) copyIfMissing(src, dest)
+    return
+  }
+
+  const major = Number(process.versions.node.split('.')[0])
+  console.log(`Node.js ${process.versions.node} ${major < 20 ? '⚠️  (need >= 20)' : '✓'}`)
+
+  // 1. Credentials → .env
+  const envExists = fs.existsSync(path.resolve(ENV_DEST))
+  let reconfigure = !envExists
+  if (envExists) {
+    reconfigure = await askYesNo('\nFound an existing .env — reconfigure it (overwrites)?', false)
+  }
+  if (reconfigure) {
+    const discordToken = await promptDiscord()
+    console.log('\n🔑 Jules API key')
+    console.log('   • Get an API key from Jules:  https://jules.google.com\n')
+    const julesKey = await ask('  Jules API key  › ', { mask: true })
+    const logLevel = (await ask('  Log level [info]  › ')) || 'info'
+    const devGuildId = await ask('  Dev guild ID for instant slash commands (optional) › ')
+    console.log('')
+    writeEnv({ discordToken, julesKey, logLevel, devGuildId })
+  } else {
+    console.log('  ✅  Keeping existing .env.')
+  }
+
+  // 2. Runtime config files
+  console.log('\n📄 Runtime config files')
+  for (const { src, dest } of templateFiles) copyIfMissing(src, dest)
+
+  // 3. Dependencies
+  if (!fs.existsSync(path.resolve('node_modules'))) {
+    if (await askYesNo('\nInstall dependencies now (npm install)?', true)) {
+      run('npm install', 'Installing dependencies (npm install)…')
+    }
+  } else {
+    console.log('\n  ✅  Dependencies already installed.')
+  }
+
+  const depsReady = fs.existsSync(path.resolve('node_modules'))
+
+  // 4. Validate the Jules key now that the SDK is available.
+  const julesKey = readEnvValue('JULES_API_KEY')
+  if (
+    depsReady &&
+    julesKey &&
+    julesKey !== 'YOUR_JULES_API_KEY' &&
+    fs.existsSync(path.resolve('node_modules/@google/jules-sdk'))
+  ) {
+    process.stdout.write('\n  …validating Jules API key… ')
+    const res = await validateJulesKey(julesKey)
+    if (res.ok) {
+      console.log(
+        res.repos.length
+          ? `✓ valid — connected repos: ${res.repos.join(', ')}`
+          : '✓ valid (no repos connected in Jules yet)',
+      )
+    } else {
+      console.log('✗ could not validate — check the key/network. The bot re-checks on start.')
+    }
+  }
+
+  // 5. Database + Prisma client.
+  if (depsReady && fs.existsSync(path.resolve('node_modules/.bin/prisma'))) {
+    process.env.DATABASE_URL = readEnvValue('DATABASE_URL') || DEFAULT_DATABASE_URL
+    run('npx prisma generate', 'Generating Prisma client…')
+    run('npx prisma migrate deploy', 'Provisioning the database…')
+  }
+
+  // 6. Done — offer to start.
+  console.log('\n✅ Setup complete.')
+  if (depsReady && (await askYesNo('\nStart the bot now (npm run dev)?', true))) {
+    console.log('\nStarting JulesBot… (Ctrl+C to stop)\n')
+    try {
+      execSync('npm run dev', { stdio: 'inherit', env: process.env })
+    } catch {
+      // bot process exited (e.g. Ctrl+C) — nothing to clean up here
+    }
+    return
+  }
+
+  console.log('\nNext steps:')
+  console.log('  • npm run doctor              # verify configuration')
+  console.log('  • npm run dev                 # start in dev (hot reload)')
+  console.log('  • npm run build && npm start  # production')
 }
 
 main()

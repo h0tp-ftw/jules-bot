@@ -91,57 +91,44 @@ InteractionCreate (Approve/Reject) ──────────▶ runJulesStr
 
 ## 🛠️ Setup & Run
 
-### 1. Prerequisites
+### Prerequisites
 - **Node.js** v20 or newer.
-- A Discord Application token with the **Message Content** intent.
-- A Google Jules API Key.
+- A **Discord application + bot token** (the wizard links you to the portal and prints your invite URL).
+- A **Google Jules API key**.
 
-### 2. Configure Settings & Environment
-Run the interactive setup script. It **prompts for your Discord token and Jules API
-key** and writes a ready-to-run `.env`, then copies the other gitignored runtime files
-from their committed templates:
+### One-command setup
+
+From a fresh clone:
 
 ```bash
 npm run setup
 ```
 
-This generates:
-- `.env` (Environment variables — pre-filled with the tokens you entered)
-- `config.yaml` (YAML configurations)
-- `AGENTS.md` (Agent guidelines)
-- `SOUL.md` (Agent principles)
+The interactive wizard walks you through everything:
 
-You can re-open `.env` at any time to adjust values:
-```env
-DATABASE_URL="file:./prisma/dev.db"
-DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
-JULES_API_KEY="YOUR_JULES_API_KEY"
-LOG_LEVEL="info"   # debug | info | warn | error
-```
-> The bot validates both tokens on startup and exits early with a clear message if either is missing.
+1. **Discord token** — validated live against the Discord API; it then prints a ready-to-click
+   **invite link** carrying exactly the permissions the bot needs (no manual scope/permission math).
+2. **Jules API key** — validated by listing your connected repos.
+3. Writes `.env` and the runtime config files (`config.yaml`, `AGENTS.md`, `SOUL.md`).
+4. Installs dependencies, provisions the SQLite database, and offers to **start the bot**.
 
-### 3. Install Dependencies
+Answer the prompts and you're live. Re-run it anytime to reconfigure; in a non-interactive
+shell (CI) it just copies the templates.
+
+> ⚠️ The one step Discord can't automate: on the **Bot** page of the Developer Portal, enable
+> the **Message Content Intent** toggle. The wizard reminds you. The bot also validates both
+> tokens on startup and exits early with a clear message if either is missing.
+
+### Day-to-day commands
+
 ```bash
-npm install
+npm run dev                    # dev (hot reload, debug logs)
+npm run build && npm start     # production
+npm run doctor                 # pre-flight: verify config, secrets, DB
 ```
+
 The SQLite database is **auto-provisioned on first boot** — Prisma applies the committed
-migrations to a fresh `prisma/dev.db`, so no manual migration step is needed for a standard
-setup. (Editing `prisma/schema.prisma`? Use `npm run db:migrate` to create a new migration.)
-
-Run a pre-flight check anytime to confirm everything is configured:
-```bash
-npm run doctor
-```
-
-### 4. Start the Bot
-```bash
-# Run in development mode (hot reload)
-npm run dev
-
-# Run in production mode
-npm run build
-npm run start
-```
+migrations to a fresh `prisma/dev.db`. (Editing `prisma/schema.prisma`? Use `npm run db:migrate`.)
 
 ### 🐳 Run with Docker (alternative)
 
