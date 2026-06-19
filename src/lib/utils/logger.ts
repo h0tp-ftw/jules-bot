@@ -23,7 +23,9 @@ function threshold(): number {
 function emit(level: Level, args: unknown[]): void {
   if (ORDER[level] < threshold()) return
   const sink = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
-  sink(...args)
+  // Prefix every line with an ISO timestamp + level so production logs
+  // (pm2/journald/Docker) are greppable and ordered without extra config.
+  sink(`[${new Date().toISOString()}] [${level}]`, ...args)
 }
 
 export const logger = {

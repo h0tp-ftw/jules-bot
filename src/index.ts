@@ -12,6 +12,7 @@ import interactionCreateEvt from './events/interactionCreate.js'
 import { StreamManager } from './lib/streams/StreamManager.js'
 import { initPreWarmedPools } from './lib/jules/PreWarmedManager.js'
 import { rehydrateActiveStreams } from './lib/jules/orchestrator.js'
+import { startHealthServer, stopHealthServer } from './lib/health.js'
 
 if (!DISCORD_TOKEN || DISCORD_TOKEN === 'YOUR_DISCORD_TOKEN') {
   logger.error('Error: DISCORD_TOKEN is not configured in .env file.')
@@ -86,11 +87,23 @@ client.once(Events.ClientReady, async () => {
     const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN)
     const commandData = Array.from(commands.values()).map((cmd) => cmd.data.toJSON())
 
-    logger.debug('Refreshing application (/) commands...')
-    await rest.put(Routes.applicationCommands(client.user!.id), {
-      body: commandData,
-    })
-    logger.debug('Successfully reloaded application (/) commands.')
+    // Global commands can take up to ~1 hour to propagate. Set DEV_GUILD_ID to
+    // register them to a single guild instead — these appear instantly, which
+    // makes first-run setup (e.g. /setup-forum) far less confusing.
+    const devGuildId = process.env.DEV_GUILD_ID
+    if (devGuildId) {
+      logger.debug(`Registering guild (/) commands to dev guild ${devGuildId}...`)
+      await rest.put(Routes.applicationGuildCommands(client.user!.id, devGuildId), {
+        body: commandData,
+      })
+      logger.info(`Registered ${commandData.length} guild (/) commands to ${devGuildId} (instant).`)
+    } else {
+      logger.debug('Refreshing global application (/) commands...')
+      await rest.put(Routes.applicationCommands(client.user!.id), {
+        body: commandData,
+      })
+      logger.debug('Successfully reloaded global application (/) commands.')
+    }
   } catch (error) {
     logger.error('Failed to register application commands:', error)
   }
@@ -151,6 +164,13 @@ async function start() {
       logger.error('[Database] Failed to apply SQLite pragmas:', err)
     }
 
+    // Optional liveness endpoint — start before login so it can report
+    // gateway:"connecting" while the bot comes up.
+    const healthPort = Number(process.env.HEALTHCHECK_PORT)
+    if (Number.isInteger(healthPort) && healthPort > 0) {
+      startHealthServer(client, healthPort)
+    }
+
     await client.login(DISCORD_TOKEN)
   } catch (err) {
     logger.error('Error starting bot:', err)
@@ -166,6 +186,7 @@ async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return
   shuttingDown = true
   logger.info(`[Shutdown] ${signal} received — cleaning up...`)
+  try { stopHealthServer() } catch (err) { logger.error('[Shutdown] health server stop failed:', err) }
   try { streamManager.dispose() } catch (err) { logger.error('[Shutdown] streamManager dispose failed:', err) }
   try { await client.destroy() } catch (err) { logger.error('[Shutdown] client destroy failed:', err) }
   try { await prisma.$disconnect() } catch (err) { logger.error('[Shutdown] prisma disconnect failed:', err) }

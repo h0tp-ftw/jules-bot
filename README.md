@@ -239,7 +239,9 @@ Operational notes:
 - **Single instance per token** — coordination state (active streams, dedup sets) is in-process, so run exactly **one** instance per bot token. `ecosystem.config.cjs` pins fork mode + one instance; Discord.js sharding is not supported.
 - **Durable SQLite** — on boot the bot enables WAL mode (`synchronous=NORMAL`, `busy_timeout=5000ms`) so the database survives abrupt power loss far better — worth knowing on SD-card hosts like a Raspberry Pi.
 - **Back up `prisma/dev.db`** — it is the source of truth for the thread⇄session mapping used to rehydrate streams after a restart. (In WAL mode you'll also see transient `dev.db-wal` / `dev.db-shm` sidecar files.)
-- **Log verbosity** — set `LOG_LEVEL` (`debug`/`info`/`warn`/`error`, default `info`). `info` keeps production to lifecycle + warnings + errors; `debug` shows the full per-activity trace (`npm run dev` enables it automatically).
+- **Log verbosity** — set `LOG_LEVEL` (`debug`/`info`/`warn`/`error`, default `info`). `info` keeps production to lifecycle + warnings + errors; `debug` shows the full per-activity trace (`npm run dev` enables it automatically). Every line is prefixed with an ISO timestamp + level.
+- **Health endpoint** — set `HEALTHCHECK_PORT` (e.g. `3000`) to expose `GET /health`, returning JSON and a `200` only when the Discord gateway is connected **and** SQLite is reachable (`503` otherwise). Wire it into Docker/k8s/uptime probes to catch a "process alive but gateway dropped" zombie. Unset = disabled.
+- **Instant slash commands** — global command registration can take up to ~1 hour to propagate. Set `DEV_GUILD_ID` to register commands to a single guild instantly (ideal for first-run setup and testing).
 - **Multiple bots** — use `--profile <name>` (or `BOT_PROFILE`) to isolate `.env`, `config.yaml`, persona files, `bootstrap/`, and the database under `profiles/<name>/`.
 
 ---

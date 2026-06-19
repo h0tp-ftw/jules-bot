@@ -198,15 +198,28 @@ if (DATABASE_URL.startsWith('file:')) {
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true })
     }
+    // Prefer applying the committed migrations (records them in
+    // _prisma_migrations, so a later `prisma migrate deploy` stays consistent);
+    // fall back to a schema push if migrate deploy is unavailable. `prisma` is a
+    // runtime dependency so this works under `npm ci --omit=dev` too.
     try {
-      logger.debug(`[Database] Running 'npx prisma db push' to provision database...`)
-      execSync('npx prisma db push', {
+      logger.debug(`[Database] Provisioning via 'npx prisma migrate deploy'...`)
+      execSync('npx prisma migrate deploy', {
         env: { ...process.env, DATABASE_URL: DATABASE_URL },
         stdio: 'inherit'
       })
-      logger.info(`[Database] Successfully provisioned SQLite database at ${dbPath}`)
-    } catch (err) {
-      logger.error('[Database] Failed to auto-provision SQLite database:', err)
+      logger.info(`[Database] Provisioned SQLite database at ${dbPath} (migrations applied).`)
+    } catch (migrateErr) {
+      logger.warn('[Database] migrate deploy failed; falling back to db push:', migrateErr)
+      try {
+        execSync('npx prisma db push', {
+          env: { ...process.env, DATABASE_URL: DATABASE_URL },
+          stdio: 'inherit'
+        })
+        logger.info(`[Database] Provisioned SQLite database at ${dbPath} (db push).`)
+      } catch (pushErr) {
+        logger.error('[Database] Failed to auto-provision SQLite database:', pushErr)
+      }
     }
   }
 }
