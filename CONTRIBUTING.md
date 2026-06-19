@@ -23,11 +23,13 @@ with:
 
 ```bash
 npm run build        # tsc, strict mode — this is the typecheck
+npm run lint         # ESLint
+npm run format:check # Prettier (run `npm run format` to auto-fix)
 npm test             # node:test unit suite (pure utils + strings)
 ```
 
-Both run in CI on every PR. Please make sure they pass locally first, and do a
-manual `npm run dev` smoke test for behavior changes.
+All four run in CI on every PR. Please make sure they pass locally first, and do
+a manual `npm run dev` smoke test for behavior changes.
 
 ## Conventions
 

@@ -1,5 +1,14 @@
 import { logger } from './lib/utils/logger.js'
-import { Client, GatewayIntentBits, Collection, REST, Routes, Events, ActivityType, PresenceStatusData } from 'discord.js'
+import {
+  Client,
+  GatewayIntentBits,
+  Collection,
+  REST,
+  Routes,
+  Events,
+  ActivityType,
+  PresenceStatusData,
+} from 'discord.js'
 import { DISCORD_TOKEN, JULES_API_KEY, prisma, yamlConfig, MESSAGES } from './config.js'
 import { t } from './strings.js'
 import { formatErrorForDiscord } from './lib/utils/errors.js'
@@ -55,7 +64,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isChatInputCommand()) {
     // Check permission. The reply is ephemeral, so only the unauthorized user
     // sees it (the `silent` flag is only meaningful for non-ephemeral surfaces).
-    const { authorized } = await hasPermission(interaction.member, interaction.user, interaction.channel)
+    const { authorized } = await hasPermission(
+      interaction.member,
+      interaction.user,
+      interaction.channel,
+    )
     if (!authorized) {
       await interaction.reply({ content: MESSAGES.errors.no_permission_commands, ephemeral: true })
       return
@@ -133,12 +146,17 @@ client.once(Events.ClientReady, async () => {
 
     client.user?.setPresence({
       status: (presence.status || 'online') as PresenceStatusData,
-      activities: presence.activity ? [{
-        name: type === ActivityType.Custom ? MESSAGES.misc.custom_status_name : presence.activity,
-        state: type === ActivityType.Custom ? presence.activity : undefined,
-        type: type,
-        url: presence.url
-      }] : []
+      activities: presence.activity
+        ? [
+            {
+              name:
+                type === ActivityType.Custom ? MESSAGES.misc.custom_status_name : presence.activity,
+              state: type === ActivityType.Custom ? presence.activity : undefined,
+              type: type,
+              url: presence.url,
+            },
+          ]
+        : [],
     })
   }
 })
@@ -159,7 +177,9 @@ async function start() {
       await prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL;')
       await prisma.$executeRawUnsafe('PRAGMA synchronous=NORMAL;')
       await prisma.$executeRawUnsafe('PRAGMA busy_timeout=5000;')
-      logger.debug('[Database] SQLite pragmas applied (WAL, synchronous=NORMAL, busy_timeout=5000ms).')
+      logger.debug(
+        '[Database] SQLite pragmas applied (WAL, synchronous=NORMAL, busy_timeout=5000ms).',
+      )
     } catch (err) {
       logger.error('[Database] Failed to apply SQLite pragmas:', err)
     }
@@ -186,15 +206,35 @@ async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return
   shuttingDown = true
   logger.info(`[Shutdown] ${signal} received — cleaning up...`)
-  try { stopHealthServer() } catch (err) { logger.error('[Shutdown] health server stop failed:', err) }
-  try { streamManager.dispose() } catch (err) { logger.error('[Shutdown] streamManager dispose failed:', err) }
-  try { await client.destroy() } catch (err) { logger.error('[Shutdown] client destroy failed:', err) }
-  try { await prisma.$disconnect() } catch (err) { logger.error('[Shutdown] prisma disconnect failed:', err) }
+  try {
+    stopHealthServer()
+  } catch (err) {
+    logger.error('[Shutdown] health server stop failed:', err)
+  }
+  try {
+    streamManager.dispose()
+  } catch (err) {
+    logger.error('[Shutdown] streamManager dispose failed:', err)
+  }
+  try {
+    await client.destroy()
+  } catch (err) {
+    logger.error('[Shutdown] client destroy failed:', err)
+  }
+  try {
+    await prisma.$disconnect()
+  } catch (err) {
+    logger.error('[Shutdown] prisma disconnect failed:', err)
+  }
   process.exit(exitCode)
 }
 
-process.on('SIGINT', () => { shutdown('SIGINT') })
-process.on('SIGTERM', () => { shutdown('SIGTERM') })
+process.on('SIGINT', () => {
+  shutdown('SIGINT')
+})
+process.on('SIGTERM', () => {
+  shutdown('SIGTERM')
+})
 
 // Network blips surface as unhandled rejections from awaited Discord/Jules calls;
 // log and keep running so a transient dropout doesn't take the bot down.

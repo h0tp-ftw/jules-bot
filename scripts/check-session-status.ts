@@ -13,25 +13,27 @@ const client = JULES_API_KEY ? jules.with({ apiKey: JULES_API_KEY }) : jules
 async function main() {
   const sessions = await prisma.debugSession.findMany({
     orderBy: { createdAt: 'desc' },
-    take: 5
+    take: 5,
   })
 
   console.log(`Checking status for ${sessions.length} most recent sessions...\n`)
-  
+
   for (const s of sessions) {
     try {
       const session = client.session(s.julesSessionId)
       const info = await session.info()
-      
+
       console.log(`- Thread ID: ${s.threadId}`)
       console.log(`  Repo: ${s.repoName}`)
       console.log(`  State: ${info.state}`)
-      
+
       if (info.activities && info.activities.length > 0) {
-          const lastActivity = info.activities[info.activities.length - 1]
-          console.log(`  Last Activity: ${lastActivity.type} (${new Date(lastActivity.timestamp).toLocaleTimeString()})`)
+        const lastActivity = info.activities[info.activities.length - 1]
+        console.log(
+          `  Last Activity: ${lastActivity.type} (${new Date(lastActivity.timestamp).toLocaleTimeString()})`,
+        )
       }
-      
+
       console.log(`  Created: ${s.createdAt}`)
       console.log('---')
     } catch (err) {
@@ -42,4 +44,6 @@ async function main() {
   }
 }
 
-main().catch(console.error).finally(() => prisma.$disconnect())
+main()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect())

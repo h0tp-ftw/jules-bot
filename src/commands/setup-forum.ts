@@ -1,5 +1,10 @@
 import { logger } from '../lib/utils/logger.js'
-import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits, ChannelType } from 'discord.js'
+import {
+  ChatInputCommandInteraction,
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  ChannelType,
+} from 'discord.js'
 import { prisma, MESSAGES } from '../config.js'
 import { t } from '../strings.js'
 
@@ -12,7 +17,7 @@ export default {
         .setName('channel')
         .setDescription(MESSAGES.commands.setup_forum_option_description)
         .addChannelTypes(ChannelType.GuildForum)
-        .setRequired(true)
+        .setRequired(true),
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   async execute(interaction: ChatInputCommandInteraction) {

@@ -11,6 +11,9 @@
     "doctor": "node scripts/doctor.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
+    "lint": "eslint .",
+    "format": "prettier --write \"{src,scripts,test}/**/*.{ts,js}\" eslint.config.js",
+    "format:check": "prettier --check \"{src,scripts,test}/**/*.{ts,js}\" eslint.config.js",
     "test": "node --import tsx --test test/messageSplitter.test.ts test/emojis.test.ts test/attachments.test.ts test/strings.test.ts test/sessionState.test.ts test/errors.test.ts"
   },
   "keywords": [
@@ -49,9 +52,15 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.9.1",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.4",
     "tsx": "^4.22.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
   }
 }

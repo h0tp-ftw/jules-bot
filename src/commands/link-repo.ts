@@ -11,7 +11,7 @@ export default {
       option
         .setName('repository')
         .setDescription(MESSAGES.commands.link_repo_option_description)
-        .setRequired(true)
+        .setRequired(true),
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   async execute(interaction: ChatInputCommandInteraction) {

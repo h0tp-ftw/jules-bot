@@ -36,7 +36,7 @@ if (isProfileActive && profileDir) {
     { src: 'templates/.env.example', dest: '.env' },
     { src: 'templates/config.example.yaml', dest: 'config.yaml' },
     { src: 'templates/AGENTS.example.md', dest: 'AGENTS.md' },
-    { src: 'templates/SOUL.example.md', dest: 'SOUL.md' }
+    { src: 'templates/SOUL.example.md', dest: 'SOUL.md' },
   ]
 
   for (const { src, dest } of templatesToCopy) {
@@ -61,10 +61,8 @@ if (isProfileActive && profileDir) {
 
 // Load default and user configuration
 const examplePath = path.resolve('templates/config.example.yaml')
-const userPath = isProfileActive && profileDir
-  ? path.join(profileDir, 'config.yaml')
-  : path.resolve('config.yaml')
-
+const userPath =
+  isProfileActive && profileDir ? path.join(profileDir, 'config.yaml') : path.resolve('config.yaml')
 
 export let yamlConfig: any = {}
 
@@ -123,51 +121,59 @@ try {
 // Centralized user-facing strings: code defaults (src/strings.ts) overlaid with
 // any global `messages:` overrides from YAML. Use this where there is no thread
 // context; for per-channel/thread/role resolution use getEffectiveConfig().messages.
-export const MESSAGES: Messages = deepMergeMessages(DEFAULT_MESSAGES, yamlConfig.messages || {}) as Messages
-
-
+export const MESSAGES: Messages = deepMergeMessages(
+  DEFAULT_MESSAGES,
+  yamlConfig.messages || {},
+) as Messages
 
 // Diagnostic Prompt for Google Jules
-export const DIAGNOSTIC_PROMPT = yamlConfig.diagnostic_prompt || 
-`You are a diagnostic help agent talking to a non-technical user. Explain bugs and issues in simple, everyday terms. Avoid developer jargon, deep technical code details, and raw code blocks unless explicitly requested. Use clear analogies to explain what is wrong. Do NOT modify the codebase, write code changes, or create pull requests unless a program-level bug is identified and the user explicitly asks for a code fix. Keep conversation interactive, clear, and friendly.`
+export const DIAGNOSTIC_PROMPT =
+  yamlConfig.diagnostic_prompt ||
+  `You are a diagnostic help agent talking to a non-technical user. Explain bugs and issues in simple, everyday terms. Avoid developer jargon, deep technical code details, and raw code blocks unless explicitly requested. Use clear analogies to explain what is wrong. Do NOT modify the codebase, write code changes, or create pull requests unless a program-level bug is identified and the user explicitly asks for a code fix. Keep conversation interactive, clear, and friendly.`
 
 export const BOT_EMOJI = typeof yamlConfig.bot_emoji === 'string' ? yamlConfig.bot_emoji : '🐙'
 
 // Access Control config
 const accessControl = yamlConfig.access_control || {}
-export const ALLOW_ALL = typeof accessControl.allow_all === 'boolean'
-  ? accessControl.allow_all
-  : process.env.ALLOW_ALL !== 'false'
+export const ALLOW_ALL =
+  typeof accessControl.allow_all === 'boolean'
+    ? accessControl.allow_all
+    : process.env.ALLOW_ALL !== 'false'
 
 export const ALLOWED_USERS: string[] = Array.isArray(accessControl.allowed_users)
   ? accessControl.allowed_users.map(String)
-  : (process.env.ALLOWED_USERS || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  : (process.env.ALLOWED_USERS || '')
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean)
 
 export const ALLOWED_ROLES: string[] = Array.isArray(accessControl.allowed_roles)
   ? accessControl.allowed_roles.map(String)
-  : (process.env.ALLOWED_ROLES || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  : (process.env.ALLOWED_ROLES || '')
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter(Boolean)
 
-export const ALLOW_SILENT = typeof accessControl.silent === 'boolean'
-  ? accessControl.silent
-  : false
+export const ALLOW_SILENT = typeof accessControl.silent === 'boolean' ? accessControl.silent : false
 
 // Reactions mapping config
 const defaultReactions = {
-  queued: "⏳",
-  in_progress: "⚙️",
-  responded: "💬",
-  awaiting_plan_approval: "📋",
-  completed: "✅",
-  failed: "❌"
+  queued: '⏳',
+  in_progress: '⚙️',
+  responded: '💬',
+  awaiting_plan_approval: '📋',
+  completed: '✅',
+  failed: '❌',
 }
 
 export const REACTIONS: Record<string, string> = {
   ...defaultReactions,
-  ...(yamlConfig.reactions || {})
+  ...(yamlConfig.reactions || {}),
 }
 
 // Guild override mappings from YAML
-export const YAML_GUILDS: Record<string, { default_repo?: string; forum_channel_id?: string }> = yamlConfig.guilds || {}
+export const YAML_GUILDS: Record<string, { default_repo?: string; forum_channel_id?: string }> =
+  yamlConfig.guilds || {}
 
 // API Keys and Tokens
 export const DISCORD_TOKEN = process.env.DISCORD_TOKEN || ''
@@ -175,9 +181,8 @@ export const JULES_API_KEY = process.env.JULES_API_KEY || ''
 
 let rawDatabaseUrl = process.env.DATABASE_URL
 if (!rawDatabaseUrl) {
-  rawDatabaseUrl = isProfileActive && profileDir
-    ? `file:profiles/${profileName}/dev.db`
-    : 'file:./prisma/dev.db'
+  rawDatabaseUrl =
+    isProfileActive && profileDir ? `file:profiles/${profileName}/dev.db` : 'file:./prisma/dev.db'
 } else if (isProfileActive && profileDir && rawDatabaseUrl.startsWith('file:')) {
   const rawPath = rawDatabaseUrl.slice(5)
   if (!path.isAbsolute(rawPath)) {
@@ -206,7 +211,7 @@ if (DATABASE_URL.startsWith('file:')) {
       logger.debug(`[Database] Provisioning via 'npx prisma migrate deploy'...`)
       execSync('npx prisma migrate deploy', {
         env: { ...process.env, DATABASE_URL: DATABASE_URL },
-        stdio: 'inherit'
+        stdio: 'inherit',
       })
       logger.info(`[Database] Provisioned SQLite database at ${dbPath} (migrations applied).`)
     } catch (migrateErr) {
@@ -214,7 +219,7 @@ if (DATABASE_URL.startsWith('file:')) {
       try {
         execSync('npx prisma db push', {
           env: { ...process.env, DATABASE_URL: DATABASE_URL },
-          stdio: 'inherit'
+          stdio: 'inherit',
         })
         logger.info(`[Database] Provisioned SQLite database at ${dbPath} (db push).`)
       } catch (pushErr) {
@@ -232,14 +237,13 @@ export const prisma = new PrismaClient({ adapter })
 const autoReject = yamlConfig.auto_reject || {}
 export const AUTO_REJECT = {
   enabled: typeof autoReject.enabled === 'boolean' ? autoReject.enabled : false,
-  message: typeof autoReject.message === 'string' ? autoReject.message : ''
+  message: typeof autoReject.message === 'string' ? autoReject.message : '',
 }
 
 // Load Agent Personality Markdown
 const agentsExamplePath = path.resolve('templates/AGENTS.example.md')
-const agentsUserPath = isProfileActive && profileDir
-  ? path.join(profileDir, 'AGENTS.md')
-  : path.resolve('AGENTS.md')
+const agentsUserPath =
+  isProfileActive && profileDir ? path.join(profileDir, 'AGENTS.md') : path.resolve('AGENTS.md')
 let agentsContent = ''
 
 try {
@@ -256,9 +260,8 @@ export const AGENT_PERSONALITY = agentsContent
 
 // Load Agent Soul Markdown
 const soulExamplePath = path.resolve('templates/SOUL.example.md')
-const soulUserPath = isProfileActive && profileDir
-  ? path.join(profileDir, 'SOUL.md')
-  : path.resolve('SOUL.md')
+const soulUserPath =
+  isProfileActive && profileDir ? path.join(profileDir, 'SOUL.md') : path.resolve('SOUL.md')
 let soulContent = ''
 
 try {
@@ -277,15 +280,18 @@ const preWarmed = yamlConfig.pre_warmed_sessions || {}
 export const PRE_WARMED_SESSIONS = {
   enabled: typeof preWarmed.enabled === 'boolean' ? preWarmed.enabled : false,
   pool_size: typeof preWarmed.pool_size === 'number' ? preWarmed.pool_size : 1,
-  pre_warming_prompt: typeof preWarmed.pre_warming_prompt === 'string' ? preWarmed.pre_warming_prompt : ''
+  pre_warming_prompt:
+    typeof preWarmed.pre_warming_prompt === 'string' ? preWarmed.pre_warming_prompt : '',
 }
 
-export const INTERACTIVE_SELECTION = typeof yamlConfig.interactive_selection === 'boolean'
-  ? yamlConfig.interactive_selection
-  : false
+export const INTERACTIVE_SELECTION =
+  typeof yamlConfig.interactive_selection === 'boolean' ? yamlConfig.interactive_selection : false
 
 // Helper to recursively read all files in a directory
-function getFilesRecursively(dir: string, baseDir: string = dir): { relativePath: string; content: string }[] {
+function getFilesRecursively(
+  dir: string,
+  baseDir: string = dir,
+): { relativePath: string; content: string }[] {
   let results: { relativePath: string; content: string }[] = []
   if (!fs.existsSync(dir)) return results
 
@@ -347,14 +353,20 @@ try {
   if (fs.existsSync(bootstrapDir)) {
     const files = getFilesRecursively(bootstrapDir)
     const totalSize = files.reduce((acc, f) => acc + f.content.length, 0)
-    logger.info(`[Bootstrap] Initialized with ${files.length} bootstrap files. Total size: ${totalSize} chars.`)
+    logger.info(
+      `[Bootstrap] Initialized with ${files.length} bootstrap files. Total size: ${totalSize} chars.`,
+    )
   }
 } catch (err) {
   logger.error('Failed to log bootstrap status on startup:', err)
 }
 
 // Resolve dynamic effective configuration for a given thread or channel
-export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: string): {
+export function getEffectiveConfig(
+  thread?: any,
+  member?: any,
+  dbDefaultRepo?: string,
+): {
   diagnostic_prompt: string
   access_control: {
     allow_all: boolean
@@ -383,7 +395,7 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
   messages: Messages
 } {
   const channelsConfig = yamlConfig.channels || {}
-  
+
   let threadOverride = {}
   let parentOverride = {}
 
@@ -403,12 +415,12 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     for (const [roleKey, roleVal] of Object.entries(rolesConfig)) {
       let hasRole = false
       if ('cache' in member.roles) {
-        hasRole = member.roles.cache.has(roleKey) || 
-                  member.roles.cache.some((r: any) => r.name === roleKey)
+        hasRole =
+          member.roles.cache.has(roleKey) || member.roles.cache.some((r: any) => r.name === roleKey)
       } else if (Array.isArray(member.roles)) {
         hasRole = member.roles.includes(roleKey)
       }
-      
+
       if (hasRole && roleVal && typeof roleVal === 'object') {
         roleOverride = {
           ...roleOverride,
@@ -472,40 +484,50 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
   if (typeof threadAC.allow_all === 'boolean') resolvedAccessControl.allow_all = threadAC.allow_all
   if (typeof roleAC.allow_all === 'boolean') resolvedAccessControl.allow_all = roleAC.allow_all
 
-  if (Array.isArray(parentAC.allowed_users)) resolvedAccessControl.allowed_users = parentAC.allowed_users.map(String)
-  if (Array.isArray(threadAC.allowed_users)) resolvedAccessControl.allowed_users = threadAC.allowed_users.map(String)
-  if (Array.isArray(roleAC.allowed_users)) resolvedAccessControl.allowed_users = roleAC.allowed_users.map(String)
+  if (Array.isArray(parentAC.allowed_users))
+    resolvedAccessControl.allowed_users = parentAC.allowed_users.map(String)
+  if (Array.isArray(threadAC.allowed_users))
+    resolvedAccessControl.allowed_users = threadAC.allowed_users.map(String)
+  if (Array.isArray(roleAC.allowed_users))
+    resolvedAccessControl.allowed_users = roleAC.allowed_users.map(String)
 
-  if (Array.isArray(parentAC.allowed_roles)) resolvedAccessControl.allowed_roles = parentAC.allowed_roles.map(String)
-  if (Array.isArray(threadAC.allowed_roles)) resolvedAccessControl.allowed_roles = threadAC.allowed_roles.map(String)
-  if (Array.isArray(roleAC.allowed_roles)) resolvedAccessControl.allowed_roles = roleAC.allowed_roles.map(String)
+  if (Array.isArray(parentAC.allowed_roles))
+    resolvedAccessControl.allowed_roles = parentAC.allowed_roles.map(String)
+  if (Array.isArray(threadAC.allowed_roles))
+    resolvedAccessControl.allowed_roles = threadAC.allowed_roles.map(String)
+  if (Array.isArray(roleAC.allowed_roles))
+    resolvedAccessControl.allowed_roles = roleAC.allowed_roles.map(String)
 
   if (typeof parentAC.silent === 'boolean') resolvedAccessControl.silent = parentAC.silent
   if (typeof threadAC.silent === 'boolean') resolvedAccessControl.silent = threadAC.silent
   if (typeof roleAC.silent === 'boolean') resolvedAccessControl.silent = roleAC.silent
 
-  const resolvedPrompt = (roleOverride as any).diagnostic_prompt ||
+  const resolvedPrompt =
+    (roleOverride as any).diagnostic_prompt ||
     (threadOverride as any).diagnostic_prompt ||
     (parentOverride as any).diagnostic_prompt ||
     DIAGNOSTIC_PROMPT
 
-  const resolvedAgents = (roleOverride as any).agents_personality ||
+  const resolvedAgents =
+    (roleOverride as any).agents_personality ||
     (threadOverride as any).agents_personality ||
     (parentOverride as any).agents_personality ||
     AGENT_PERSONALITY
 
-  const resolvedSoul = (roleOverride as any).soul_personality ||
+  const resolvedSoul =
+    (roleOverride as any).soul_personality ||
     (threadOverride as any).soul_personality ||
     (parentOverride as any).soul_personality ||
     SOUL_PERSONALITY
 
-  const resolvedInteractive = typeof (roleOverride as any).interactive_selection === 'boolean'
-    ? (roleOverride as any).interactive_selection
-    : typeof (threadOverride as any).interactive_selection === 'boolean'
-      ? (threadOverride as any).interactive_selection
-      : typeof (parentOverride as any).interactive_selection === 'boolean'
-        ? (parentOverride as any).interactive_selection
-        : INTERACTIVE_SELECTION
+  const resolvedInteractive =
+    typeof (roleOverride as any).interactive_selection === 'boolean'
+      ? (roleOverride as any).interactive_selection
+      : typeof (threadOverride as any).interactive_selection === 'boolean'
+        ? (threadOverride as any).interactive_selection
+        : typeof (parentOverride as any).interactive_selection === 'boolean'
+          ? (parentOverride as any).interactive_selection
+          : INTERACTIVE_SELECTION
 
   // Resolve default_repo and default_branch
   let resolvedDefaultRepo = yamlConfig.default_repo || dbDefaultRepo
@@ -621,8 +643,3 @@ export function getEffectiveConfig(thread?: any, member?: any, dbDefaultRepo?: s
     messages: resolvedMessages,
   }
 }
-
-
-
-
-

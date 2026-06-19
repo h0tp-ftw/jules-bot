@@ -8,7 +8,7 @@ const prisma = new PrismaClient({ adapter })
 async function main() {
   const sessions = await prisma.debugSession.findMany({
     orderBy: { createdAt: 'desc' },
-    take: 10
+    take: 10,
   })
 
   console.log(`Found ${sessions.length} recent debug sessions:\n`)
@@ -21,4 +21,6 @@ async function main() {
   }
 }
 
-main().catch(console.error).finally(() => prisma.$disconnect())
+main()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect())

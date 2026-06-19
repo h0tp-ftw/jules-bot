@@ -1,5 +1,11 @@
 import { logger } from '../lib/utils/logger.js'
-import { ThreadChannel, Events, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder } from 'discord.js'
+import {
+  ThreadChannel,
+  Events,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  ActionRowBuilder,
+} from 'discord.js'
 import { prisma, YAML_GUILDS, getEffectiveConfig } from '../config.js'
 import { t } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
@@ -13,10 +19,14 @@ export default {
   async execute(thread: ThreadChannel, streamManager: StreamManager) {
     if (!thread.guildId) return
 
-    logger.debug(`[Event: ThreadCreate] New thread "${thread.name}" (${thread.id}) created in parent ${thread.parentId}`)
+    logger.debug(
+      `[Event: ThreadCreate] New thread "${thread.name}" (${thread.id}) created in parent ${thread.parentId}`,
+    )
 
     if (pendingThreads.has(thread.id)) {
-      logger.debug(`[Event: ThreadCreate] Thread ${thread.id} is already being initialized. Skipping.`)
+      logger.debug(
+        `[Event: ThreadCreate] Thread ${thread.id} is already being initialized. Skipping.`,
+      )
       return
     }
     pendingThreads.add(thread.id)
@@ -75,23 +85,17 @@ export default {
             options.push(
               new StringSelectMenuOptionBuilder()
                 .setLabel(t(threadConfig.messages.setup.default_repo_option, { repo: defaultRepo }))
-                .setValue(defaultRepo)
+                .setValue(defaultRepo),
             )
           }
 
-          const filteredRepos = defaultRepo
-            ? repos.filter(r => r.name !== defaultRepo)
-            : repos
+          const filteredRepos = defaultRepo ? repos.filter((r) => r.name !== defaultRepo) : repos
 
           const maxOtherRepos = 25 - options.length
           const displayRepos = filteredRepos.slice(0, maxOtherRepos)
 
           for (const r of displayRepos) {
-            options.push(
-              new StringSelectMenuOptionBuilder()
-                .setLabel(r.name)
-                .setValue(r.name)
-            )
+            options.push(new StringSelectMenuOptionBuilder().setLabel(r.name).setValue(r.name))
           }
 
           const select = new StringSelectMenuBuilder()
@@ -124,7 +128,13 @@ export default {
     const repoName: string = repo
     const branchName = threadConfig.default_branch || 'main'
     const botEmoji = threadConfig.bot_emoji || '🐙'
-    await thread.send(t(threadConfig.messages.session.initializing, { emoji: botEmoji, repo: repoName, branch: branchName }))
+    await thread.send(
+      t(threadConfig.messages.session.initializing, {
+        emoji: botEmoji,
+        repo: repoName,
+        branch: branchName,
+      }),
+    )
 
     try {
       await initializeJulesSession(thread, repoName, branchName, streamManager)

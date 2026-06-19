@@ -12,8 +12,8 @@ test('formats attachment details and instructions correctly', () => {
       name: 'cat.png',
       url: 'https://cdn.discordapp.com/attachments/12345/67890/cat.png',
       contentType: 'image/png',
-      size: 46285 // 45.2 KB
-    }
+      size: 46285, // 45.2 KB
+    },
   ]
 
   const output = formatAttachmentMetadata(attachments)
@@ -24,5 +24,9 @@ test('formats attachment details and instructions correctly', () => {
   assert.ok(output.includes('**URL:** https://cdn.discordapp.com/attachments/12345/67890/cat.png'))
   assert.ok(output.includes('**Type:** `image/png`'))
   assert.ok(output.includes('**Size:** `45.2 KB`'))
-  assert.ok(output.includes('*(Note to Jules: If you need to inspect or analyze the attachments listed above'))
+  assert.ok(
+    output.includes(
+      '*(Note to Jules: If you need to inspect or analyze the attachments listed above',
+    ),
+  )
 })

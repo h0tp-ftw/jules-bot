@@ -26,7 +26,7 @@ export function startHealthServer(client: Client, port: number): http.Server | n
       await prisma.$queryRawUnsafe('SELECT 1')
       dbReachable = true
     } catch {
-      dbReachable = false
+      // query failed — dbReachable stays false
     }
 
     const healthy = gatewayReady && dbReachable

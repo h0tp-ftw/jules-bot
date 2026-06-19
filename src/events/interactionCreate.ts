@@ -1,5 +1,15 @@
 import { logger } from '../lib/utils/logger.js'
-import { Interaction, Events, ThreadChannel, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js'
+import {
+  Interaction,
+  Events,
+  ThreadChannel,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  ActionRowBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} from 'discord.js'
 import { prisma, getEffectiveConfig, MESSAGES } from '../config.js'
 import { t, type Messages } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
@@ -27,18 +37,16 @@ function buildBranchSelectRow(
     options.push(
       new StringSelectMenuOptionBuilder()
         .setLabel(t(messages.setup.default_branch_option, { branch: defaultBranch }))
-        .setValue(defaultBranch)
+        .setValue(defaultBranch),
     )
     hasDefault = true
   }
 
-  const regularBranches = hasDefault
-    ? branches.filter(b => b !== defaultBranch)
-    : branches
+  const regularBranches = hasDefault ? branches.filter((b) => b !== defaultBranch) : branches
 
   // If the default + regular branches exceed Discord's 25-option cap, trim and
   // leave room for the Search and Custom entries.
-  const needsSearch = (regularBranches.length + (hasDefault ? 1 : 0)) > 25
+  const needsSearch = regularBranches.length + (hasDefault ? 1 : 0) > 25
 
   if (needsSearch) {
     const maxRegularSlots = 25 - (hasDefault ? 1 : 0) - 2
@@ -47,8 +55,12 @@ function buildBranchSelectRow(
       options.push(new StringSelectMenuOptionBuilder().setLabel(b).setValue(b))
     }
     options.push(
-      new StringSelectMenuOptionBuilder().setLabel(messages.setup.search_branches_option).setValue('search-branch-prompt'),
-      new StringSelectMenuOptionBuilder().setLabel(messages.setup.custom_branch_option).setValue('custom-branch-input')
+      new StringSelectMenuOptionBuilder()
+        .setLabel(messages.setup.search_branches_option)
+        .setValue('search-branch-prompt'),
+      new StringSelectMenuOptionBuilder()
+        .setLabel(messages.setup.custom_branch_option)
+        .setValue('custom-branch-input'),
     )
   } else {
     for (const b of regularBranches) {
@@ -72,16 +84,28 @@ export default {
       return
     }
 
-    if (!interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit()) return
+    if (
+      !interaction.isButton() &&
+      !interaction.isStringSelectMenu() &&
+      !interaction.isModalSubmit()
+    )
+      return
 
     // Check permission. hasPermission resolves to an object, so a bare
     // `!await hasPermission(...)` is ALWAYS false (objects are truthy) — which
     // previously let any user who could see the buttons/menus drive plan
     // approval and repo/branch selection regardless of the allowlist. Destructure
     // `authorized` like the other call sites (index.ts, messageCreate.ts).
-    const { authorized } = await hasPermission(interaction.member, interaction.user, interaction.channel)
+    const { authorized } = await hasPermission(
+      interaction.member,
+      interaction.user,
+      interaction.channel,
+    )
     if (!authorized) {
-      await interaction.reply({ content: MESSAGES.errors.no_permission_interaction, ephemeral: true })
+      await interaction.reply({
+        content: MESSAGES.errors.no_permission_interaction,
+        ephemeral: true,
+      })
       return
     }
 
@@ -134,7 +158,10 @@ export default {
         }
       } catch (err) {
         logger.error(`Failed to process button interaction for thread ${threadId}:`, err)
-        await interaction.reply({ content: MESSAGES.errors.jules_communication_error, ephemeral: true })
+        await interaction.reply({
+          content: MESSAGES.errors.jules_communication_error,
+          ephemeral: true,
+        })
       }
     }
 
@@ -155,7 +182,7 @@ export default {
 
           // Find the selected repo branches
           const repos = await JulesClient.getConnectedRepos()
-          const selectedRepo = repos.find(r => r.name === repoName)
+          const selectedRepo = repos.find((r) => r.name === repoName)
 
           if (!selectedRepo) {
             await interaction.followUp({ content: msgs.errors.repo_not_found, ephemeral: true })
@@ -173,7 +200,8 @@ export default {
 
             await initializeJulesSession(thread, repoName, branch, streamManager)
           } else {
-            const defaultBranch = threadConfig.default_branch || selectedRepo.defaultBranch || 'main'
+            const defaultBranch =
+              threadConfig.default_branch || selectedRepo.defaultBranch || 'main'
             const row = buildBranchSelectRow(thread.id, repoName, branches, defaultBranch, msgs)
             await interaction.editReply({
               content: t(msgs.setup.configure_select_branch, { repo: repoName }),
@@ -227,7 +255,7 @@ export default {
 
             // Rebuild default branch dropdown resetting search
             const repos = await JulesClient.getConnectedRepos()
-            const selectedRepo = repos.find(r => r.name === repoName)
+            const selectedRepo = repos.find((r) => r.name === repoName)
 
             if (!selectedRepo) {
               await interaction.editReply({ content: msgs.errors.repo_not_found, components: [] })
@@ -235,7 +263,8 @@ export default {
             }
 
             const branches = selectedRepo.branches || []
-            const defaultBranch = threadConfig.default_branch || selectedRepo.defaultBranch || 'main'
+            const defaultBranch =
+              threadConfig.default_branch || selectedRepo.defaultBranch || 'main'
             const row = buildBranchSelectRow(thread.id, repoName, branches, defaultBranch, msgs)
             await interaction.editReply({
               content: t(msgs.setup.configure_select_branch, { repo: repoName }),
@@ -246,7 +275,11 @@ export default {
 
           const botEmoji = threadConfig.bot_emoji || '🐙'
           await interaction.update({
-            content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: branchName }),
+            content: t(msgs.session.initializing, {
+              emoji: botEmoji,
+              repo: repoName,
+              branch: branchName,
+            }),
             components: [],
           })
 
@@ -256,9 +289,15 @@ export default {
         logger.error(`Failed to process select interaction for thread ${threadId}:`, err)
         try {
           if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
+            await interaction.reply({
+              content: MESSAGES.errors.session_setup_error,
+              ephemeral: true,
+            })
           } else {
-            await interaction.followUp({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
+            await interaction.followUp({
+              content: MESSAGES.errors.session_setup_error,
+              ephemeral: true,
+            })
           }
         } catch (apiErr) {
           logger.error('Failed to send error reply to expired interaction:', apiErr)
@@ -284,12 +323,20 @@ export default {
 
           if (interaction.isFromMessage()) {
             await interaction.update({
-              content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: branchName }),
+              content: t(msgs.session.initializing, {
+                emoji: botEmoji,
+                repo: repoName,
+                branch: branchName,
+              }),
               components: [],
             })
           } else {
             await interaction.reply({
-              content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: branchName }),
+              content: t(msgs.session.initializing, {
+                emoji: botEmoji,
+                repo: repoName,
+                branch: branchName,
+              }),
               ephemeral: true,
             })
           }
@@ -306,7 +353,7 @@ export default {
 
           // Find the selected repo branches
           const repos = await JulesClient.getConnectedRepos()
-          const selectedRepo = repos.find(r => r.name === repoName)
+          const selectedRepo = repos.find((r) => r.name === repoName)
 
           if (!selectedRepo) {
             if (interaction.isFromMessage()) {
@@ -320,24 +367,36 @@ export default {
           const branches = selectedRepo.branches || []
 
           // Check for exact case-insensitive match
-          const exactMatch = branches.find(b => b === query || b.toLowerCase() === query.toLowerCase())
+          const exactMatch = branches.find(
+            (b) => b === query || b.toLowerCase() === query.toLowerCase(),
+          )
           if (exactMatch) {
             const botEmoji = threadConfig.bot_emoji || '🐙'
             if (interaction.isFromMessage()) {
               await interaction.editReply({
-                content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: exactMatch }),
+                content: t(msgs.session.initializing, {
+                  emoji: botEmoji,
+                  repo: repoName,
+                  branch: exactMatch,
+                }),
                 components: [],
               })
             } else {
               await interaction.editReply({
-                content: t(msgs.session.initializing, { emoji: botEmoji, repo: repoName, branch: exactMatch }),
+                content: t(msgs.session.initializing, {
+                  emoji: botEmoji,
+                  repo: repoName,
+                  branch: exactMatch,
+                }),
               })
             }
             await initializeJulesSession(thread, repoName, exactMatch, streamManager)
             return
           }
 
-          const filteredBranches = branches.filter(b => b.toLowerCase().includes(query.toLowerCase()))
+          const filteredBranches = branches.filter((b) =>
+            b.toLowerCase().includes(query.toLowerCase()),
+          )
 
           if (filteredBranches.length === 0) {
             if (interaction.isFromMessage()) {
@@ -358,11 +417,7 @@ export default {
           const displayBranches = filteredBranches.slice(0, maxFiltered)
 
           for (const b of displayBranches) {
-            options.push(
-              new StringSelectMenuOptionBuilder()
-                .setLabel(b)
-                .setValue(b)
-            )
+            options.push(new StringSelectMenuOptionBuilder().setLabel(b).setValue(b))
           }
 
           options.push(
@@ -371,7 +426,7 @@ export default {
               .setValue('search-branch-prompt'),
             new StringSelectMenuOptionBuilder()
               .setLabel(msgs.setup.clear_search_option)
-              .setValue('clear-search')
+              .setValue('clear-search'),
           )
 
           const branchSelect = new StringSelectMenuBuilder()
@@ -396,9 +451,15 @@ export default {
         logger.error(`Failed to process modal submit for thread ${threadId}:`, err)
         try {
           if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
+            await interaction.reply({
+              content: MESSAGES.errors.session_setup_error,
+              ephemeral: true,
+            })
           } else {
-            await interaction.followUp({ content: MESSAGES.errors.session_setup_error, ephemeral: true })
+            await interaction.followUp({
+              content: MESSAGES.errors.session_setup_error,
+              ephemeral: true,
+            })
           }
         } catch (apiErr) {
           logger.error('Failed to send error reply to expired interaction:', apiErr)

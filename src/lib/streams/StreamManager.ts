@@ -23,7 +23,9 @@ export class StreamManager {
     if (!statusMessageId) {
       const threadConfig = getEffectiveConfig(thread)
       const botEmoji = threadConfig.bot_emoji || '🐙'
-      const msg = await thread.send(t(threadConfig.messages.stream.initial_status, { emoji: botEmoji }))
+      const msg = await thread.send(
+        t(threadConfig.messages.stream.initial_status, { emoji: botEmoji }),
+      )
       statusMessageId = msg.id
       await prisma.debugSession.update({
         where: { threadId },
@@ -113,9 +115,8 @@ export class StreamManager {
         ? m.completed
         : `${m.failed}${reason ? t(m.failed_reason_suffix, { reason }) : ''}`
 
-      const logsBlock = buf.length > 0
-        ? `\n\n${m.final_logs_header}\n\`\`\`\n${buf.join('\n')}\n\`\`\``
-        : ''
+      const logsBlock =
+        buf.length > 0 ? `\n\n${m.final_logs_header}\n\`\`\`\n${buf.join('\n')}\n\`\`\`` : ''
 
       const msg = await thread.messages.fetch(session.statusMessageId)
       await msg.edit({ content: `${statusText}${logsBlock}`.slice(0, 1990) })

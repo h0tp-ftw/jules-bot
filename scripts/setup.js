@@ -37,7 +37,11 @@ function copyIfMissing(src, dest) {
 // Prompt helper. When `mask` is set, typed characters are hidden (for secrets).
 function ask(query, { mask = false } = {}) {
   return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true })
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: true,
+    })
     let muted = false
     if (mask) {
       const out = rl.output

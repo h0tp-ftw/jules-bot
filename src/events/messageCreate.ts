@@ -21,7 +21,11 @@ export default {
     const thread = message.channel as ThreadChannel
 
     const threadConfig = getEffectiveConfig(thread, message.member)
-    if (threadConfig.ignore_prefix && message.content && message.content.startsWith(threadConfig.ignore_prefix)) {
+    if (
+      threadConfig.ignore_prefix &&
+      message.content &&
+      message.content.startsWith(threadConfig.ignore_prefix)
+    ) {
       return
     }
 
@@ -44,24 +48,28 @@ export default {
     // Process attachments if any
     let messageContent = message.content || ''
     if (message.attachments.size > 0) {
-      const attachmentList = Array.from(message.attachments.values()).map(att => ({
+      const attachmentList = Array.from(message.attachments.values()).map((att) => ({
         name: att.name,
         url: att.url,
         contentType: att.contentType || undefined,
-        size: att.size || undefined
+        size: att.size || undefined,
       }))
 
       messageContent += formatAttachmentMetadata(attachmentList, threadConfig.messages.attachments)
     }
 
-    logger.debug(`[MessageCreate] Event triggered for thread ${thread.id}. Content length: ${messageContent.length}`)
+    logger.debug(
+      `[MessageCreate] Event triggered for thread ${thread.id}. Content length: ${messageContent.length}`,
+    )
 
     try {
       const session = JulesClient.getSession(sessionRecord.julesSessionId)
 
       // State check is handled in the background stream listener
 
-      logger.debug(`[MessageCreate] activeStreams status for thread ${thread.id}: ${activeStreams.has(thread.id)}`)
+      logger.debug(
+        `[MessageCreate] activeStreams status for thread ${thread.id}: ${activeStreams.has(thread.id)}`,
+      )
       // Rehydrate the stream listener if not already active — e.g. after a bot
       // restart, or when continuing an old/completed session whose handler is no
       // longer running. Wait until the listener has replayed history into its
@@ -75,10 +83,7 @@ export default {
           signalReady = resolve
         })
         runJulesStream(sessionRecord.julesSessionId, thread, streamManager, undefined, signalReady)
-        await Promise.race([
-          ready,
-          new Promise((resolve) => setTimeout(resolve, 5000)),
-        ])
+        await Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 5000))])
       }
 
       thread.sendTyping().catch(() => {})
@@ -99,9 +104,13 @@ export default {
         content: messageContent,
       })
 
-      logger.debug(`[MessageCreate] Sending message to Jules session ${sessionRecord.julesSessionId}...`)
+      logger.debug(
+        `[MessageCreate] Sending message to Jules session ${sessionRecord.julesSessionId}...`,
+      )
       await session.send(promptWithMetadata)
-      logger.debug(`[MessageCreate] Message sent successfully to Jules session ${sessionRecord.julesSessionId}`)
+      logger.debug(
+        `[MessageCreate] Message sent successfully to Jules session ${sessionRecord.julesSessionId}`,
+      )
     } catch (err) {
       logger.error(`Failed to send message to Jules for thread ${thread.id}:`, err)
       await message.reply(threadConfig.messages.session.message_delivery_failed)

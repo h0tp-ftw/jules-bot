@@ -55,7 +55,9 @@ test('deepMergeMessages layers overrides in precedence order', () => {
 
 test('deepMergeMessages ignores undefined overrides and does not mutate the base', () => {
   const before = DEFAULT_MESSAGES.errors.guild_only
-  const merged = deepMergeMessages(DEFAULT_MESSAGES, { errors: { guild_only: undefined } }) as Messages
+  const merged = deepMergeMessages(DEFAULT_MESSAGES, {
+    errors: { guild_only: undefined },
+  }) as Messages
 
   assert.equal(merged.errors.guild_only, before)
   assert.equal(DEFAULT_MESSAGES.errors.guild_only, before) // base untouched

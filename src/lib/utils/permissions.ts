@@ -4,8 +4,8 @@ import { getEffectiveConfig } from '../../config.js'
 export async function hasPermission(
   member: GuildMember | APIInteractionGuildMember | null,
   user: User,
-  thread?: any
-): Promise<{ authorized: boolean, silent: boolean }> {
+  thread?: any,
+): Promise<{ authorized: boolean; silent: boolean }> {
   let creatorMember: any = null
   if (thread && thread.guild && thread.ownerId) {
     creatorMember = thread.guild.members.cache.get(thread.ownerId)

@@ -63,7 +63,9 @@ try {
     md += `> The following changes have been merged into \`main\` AFTER the release tag. Since Jules is on the \`main\` branch, these changes **ARE AVAILABLE** in the codebase you are currently seeing.\n`
     md += `> **However**, the user is likely still on the release tag (\`${lastTag}\`), so they may not have these features or fixes yet.\n\n`
 
-    const prsRaw = runGh(`pr list -R h0tp-ftw/ankimon --state merged --search "merged:>${tagDate}" --json number,title,author --limit 50`)
+    const prsRaw = runGh(
+      `pr list -R h0tp-ftw/ankimon --state merged --search "merged:>${tagDate}" --json number,title,author --limit 50`,
+    )
     if (prsRaw && prsRaw !== '[]') {
       const prs = JSON.parse(prsRaw)
       md += `### Merged Pull Requests (Included in your current view)\n`
@@ -73,7 +75,7 @@ try {
         if (prViewRaw) {
           const files = JSON.parse(prViewRaw).files || []
           if (files.length < 10) {
-            const fileList = files.map(f => f.path.split('/').pop()).join(',')
+            const fileList = files.map((f) => f.path.split('/').pop()).join(',')
             fileDetails = ` [${files.length} files: ${fileList}]`
           } else {
             const displayCount = files.length === 100 ? '100+' : files.length
@@ -96,7 +98,9 @@ try {
 try {
   console.log('> Generating zz_cmd_035_gh_open_prs.md...')
   let md = `## Open Pull Requests\n`
-  const prsRaw = runGh(`pr list -R h0tp-ftw/ankimon --state open --json number,title,author --limit 20`)
+  const prsRaw = runGh(
+    `pr list -R h0tp-ftw/ankimon --state open --json number,title,author --limit 20`,
+  )
   if (prsRaw && prsRaw !== '[]') {
     const prs = JSON.parse(prsRaw)
     for (const pr of prs) {
@@ -105,7 +109,7 @@ try {
       if (prViewRaw) {
         const files = JSON.parse(prViewRaw).files || []
         if (files.length < 10) {
-          const fileList = files.map(f => f.path.split('/').pop()).join(',')
+          const fileList = files.map((f) => f.path.split('/').pop()).join(',')
           fileDetails = ` [${files.length} files: ${fileList}]`
         } else {
           const displayCount = files.length === 100 ? '100+' : files.length
@@ -127,11 +131,13 @@ try {
 try {
   console.log('> Generating zz_cmd_036_gh_open_issues.md...')
   let md = `## Open Issues\n`
-  const issuesRaw = runGh(`issue list -R h0tp-ftw/ankimon --state open --json number,title,author,labels --limit 20`)
+  const issuesRaw = runGh(
+    `issue list -R h0tp-ftw/ankimon --state open --json number,title,author,labels --limit 20`,
+  )
   if (issuesRaw && issuesRaw !== '[]') {
     const issues = JSON.parse(issuesRaw)
     for (const issue of issues) {
-      const labels = (issue.labels || []).map(l => l.name).join(',')
+      const labels = (issue.labels || []).map((l) => l.name).join(',')
       const labelDetails = labels ? ` [labels: ${labels}]` : ''
       md += `- #${issue.number} - ${issue.title} (@${issue.author.login})${labelDetails}\n`
     }
@@ -153,7 +159,7 @@ try {
     const release = JSON.parse(releaseInfoRaw)
     const lastTag = release.tag_name
     const releaseUrl = `https://github.com/h0tp-ftw/ankimon/releases/download/${lastTag}/ankimon-${lastTag}-anki21-ankiweb.ankiaddon`
-    
+
     md += `Latest Tag: \`${lastTag}\`\n`
     md += `Download Link: [ankimon-${lastTag}.ankiaddon](${releaseUrl})\n\n`
     md += `### Usage Instructions\n`

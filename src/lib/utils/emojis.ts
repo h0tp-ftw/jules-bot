@@ -9,9 +9,9 @@ export function resolveMessageEmojis(client: Client, text: string): string {
   if (!text) return text
 
   // 1. Resolve full custom emoji formats: <a?:name:id>
-  let resolved = text.replace(/<a?:([a-zA-Z0-9_]+):([0-9]+)>/g, (match, name, id) => {
+  let resolved = text.replace(/<a?:([a-zA-Z0-9_]+):([0-9]+)>/g, (match, name, _id) => {
     const cachedEmoji = client.emojis.cache.find(
-      (e) => e.name?.toLowerCase() === name.toLowerCase()
+      (e) => e.name?.toLowerCase() === name.toLowerCase(),
     )
     if (cachedEmoji) {
       const animated = cachedEmoji.animated ? 'a' : ''
@@ -25,7 +25,7 @@ export function resolveMessageEmojis(client: Client, text: string): string {
   // <:name:id> tag (where the closing colon is followed by the numeric id).
   resolved = resolved.replace(/:([a-zA-Z0-9_]+):(?!\d)/g, (match, name) => {
     const cachedEmoji = client.emojis.cache.find(
-      (e) => e.name?.toLowerCase() === name.toLowerCase()
+      (e) => e.name?.toLowerCase() === name.toLowerCase(),
     )
     if (cachedEmoji) {
       const animated = cachedEmoji.animated ? 'a' : ''
