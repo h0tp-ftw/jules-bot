@@ -529,6 +529,20 @@ export async function runJulesStream(
       logger.debug(`[runJulesStream] Stream loop finished for ${sessionId}.`);
       stopTyping();
     } catch (err: any) {
+      // Check if error is 404 Not Found or 403 Forbidden (permanent failure)
+      const isPermanentError = err && (
+        err.status === 404 || err.status === 403 ||
+        err.message?.includes('404') || err.message?.includes('403') ||
+        err.message?.includes('Not Found') || err.message?.includes('Forbidden')
+      );
+      if (isPermanentError) {
+        console.log(`[runJulesStream] Permanent error (${err.status || '404/403'}) for session ${sessionId}. Exiting stream handler permanently.`);
+        stopTyping();
+        activeStreams.delete(thread.id);
+        processedActivityIdsMap.delete(thread.id);
+        return;
+      }
+
       consecutiveFailures++;
       logger.error(
         `[runJulesStream] [Stream Retry ${consecutiveFailures}/${maxRetries}] Error in Jules stream for thread ${thread.id}:`,
@@ -940,18 +954,18 @@ export async function initializeJulesSession(
 export async function rehydrateActiveStreams(client: any, streamManager: StreamManager) {
   logger.debug('[rehydrateActiveStreams] Starting rehydration of active streams...');
   try {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    const oneDayAgo = new Date();
+    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
     const sessions = await prisma.debugSession.findMany({
       where: {
-        updatedAt: { gte: oneWeekAgo },
+        updatedAt: { gte: oneDayAgo },
       },
       orderBy: { updatedAt: 'desc' },
-      take: 50,
+      take: 10,
     });
 
-    logger.debug(`[rehydrateActiveStreams] Found ${sessions.length} sessions in DB updated in the last 7 days.`);
+    logger.debug(`[rehydrateActiveStreams] Found ${sessions.length} sessions in DB updated in the last 24 hours.`);
 
     for (const session of sessions) {
       try {
@@ -966,6 +980,9 @@ export async function rehydrateActiveStreams(client: any, streamManager: StreamM
         logger.debug(`[rehydrateActiveStreams] Rehydrating stream for thread ${thread.id}, sessionId: ${session.julesSessionId}`);
         // runJulesStream checks if it's already active, so this is safe
         runJulesStream(session.julesSessionId, thread, streamManager);
+
+        // Wait 1.5 seconds between rehydrations to avoid hitting Jules API rate limits
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       } catch (err) {
         logger.error(`[rehydrateActiveStreams] Failed to rehydrate session ${session.julesSessionId} for thread ${session.threadId}:`, err);
       }
