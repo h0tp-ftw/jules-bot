@@ -97,29 +97,40 @@ InteractionCreate (Approve/Reject) ──────────▶ runJulesStr
 - A Google Jules API Key.
 
 ### 2. Configure Settings & Environment
-1. Run the interactive setup script to copy default templates to their local gitignored files:
-   ```bash
-   npm run setup
-   ```
-   This generates:
-   - `.env` (Environment variables)
-   - `config.yaml` (YAML configurations)
-   - `AGENTS.md` (Agent guidelines)
-   - `SOUL.md` (Agent principles)
+Run the interactive setup script. It **prompts for your Discord token and Jules API
+key** and writes a ready-to-run `.env`, then copies the other gitignored runtime files
+from their committed templates:
 
-2. Open `.env` and fill in your Discord credentials and Jules API key:
-   ```env
-   DATABASE_URL="file:./prisma/dev.db"
-   DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
-   JULES_API_KEY="YOUR_JULES_API_KEY"
-   LOG_LEVEL="info"   # debug | info | warn | error
-   ```
-   > The bot validates both tokens on startup and exits early with a clear message if either is missing.
+```bash
+npm run setup
+```
 
-### 3. Initialize Database
+This generates:
+- `.env` (Environment variables — pre-filled with the tokens you entered)
+- `config.yaml` (YAML configurations)
+- `AGENTS.md` (Agent guidelines)
+- `SOUL.md` (Agent principles)
+
+You can re-open `.env` at any time to adjust values:
+```env
+DATABASE_URL="file:./prisma/dev.db"
+DISCORD_TOKEN="YOUR_DISCORD_TOKEN"
+JULES_API_KEY="YOUR_JULES_API_KEY"
+LOG_LEVEL="info"   # debug | info | warn | error
+```
+> The bot validates both tokens on startup and exits early with a clear message if either is missing.
+
+### 3. Install Dependencies
 ```bash
 npm install
-npm run db:migrate -- --name init
+```
+The SQLite database is **auto-provisioned on first boot** — Prisma applies the committed
+migrations to a fresh `prisma/dev.db`, so no manual migration step is needed for a standard
+setup. (Editing `prisma/schema.prisma`? Use `npm run db:migrate` to create a new migration.)
+
+Run a pre-flight check anytime to confirm everything is configured:
+```bash
+npm run doctor
 ```
 
 ### 4. Start the Bot
