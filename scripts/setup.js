@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import readline from 'node:readline'
 import { execSync } from 'node:child_process'
+import { inviteUrl } from './lib/invite.js'
 
 // Interactive, plug-n-play first-run wizard for non-Docker installs. From a fresh
 // clone, `npm run setup` will:
@@ -23,28 +24,6 @@ const templateFiles = [
 const ENV_TEMPLATE = 'templates/.env.example'
 const ENV_DEST = '.env'
 const DEFAULT_DATABASE_URL = 'file:./prisma/dev.db'
-
-// Permissions the bot needs (see README → Discord Developer Portal), as a BigInt
-// bitfield for the OAuth2 invite URL.
-const INVITE_PERMISSIONS = [
-  1n << 6n, // Add Reactions
-  1n << 10n, // View Channels
-  1n << 11n, // Send Messages
-  1n << 13n, // Manage Messages
-  1n << 14n, // Embed Links
-  1n << 16n, // Read Message History
-  1n << 31n, // Use Application Commands
-  1n << 38n, // Send Messages in Threads
-].reduce((acc, bit) => acc | bit, 0n)
-
-function inviteUrl(clientId) {
-  const params = new URLSearchParams({
-    client_id: clientId,
-    permissions: INVITE_PERMISSIONS.toString(),
-    scope: 'bot applications.commands',
-  })
-  return `https://discord.com/oauth2/authorize?${params.toString()}`
-}
 
 // Prompt helper. When `mask` is set, typed characters are hidden (for secrets).
 function ask(query, { mask = false } = {}) {

@@ -14,7 +14,7 @@
     "lint": "eslint .",
     "format": "prettier --write \"{src,scripts,test}/**/*.{ts,js}\" eslint.config.js",
     "format:check": "prettier --check \"{src,scripts,test}/**/*.{ts,js}\" eslint.config.js",
-    "test": "node --import tsx --test test/messageSplitter.test.ts test/emojis.test.ts test/attachments.test.ts test/strings.test.ts test/sessionState.test.ts test/errors.test.ts"
+    "test": "node --import tsx --test test/messageSplitter.test.ts test/emojis.test.ts test/attachments.test.ts test/strings.test.ts test/sessionState.test.ts test/errors.test.ts test/invite.test.ts"
   },
   "keywords": [
     "discord",
