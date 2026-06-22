@@ -13,6 +13,7 @@ import { prisma, getEffectiveConfig, yamlConfig } from '../../config.js'
 import { t } from '../../strings.js'
 import { replenishPool } from './PreWarmedManager.js'
 import { resolveMessageEmojis } from '../utils/emojis.js'
+import { extractReactionMarkers } from '../utils/reactionMarkers.js'
 import { splitMessage } from '../utils/messageSplitter.js'
 import { formatAttachmentMetadata } from '../utils/attachments.js'
 import { reactionStageForState } from '../utils/sessionState.js'
@@ -80,24 +81,40 @@ export async function getLastHumanMessage(thread: ThreadChannel): Promise<Messag
   }
 }
 
+// Remove every reaction this bot previously added to `message`. Shared by the
+// state-driven updateReaction and the Jules-driven applyJulesReactions so a new
+// reaction set always cleanly replaces the old one.
+async function clearBotReactions(message: Message) {
+  const botId = message.client.user?.id
+  if (!botId) return
+  for (const reaction of message.reactions.cache.values()) {
+    try {
+      if (reaction.me) {
+        await reaction.users.remove(botId)
+      }
+    } catch (err) {
+      // Ignore removal errors
+    }
+  }
+}
+
+// Record the reaction stage currently shown on a message (for dedup), evicting
+// the oldest entry once over the cap so a long-lived process doesn't leak.
+function rememberStage(messageId: string, stage: string) {
+  messageReactionStage.set(messageId, stage)
+  if (messageReactionStage.size > MAX_REACTION_STAGE_ENTRIES) {
+    const oldest = messageReactionStage.keys().next().value
+    if (oldest !== undefined) messageReactionStage.delete(oldest)
+  }
+}
+
 export async function updateReaction(message: Message | null, newStage: string) {
   if (!message) return
   // Skip redundant work if this message is already showing the target stage.
   if (messageReactionStage.get(message.id) === newStage) return
   try {
-    const botId = message.client.user?.id
-    if (botId) {
-      // Remove any existing bot reactions to clean up previous stages
-      for (const reaction of message.reactions.cache.values()) {
-        try {
-          if (reaction.me) {
-            await reaction.users.remove(botId)
-          }
-        } catch (err) {
-          // Ignore removal errors
-        }
-      }
-    }
+    // Remove any existing bot reactions to clean up previous stages
+    await clearBotReactions(message)
 
     // Add new reaction emoji
     const threadConfig = getEffectiveConfig(message.channel, message.member)
@@ -107,13 +124,40 @@ export async function updateReaction(message: Message | null, newStage: string) 
       const emoji = parseEmojiForReaction(message.client, emojiStr)
       await message.react(emoji)
     }
-    messageReactionStage.set(message.id, newStage)
-    if (messageReactionStage.size > MAX_REACTION_STAGE_ENTRIES) {
-      const oldest = messageReactionStage.keys().next().value
-      if (oldest !== undefined) messageReactionStage.delete(oldest)
-    }
+    rememberStage(message.id, newStage)
   } catch (err) {
     logger.error(`Failed to update reaction to stage ${newStage}:`, err)
+  }
+}
+
+// Apply Jules-authored reactions (parsed from [[react:…]] markers in an agent
+// message) to `message`, replacing any state-driven reaction. Records a sentinel
+// stage so a later lifecycle transition (completed/failed/in_progress) still
+// overrides it. Each emoji is resolved through the same shortcode/custom-emoji
+// pipeline as agent message text before being handed to message.react().
+export async function applyJulesReactions(
+  message: Message | null,
+  emojis: string[],
+): Promise<boolean> {
+  if (!message || emojis.length === 0) return false
+  try {
+    await clearBotReactions(message)
+    let applied = false
+    for (const raw of emojis) {
+      try {
+        const resolved = resolveMessageEmojis(message.client, raw)
+        const emoji = parseEmojiForReaction(message.client, resolved)
+        await message.react(emoji)
+        applied = true
+      } catch (err) {
+        logger.warn(`[applyJulesReactions] Could not react with "${raw}":`, err)
+      }
+    }
+    if (applied) rememberStage(message.id, `jules:${emojis.join(' ')}`)
+    return applied
+  } catch (err) {
+    logger.error('[applyJulesReactions] Failed to apply Jules reactions:', err)
+    return false
   }
 }
 
@@ -410,27 +454,44 @@ export async function runJulesStream(
 
           case 'agentMessaged': {
             logger.debug(`[runJulesStream] agentMessaged for ${sessionId}`)
-            const message = activity.message || (activity as any).agentMessaged?.message || ''
-            if (message) {
-              const resolved = resolveMessageEmojis(thread.client, message)
-              const lastHuman = await getTarget()
-              if (lastHuman) {
+            const rawMessage = activity.message || (activity as any).agentMessaged?.message || ''
+            if (rawMessage) {
+              const target = await getTarget()
+              // Resolve the toggle with the same (thread + creator-role) context the
+              // session prompt was built with, so the parse/strip behavior matches
+              // whether Jules was actually told about the marker protocol.
+              const reactionsEnabled =
+                getEffectiveConfig(thread, target?.member).jules_reactions?.enabled === true
+              const { text: bodyText, emojis } = reactionsEnabled
+                ? extractReactionMarkers(rawMessage)
+                : { text: rawMessage, emojis: [] as string[] }
+
+              // bodyText can be empty when Jules sends only a reaction marker — in
+              // that case react without posting an empty message.
+              if (bodyText) {
+                const resolved = resolveMessageEmojis(thread.client, bodyText)
                 const splits = splitMessage(resolved, 2000)
-                for (let i = 0; i < splits.length; i++) {
-                  if (i === 0) {
-                    await lastHuman.reply(splits[i])
-                  } else {
-                    await thread.send(splits[i])
+                if (target) {
+                  for (let i = 0; i < splits.length; i++) {
+                    if (i === 0) {
+                      await target.reply(splits[i])
+                    } else {
+                      await thread.send(splits[i])
+                    }
+                  }
+                } else {
+                  for (const chunk of splits) {
+                    await thread.send(chunk)
                   }
                 }
-              } else {
-                const splits = splitMessage(resolved, 2000)
-                for (const chunk of splits) {
-                  await thread.send(chunk)
-                }
               }
-              const target = await getTarget()
-              await updateReaction(target, 'responded')
+
+              // A Jules-authored reaction overrides the state stamp; fall back to
+              // the normal "responded" reaction when none was supplied (or none
+              // could be applied).
+              if (!(emojis.length > 0 && (await applyJulesReactions(target, emojis)))) {
+                await updateReaction(target, 'responded')
+              }
             }
             break
           }
@@ -729,9 +790,14 @@ export async function initializeJulesSession(
           for (const activity of activities) {
             logger.debug(`[initializeJulesSession] Activity Type: ${activity.type}`)
             if (activity.type === 'agentMessaged') {
-              const message = activity.message || (activity as any).agentMessaged?.message || ''
-              if (message) {
-                const resolved = resolveMessageEmojis(thread.client, message)
+              const rawMessage = activity.message || (activity as any).agentMessaged?.message || ''
+              // Strip any reaction markers from replayed messages so they never
+              // render literally. Replay doesn't re-apply the reactions themselves.
+              const body = threadConfig.jules_reactions?.enabled
+                ? extractReactionMarkers(rawMessage).text
+                : rawMessage
+              if (body) {
+                const resolved = resolveMessageEmojis(thread.client, body)
                 const splits = splitMessage(resolved, 2000)
                 for (const chunk of splits) {
                   await thread.send(chunk)

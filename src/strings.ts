@@ -150,6 +150,11 @@ export const DEFAULT_MESSAGES = {
       "You are a diagnostic assistant. The user is connecting and has just sent their initial response. Acknowledge that you are showing this message now that they have replied. Share an extremely obscure, niche, or lesser-known Pokémon trivia fact (avoiding common, generic facts), and let them know you are actively analyzing the codebase and working on their query right now. Even though you don't see their query yet, respond as if you have received a query from the user and are working on it. Do NOT propose code changes yet; generate the initial plan to welcome them and begin investigation.",
     prewarm_title: 'Pre-warmed Session ({repo})',
     prewarm_title_context: 'Pre-warmed Session ({repo} - Context: {context})',
+    // Appended to the session prompt only when `jules_reactions.enabled` is set.
+    // Teaches the text-only agent the inline marker protocol the orchestrator
+    // parses back out into real Discord reactions.
+    jules_reactions_instruction:
+      "Reaction ability: you can add a Discord emoji reaction to the user's message you are replying to. To react, include a marker of the exact form [[react:EMOJI]] anywhere in your reply — for example [[react:👍]] or [[react:✅]]. EMOJI may be a standard Unicode emoji, or a custom server emoji written as :name: or <:name:id>. Use one marker per reaction; you may include several to add multiple reactions. The marker is removed from your message before it is shown, so it never appears as literal text — if you want to react without saying anything, reply with only the marker. React sparingly, and only when it adds value (acknowledging, agreeing, celebrating, or signalling status); most replies need no reaction.",
   },
 
   // Attachment metadata block appended to user messages for Jules.

@@ -32,6 +32,15 @@ auto_reject:
   enabled: false
   message: "Please do not create or refine an implementation plan. Respond directly to the previous prompt and do not try to refine the implementation plan."
 
+# Let Jules add Discord reactions to the user's message (opt-in).
+# When enabled, the session prompt teaches Jules a text marker — [[react:👍]] —
+# which the bot parses out and turns into a real reaction (overriding the status
+# reaction above), then strips from the message so it never shows literally.
+# Supports Unicode emoji and custom server emoji (:name: or <:name:id>).
+# Customise the wording via messages.prompts.jules_reactions_instruction below.
+jules_reactions:
+  enabled: false
+
 # Force interactive repository and branch selection on thread creation.
 # If true, shows an embed with select menus allowing developers to pick a connected repo and branch.
 # If false, automatically proceeds with default repository and branch.

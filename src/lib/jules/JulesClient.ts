@@ -27,6 +27,9 @@ export class JulesClient {
     if (bootstrapContext) {
       sessionPrompt += `\n\nBootstrap Knowledge and Context:\n${bootstrapContext}`
     }
+    if (threadConfig.jules_reactions?.enabled) {
+      sessionPrompt += `\n\n${threadConfig.messages.prompts.jules_reactions_instruction}`
+    }
     sessionPrompt += `\n\nUser Issue:\n${options.prompt}`
 
     return await client.session({

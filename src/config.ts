@@ -98,6 +98,10 @@ try {
       ...(defaultYaml.auto_reject || {}),
       ...(userYaml.auto_reject || {}),
     },
+    jules_reactions: {
+      ...(defaultYaml.jules_reactions || {}),
+      ...(userYaml.jules_reactions || {}),
+    },
     pre_warmed_sessions: {
       ...(defaultYaml.pre_warmed_sessions || {}),
       ...(userYaml.pre_warmed_sessions || {}),
@@ -240,6 +244,14 @@ export const AUTO_REJECT = {
   message: typeof autoReject.message === 'string' ? autoReject.message : '',
 }
 
+// Jules-authored reactions: when enabled, the session prompt teaches Jules the
+// `[[react:emoji]]` marker protocol, and the orchestrator parses those markers
+// back out into real Discord reactions on the user's message. Off by default.
+const julesReactions = yamlConfig.jules_reactions || {}
+export const JULES_REACTIONS = {
+  enabled: typeof julesReactions.enabled === 'boolean' ? julesReactions.enabled : false,
+}
+
 // Load Agent Personality Markdown
 const agentsExamplePath = path.resolve('templates/AGENTS.example.md')
 const agentsUserPath =
@@ -379,6 +391,9 @@ export function getEffectiveConfig(
     enabled: boolean
     message: string
   }
+  jules_reactions: {
+    enabled: boolean
+  }
   pre_warmed_sessions: {
     enabled: boolean
     pool_size: number
@@ -437,6 +452,10 @@ export function getEffectiveConfig(
             ...(roleOverride.auto_reject || {}),
             ...((roleVal as any).auto_reject || {}),
           },
+          jules_reactions: {
+            ...(roleOverride.jules_reactions || {}),
+            ...((roleVal as any).jules_reactions || {}),
+          },
           pre_warmed_sessions: {
             ...(roleOverride.pre_warmed_sessions || {}),
             ...((roleVal as any).pre_warmed_sessions || {}),
@@ -460,6 +479,13 @@ export function getEffectiveConfig(
     ...(parentOverride as any).reactions,
     ...(threadOverride as any).reactions,
     ...(roleOverride as any).reactions,
+  }
+
+  const resolvedJulesReactions = {
+    ...JULES_REACTIONS,
+    ...(parentOverride as any).jules_reactions,
+    ...(threadOverride as any).jules_reactions,
+    ...(roleOverride as any).jules_reactions,
   }
 
   const resolvedPreWarmed = {
@@ -631,6 +657,7 @@ export function getEffectiveConfig(
     access_control: resolvedAccessControl,
     reactions: resolvedReactions,
     auto_reject: resolvedAutoReject,
+    jules_reactions: resolvedJulesReactions,
     pre_warmed_sessions: resolvedPreWarmed,
     agents_personality: resolvedAgents,
     soul_personality: resolvedSoul,

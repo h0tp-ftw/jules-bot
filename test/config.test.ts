@@ -63,6 +63,20 @@ test('auto_reject is resolved from the thread override', () => {
   assert.deepEqual(cfg.auto_reject, { enabled: true, message: 'revise pls' })
 })
 
+test('jules_reactions defaults off and resolves from thread and role overrides', () => {
+  // Default: feature is off when nothing enables it.
+  assert.equal(getEffectiveConfig({ id: 'jr-none' }).jules_reactions.enabled, false)
+  // Thread override turns it on.
+  chan('jr1', { jules_reactions: { enabled: true } })
+  assert.equal(getEffectiveConfig({ id: 'jr1' }).jules_reactions.enabled, true)
+  // Role override wins over a silent thread.
+  role('JrRole', { jules_reactions: { enabled: true } })
+  assert.equal(
+    getEffectiveConfig({ id: 'jr-none' }, memberWithRole('JrRole')).jules_reactions.enabled,
+    true,
+  )
+})
+
 test('pre_warmed_sessions is resolved from the thread override', () => {
   chan('t6', { pre_warmed_sessions: { enabled: true, pool_size: 5 } })
   const cfg = getEffectiveConfig({ id: 't6' })
