@@ -408,6 +408,7 @@ export function getEffectiveConfig(
   bot_emoji: string
   typing_indicator_mode: string
   messages: Messages
+  bootstrap: boolean
 } {
   const channelsConfig = yamlConfig.channels || {}
 
@@ -632,6 +633,19 @@ export function getEffectiveConfig(
     resolvedTypingMode = roleOverride.typing_indicator_mode
   }
 
+  // Resolve bootstrap
+  let resolvedBootstrap = typeof yamlConfig.bootstrap === 'boolean' ? yamlConfig.bootstrap : true
+
+  if (parentOverride && typeof (parentOverride as any).bootstrap === 'boolean') {
+    resolvedBootstrap = (parentOverride as any).bootstrap
+  }
+  if (threadOverride && typeof (threadOverride as any).bootstrap === 'boolean') {
+    resolvedBootstrap = (threadOverride as any).bootstrap
+  }
+  if (roleOverride && typeof roleOverride.bootstrap === 'boolean') {
+    resolvedBootstrap = roleOverride.bootstrap
+  }
+
   // Resolve user-facing strings: code defaults <- global YAML <- parent channel
   // <- thread <- role. Each layer only needs to supply the keys it changes.
   // MESSAGES already folds DEFAULT_MESSAGES <- global YAML once at module load,
@@ -668,5 +682,6 @@ export function getEffectiveConfig(
     bot_emoji: resolvedBotEmoji,
     typing_indicator_mode: resolvedTypingMode,
     messages: resolvedMessages,
+    bootstrap: resolvedBootstrap,
   }
 }

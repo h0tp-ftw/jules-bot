@@ -23,9 +23,11 @@ export class JulesClient {
     const threadConfig = getEffectiveConfig(options.thread, options.member)
 
     let sessionPrompt = `${threadConfig.diagnostic_prompt}\n\nAgent Personality and Guidelines:\n${threadConfig.agents_personality}\n\nAgent Soul and Principles:\n${threadConfig.soul_personality}`
-    const bootstrapContext = getBootstrapContext()
-    if (bootstrapContext) {
-      sessionPrompt += `\n\nBootstrap Knowledge and Context:\n${bootstrapContext}`
+    if (threadConfig.bootstrap !== false) {
+      const bootstrapContext = getBootstrapContext()
+      if (bootstrapContext) {
+        sessionPrompt += `\n\nBootstrap Knowledge and Context:\n${bootstrapContext}`
+      }
     }
     if (threadConfig.jules_reactions?.enabled) {
       sessionPrompt += `\n\n${threadConfig.messages.prompts.jules_reactions_instruction}`
