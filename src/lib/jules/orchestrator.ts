@@ -204,10 +204,15 @@ export async function runJulesStream(
       thread.sendTyping().catch(() => {})
     }, 8000)
 
-    typingTimeout = setTimeout(() => {
-      logger.warn(`[runJulesStream] Typing indicator timed out after 30 minutes for thread ${thread.id}`)
-      stopTyping()
-    }, 30 * 60 * 1000)
+    typingTimeout = setTimeout(
+      () => {
+        logger.warn(
+          `[runJulesStream] Typing indicator timed out after 30 minutes for thread ${thread.id}`,
+        )
+        stopTyping()
+      },
+      30 * 60 * 1000,
+    )
   }
 
   const stopTyping = () => {
