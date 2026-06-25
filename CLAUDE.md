@@ -43,8 +43,9 @@ If the SQLite file is missing, `src/config.ts` auto-provisions it on boot via `n
    prompt (`src/lib/jules/JulesClient.ts`). Do **not** put codebase/agent docs there — that's why this file
    is `CLAUDE.md`. Edit the committed persona defaults in `templates/AGENTS.example.md` / `templates/SOUL.example.md`.
 3. **Resolve per-thread settings through `getEffectiveConfig(thread?, member?)`** (`src/config.ts`).
-   Precedence: global YAML → parent-channel override → thread override → role override. Don't read
-   `yamlConfig.*` directly when behavior should vary by channel/role.
+   Precedence: global YAML → parent-channel override → tag override (forum post's applied tags) →
+   thread override → role override. Don't read `yamlConfig.*` directly when behavior should vary by
+   channel/tag/role.
 4. **Module-level state is process-local and lost on restart.** `activeStreams`, `autoRejectedSessions`,
    `processedActivityIdsMap` (orchestrator) and `StreamManager`'s buffers/timers do not survive a restart.
    Persisted truth lives in SQLite (`DebugSession`); on boot `rehydrateActiveStreams()` re-attaches streams
@@ -125,7 +126,7 @@ to the catalog and reference them via `getEffectiveConfig(thread, member).messag
 context) or the global `MESSAGES` (no context, e.g. command registration / `index.ts`). Templated strings use
 `{placeholder}` tokens filled by `t(template, vars)` (e.g. `t(cfg.messages.session.initializing, { emoji, repo, branch })`).
 Every key is overridable via a `messages:` block in `config.yaml`, deep-merged with the same precedence as
-everything else (defaults → global → parent channel → thread → role). Only trivial prompt-assembly glue
+everything else (defaults → global → parent channel → tag → thread → role). Only trivial prompt-assembly glue
 (`"\n\nUser Issue:\n"` in `JulesClient`/`PreWarmedManager`) stays inline. Tests: `test/strings.test.ts`.
 
 ## Conventions

@@ -1,9 +1,10 @@
 // Central catalog of every user-facing string and substantive Jules-prompt
 // fragment in the bot. THESE ARE THE DEFAULTS — the single source of truth.
 //
-// Any of them can be overridden globally or per-channel / per-thread / per-role
-// via a `messages:` block in config.yaml, resolved through getEffectiveConfig()
-// (precedence: defaults -> global YAML -> parent channel -> thread -> role).
+// Any of them can be overridden globally or per-channel / per-tag / per-thread /
+// per-role via a `messages:` block in config.yaml, resolved through
+// getEffectiveConfig() (precedence: defaults -> global YAML -> parent channel ->
+// tag -> thread -> role).
 //
 // Do NOT hardcode user-facing text in other modules — add it here and reference
 // it via `cfg.messages.*` (thread context) or the global `MESSAGES` (no context).

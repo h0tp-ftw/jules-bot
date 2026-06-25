@@ -222,7 +222,18 @@ roles:
     diagnostic_prompt: "Provide deep technical diagnostic details."
 ```
 
-> Configuration is resolved with the precedence **defaults → global YAML → parent channel → thread → role**. The full annotated reference lives in [`templates/config.example.yaml`](./templates/config.example.yaml).
+### 6. Tag-Based Overrides
+Merge overrides when a forum post carries a matching tag (keyed by tag **name or ID**). A post can have several tags; matches merge in config order. Useful for routing posts by category — e.g. give `urgent` posts a different repo or a more concise prompt:
+```yaml
+tags:
+  "urgent": # Forum tag name or ID
+    diagnostic_prompt: "Be extremely concise. Prioritise a fast root-cause answer."
+  "feature-request":
+    auto_reject:
+      enabled: false
+```
+
+> Configuration is resolved with the precedence **defaults → global YAML → parent channel → tag → thread → role**. The full annotated reference lives in [`templates/config.example.yaml`](./templates/config.example.yaml).
 
 ---
 

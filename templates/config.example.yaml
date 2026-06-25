@@ -99,6 +99,24 @@ pre_warmed_sessions:
 #     diagnostic_prompt: |
 #       You are a technical assistant. Provide deep code explanations.
 
+# Optional Forum Tag-specific Overrides
+# Overrides configuration based on the tags applied to a forum post (thread).
+# Each key is matched against the post's applied tags by tag NAME or tag ID, so
+# posts can be routed by category. A post may carry several tags; all matching
+# entries are merged in the order they appear below (later keys win).
+# Precedence sits between the channel and thread layers — a tag override beats a
+# parent-channel override but yields to a thread-specific or role override.
+# tags:
+#   "urgent": # Forum tag name or ID
+#     diagnostic_prompt: |
+#       Be extremely concise. Prioritise a fast root-cause answer over detail.
+#     access_control:
+#       allow_all: true
+#   "feature-request":
+#     auto_reject:
+#       enabled: false
+#     default_branch: "develop"
+
 # Customizable text strings
 # Every user-facing string (and the substantive Jules-prompt fragments) lives in
 # `src/strings.ts` as the default. Override any of them here — you only need to
@@ -107,8 +125,9 @@ pre_warmed_sessions:
 # {error}, {feedback}); keep the placeholders you need in your override.
 #
 # Like the other settings above, `messages:` can also be nested under a specific
-# channel/forum (`channels:`) or role (`roles:`) block to override strings only
-# in that context. The precedence is: defaults -> global -> channel -> thread -> role.
+# channel/forum (`channels:`), forum tag (`tags:`), or role (`roles:`) block to
+# override strings only in that context. The precedence is:
+# defaults -> global -> channel -> tag -> thread -> role.
 #
 # messages:
 #   errors:

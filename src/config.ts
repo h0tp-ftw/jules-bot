@@ -424,6 +424,59 @@ export function getEffectiveConfig(
     }
   }
 
+  // Resolve tag-based overrides from the forum post's applied tags. A post can
+  // carry several tags; each `tags:` config key is matched against the thread's
+  // applied tag IDs or — when the parent forum is cached — their names, and
+  // matches are merged in config-definition order (later keys win), the same
+  // way multiple roles accumulate below. All reads are synchronous cache lookups
+  // (no network), so this stays safe on the hot stream path.
+  let tagOverride: any = {}
+  if (thread && Array.isArray(thread.appliedTags) && thread.appliedTags.length > 0) {
+    const tagsConfig = yamlConfig.tags || {}
+    if (Object.keys(tagsConfig).length > 0) {
+      const appliedIds = new Set<string>(thread.appliedTags.map(String))
+      const appliedNames = new Set<string>()
+      const availableTags = thread.parent?.availableTags
+      if (Array.isArray(availableTags)) {
+        for (const at of availableTags) {
+          if (at && appliedIds.has(String(at.id)) && typeof at.name === 'string') {
+            appliedNames.add(at.name)
+          }
+        }
+      }
+      for (const [tagKey, tagVal] of Object.entries(tagsConfig)) {
+        const matches = appliedIds.has(tagKey) || appliedNames.has(tagKey)
+        if (matches && tagVal && typeof tagVal === 'object') {
+          tagOverride = {
+            ...tagOverride,
+            ...tagVal,
+            access_control: {
+              ...(tagOverride.access_control || {}),
+              ...((tagVal as any).access_control || {}),
+            },
+            reactions: {
+              ...(tagOverride.reactions || {}),
+              ...((tagVal as any).reactions || {}),
+            },
+            auto_reject: {
+              ...(tagOverride.auto_reject || {}),
+              ...((tagVal as any).auto_reject || {}),
+            },
+            jules_reactions: {
+              ...(tagOverride.jules_reactions || {}),
+              ...((tagVal as any).jules_reactions || {}),
+            },
+            pre_warmed_sessions: {
+              ...(tagOverride.pre_warmed_sessions || {}),
+              ...((tagVal as any).pre_warmed_sessions || {}),
+            },
+            messages: deepMergeMessages(tagOverride.messages || {}, (tagVal as any).messages || {}),
+          }
+        }
+      }
+    }
+  }
+
   // Resolve role-based overrides if member is provided
   let roleOverride: any = {}
   if (member && member.roles) {
@@ -467,10 +520,11 @@ export function getEffectiveConfig(
     }
   }
 
-  // Deep merge: global values -> parent channel overrides -> thread-specific overrides -> role overrides
+  // Deep merge: global values -> parent channel overrides -> tag overrides -> thread-specific overrides -> role overrides
   const resolvedAutoReject = {
     ...AUTO_REJECT,
     ...(parentOverride as any).auto_reject,
+    ...(tagOverride as any).auto_reject,
     ...(threadOverride as any).auto_reject,
     ...(roleOverride as any).auto_reject,
   }
@@ -478,6 +532,7 @@ export function getEffectiveConfig(
   const resolvedReactions = {
     ...REACTIONS,
     ...(parentOverride as any).reactions,
+    ...(tagOverride as any).reactions,
     ...(threadOverride as any).reactions,
     ...(roleOverride as any).reactions,
   }
@@ -485,6 +540,7 @@ export function getEffectiveConfig(
   const resolvedJulesReactions = {
     ...JULES_REACTIONS,
     ...(parentOverride as any).jules_reactions,
+    ...(tagOverride as any).jules_reactions,
     ...(threadOverride as any).jules_reactions,
     ...(roleOverride as any).jules_reactions,
   }
@@ -492,6 +548,7 @@ export function getEffectiveConfig(
   const resolvedPreWarmed = {
     ...PRE_WARMED_SESSIONS,
     ...(parentOverride as any).pre_warmed_sessions,
+    ...(tagOverride as any).pre_warmed_sessions,
     ...(threadOverride as any).pre_warmed_sessions,
     ...(roleOverride as any).pre_warmed_sessions,
   }
@@ -504,15 +561,19 @@ export function getEffectiveConfig(
   }
 
   const parentAC = (parentOverride as any).access_control || {}
+  const tagAC = (tagOverride as any).access_control || {}
   const threadAC = (threadOverride as any).access_control || {}
   const roleAC = (roleOverride as any).access_control || {}
 
   if (typeof parentAC.allow_all === 'boolean') resolvedAccessControl.allow_all = parentAC.allow_all
+  if (typeof tagAC.allow_all === 'boolean') resolvedAccessControl.allow_all = tagAC.allow_all
   if (typeof threadAC.allow_all === 'boolean') resolvedAccessControl.allow_all = threadAC.allow_all
   if (typeof roleAC.allow_all === 'boolean') resolvedAccessControl.allow_all = roleAC.allow_all
 
   if (Array.isArray(parentAC.allowed_users))
     resolvedAccessControl.allowed_users = parentAC.allowed_users.map(String)
+  if (Array.isArray(tagAC.allowed_users))
+    resolvedAccessControl.allowed_users = tagAC.allowed_users.map(String)
   if (Array.isArray(threadAC.allowed_users))
     resolvedAccessControl.allowed_users = threadAC.allowed_users.map(String)
   if (Array.isArray(roleAC.allowed_users))
@@ -520,30 +581,36 @@ export function getEffectiveConfig(
 
   if (Array.isArray(parentAC.allowed_roles))
     resolvedAccessControl.allowed_roles = parentAC.allowed_roles.map(String)
+  if (Array.isArray(tagAC.allowed_roles))
+    resolvedAccessControl.allowed_roles = tagAC.allowed_roles.map(String)
   if (Array.isArray(threadAC.allowed_roles))
     resolvedAccessControl.allowed_roles = threadAC.allowed_roles.map(String)
   if (Array.isArray(roleAC.allowed_roles))
     resolvedAccessControl.allowed_roles = roleAC.allowed_roles.map(String)
 
   if (typeof parentAC.silent === 'boolean') resolvedAccessControl.silent = parentAC.silent
+  if (typeof tagAC.silent === 'boolean') resolvedAccessControl.silent = tagAC.silent
   if (typeof threadAC.silent === 'boolean') resolvedAccessControl.silent = threadAC.silent
   if (typeof roleAC.silent === 'boolean') resolvedAccessControl.silent = roleAC.silent
 
   const resolvedPrompt =
     (roleOverride as any).diagnostic_prompt ||
     (threadOverride as any).diagnostic_prompt ||
+    (tagOverride as any).diagnostic_prompt ||
     (parentOverride as any).diagnostic_prompt ||
     DIAGNOSTIC_PROMPT
 
   const resolvedAgents =
     (roleOverride as any).agents_personality ||
     (threadOverride as any).agents_personality ||
+    (tagOverride as any).agents_personality ||
     (parentOverride as any).agents_personality ||
     AGENT_PERSONALITY
 
   const resolvedSoul =
     (roleOverride as any).soul_personality ||
     (threadOverride as any).soul_personality ||
+    (tagOverride as any).soul_personality ||
     (parentOverride as any).soul_personality ||
     SOUL_PERSONALITY
 
@@ -552,9 +619,11 @@ export function getEffectiveConfig(
       ? (roleOverride as any).interactive_selection
       : typeof (threadOverride as any).interactive_selection === 'boolean'
         ? (threadOverride as any).interactive_selection
-        : typeof (parentOverride as any).interactive_selection === 'boolean'
-          ? (parentOverride as any).interactive_selection
-          : INTERACTIVE_SELECTION
+        : typeof (tagOverride as any).interactive_selection === 'boolean'
+          ? (tagOverride as any).interactive_selection
+          : typeof (parentOverride as any).interactive_selection === 'boolean'
+            ? (parentOverride as any).interactive_selection
+            : INTERACTIVE_SELECTION
 
   // Resolve default_repo and default_branch
   let resolvedDefaultRepo = yamlConfig.default_repo || dbDefaultRepo
@@ -576,6 +645,14 @@ export function getEffectiveConfig(
   }
   if (parentOverride && (parentOverride as any).default_branch) {
     resolvedDefaultBranch = (parentOverride as any).default_branch
+  }
+
+  // Tag override
+  if (tagOverride && tagOverride.default_repo) {
+    resolvedDefaultRepo = tagOverride.default_repo
+  }
+  if (tagOverride && tagOverride.default_branch) {
+    resolvedDefaultBranch = tagOverride.default_branch
   }
 
   // Thread override
@@ -600,6 +677,9 @@ export function getEffectiveConfig(
   if (parentOverride && (parentOverride as any).ignore_prefix) {
     resolvedIgnorePrefix = (parentOverride as any).ignore_prefix
   }
+  if (tagOverride && tagOverride.ignore_prefix) {
+    resolvedIgnorePrefix = tagOverride.ignore_prefix
+  }
   if (threadOverride && (threadOverride as any).ignore_prefix) {
     resolvedIgnorePrefix = (threadOverride as any).ignore_prefix
   }
@@ -612,6 +692,9 @@ export function getEffectiveConfig(
 
   if (parentOverride && (parentOverride as any).bot_emoji) {
     resolvedBotEmoji = (parentOverride as any).bot_emoji
+  }
+  if (tagOverride && tagOverride.bot_emoji) {
+    resolvedBotEmoji = tagOverride.bot_emoji
   }
   if (threadOverride && (threadOverride as any).bot_emoji) {
     resolvedBotEmoji = (threadOverride as any).bot_emoji
@@ -626,6 +709,9 @@ export function getEffectiveConfig(
   if (parentOverride && (parentOverride as any).typing_indicator_mode) {
     resolvedTypingMode = (parentOverride as any).typing_indicator_mode
   }
+  if (tagOverride && tagOverride.typing_indicator_mode) {
+    resolvedTypingMode = tagOverride.typing_indicator_mode
+  }
   if (threadOverride && (threadOverride as any).typing_indicator_mode) {
     resolvedTypingMode = (threadOverride as any).typing_indicator_mode
   }
@@ -638,6 +724,9 @@ export function getEffectiveConfig(
 
   if (parentOverride && typeof (parentOverride as any).bootstrap === 'boolean') {
     resolvedBootstrap = (parentOverride as any).bootstrap
+  }
+  if (tagOverride && typeof tagOverride.bootstrap === 'boolean') {
+    resolvedBootstrap = tagOverride.bootstrap
   }
   if (threadOverride && typeof (threadOverride as any).bootstrap === 'boolean') {
     resolvedBootstrap = (threadOverride as any).bootstrap
@@ -654,13 +743,15 @@ export function getEffectiveConfig(
   // MESSAGES object directly and skip deep-cloning the whole ~140-key catalog —
   // getEffectiveConfig runs on the hot stream path (per activity/reaction).
   const parentMessages = (parentOverride as any).messages
+  const tagMessages = (tagOverride as any).messages
   const threadMessages = (threadOverride as any).messages
   const roleMessages = (roleOverride as any).messages
   const resolvedMessages: Messages =
-    parentMessages || threadMessages || roleMessages
+    parentMessages || tagMessages || threadMessages || roleMessages
       ? (deepMergeMessages(
           MESSAGES,
           parentMessages || {},
+          tagMessages || {},
           threadMessages || {},
           roleMessages || {},
         ) as Messages)
