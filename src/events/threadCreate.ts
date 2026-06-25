@@ -72,7 +72,8 @@ export default {
     await updateReaction(starterMessage, 'queued').catch(() => {})
 
     const threadConfig = getEffectiveConfig(thread, starterMessage.member, repo)
-    const isInteractive = threadConfig.interactive_selection || !repo
+    const effectiveRepo = threadConfig.default_repo
+    const isInteractive = threadConfig.interactive_selection || !effectiveRepo
 
     if (isInteractive) {
       try {
@@ -120,12 +121,12 @@ export default {
       }
     }
 
-    if (!repo) {
+    if (!effectiveRepo) {
       await thread.send(threadConfig.messages.setup.no_default_repo)
       return
     }
 
-    const repoName: string = repo
+    const repoName: string = effectiveRepo
     const branchName = threadConfig.default_branch || 'main'
     const botEmoji = threadConfig.bot_emoji || '🐙'
     await thread.send(
