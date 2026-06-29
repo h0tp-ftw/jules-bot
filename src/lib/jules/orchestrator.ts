@@ -434,10 +434,18 @@ export async function runJulesStream(
                 .setStyle(ButtonStyle.Danger),
             )
 
-            const msg = await thread.send({
-              embeds: [embed],
-              components: [row],
-            })
+            let msg
+            if (target) {
+              msg = await target.reply({
+                embeds: [embed],
+                components: [row],
+              })
+            } else {
+              msg = await thread.send({
+                embeds: [embed],
+                components: [row],
+              })
+            }
 
             await prisma.debugSession.update({
               where: { threadId: thread.id },
@@ -845,7 +853,12 @@ export async function initializeJulesSession(
                   .setColor(0x00ae86)
                   .setFooter({ text: threadConfig.messages.plan.welcome_footer })
 
-                await thread.send({ embeds: [embed] })
+                const histTarget = await getLastHumanMessage(thread)
+                if (histTarget) {
+                  await histTarget.reply({ embeds: [embed] })
+                } else {
+                  await thread.send({ embeds: [embed] })
+                }
               }
             }
           }
