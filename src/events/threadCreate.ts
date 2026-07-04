@@ -6,7 +6,7 @@ import {
   StringSelectMenuOptionBuilder,
   ActionRowBuilder,
 } from 'discord.js'
-import { prisma, YAML_GUILDS, getEffectiveConfig } from '../config.js'
+import { prisma, YAML_GUILDS, getEffectiveConfig, yamlConfig } from '../config.js'
 import { t } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { initializeJulesSession, updateReaction } from '../lib/jules/orchestrator.js'
@@ -48,8 +48,14 @@ export default {
       if (!forumChannelId) forumChannelId = config?.forumChannelId ?? undefined
     }
 
-    if (!forumChannelId || thread.parentId !== forumChannelId) {
-      // Thread is not in the designated debugging forum channel
+    const channelsConfig = yamlConfig.channels || {}
+    const isConfiguredChannel = thread.parentId && (
+      thread.parentId === forumChannelId || 
+      channelsConfig[thread.parentId] !== undefined
+    )
+
+    if (!isConfiguredChannel) {
+      // Thread is not in a designated forum channel
       return
     }
 
