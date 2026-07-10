@@ -3,8 +3,7 @@ import path from 'path'
 import { execSync } from 'child_process'
 
 const bootstrapDir = path.resolve('bootstrap')
-const piecesDir = path.resolve('bootstrap_pieces')
-const staticDir = path.join(piecesDir, 'static')
+const templatePath = path.resolve('templates/soul_template.md')
 
 console.log('🧹 Cleaning old bootstrap markdown files...')
 
@@ -22,21 +21,14 @@ if (fs.existsSync(bootstrapDir)) {
   fs.mkdirSync(bootstrapDir, { recursive: true })
 }
 
-// 2. Copy static files
-if (fs.existsSync(staticDir)) {
-  console.log('\n📝 Copying static bootstrap files...')
-  const staticFiles = fs.readdirSync(staticDir)
-  for (const file of staticFiles) {
-    if (file.endsWith('.md')) {
-      const src = path.join(staticDir, file)
-      const dest = path.join(bootstrapDir, file)
-      fs.copyFileSync(src, dest)
-      console.log(`+ Copied: ${file}`)
-    }
-  }
+if (!fs.existsSync(templatePath)) {
+  console.error(`❌ Template file not found at: ${templatePath}`)
+  process.exit(1)
 }
 
-console.log('\n⚙️ Fetching data from GitHub and generating commands markdown...')
+let templateContent = fs.readFileSync(templatePath, 'utf8')
+
+console.log('\n⚙️ Fetching data from GitHub and populating soul template...')
 
 // Helper to run gh commands safely
 function runGh(args) {
@@ -48,27 +40,33 @@ function runGh(args) {
   }
 }
 
-// 3. Generate zz_cmd_030_gh_prs_since_last_tag.md
+// 2. Fetch Latest Release Info
+let latestReleaseTagAndDownloadLink = 'No release tag found.'
+let tagDate = ''
 try {
-  console.log('> Generating zz_cmd_030_gh_prs_since_last_tag.md...')
   const releaseInfoRaw = runGh('api repos/h0tp-ftw/ankimon/releases/latest')
   if (releaseInfoRaw) {
     const release = JSON.parse(releaseInfoRaw)
     const lastTag = release.tag_name
-    const tagDate = release.published_at
+    tagDate = release.published_at
+    const releaseUrl = `https://github.com/h0tp-ftw/ankimon/releases/download/${lastTag}/ankimon-${lastTag}-anki21-ankiweb.ankiaddon`
 
-    let md = `## GitHub PRs since ${lastTag}\n`
-    md += `Last release tag: \`${lastTag}\` (published at ${tagDate})\n`
-    md += `> [!IMPORTANT]\n`
-    md += `> The following changes have been merged into \`main\` AFTER the release tag. Since Jules is on the \`main\` branch, these changes **ARE AVAILABLE** in the codebase you are currently seeing.\n`
-    md += `> **However**, the user is likely still on the release tag (\`${lastTag}\`), so they may not have these features or fixes yet.\n\n`
+    latestReleaseTagAndDownloadLink = `Latest Tag: \`${lastTag}\`\nDownload Link: [ankimon-${lastTag}.ankiaddon](${releaseUrl})`
+  }
+} catch (err) {
+  console.error('Failed to fetch latest release info:', err)
+}
 
+// 3. Fetch Merged PRs Since Last Tag
+let mergedPrsSinceTag = '*No new PRs merged since this release.*'
+if (tagDate) {
+  try {
     const prsRaw = runGh(
       `pr list -R h0tp-ftw/ankimon --state merged --search "merged:>${tagDate}" --json number,title,author --limit 50`,
     )
     if (prsRaw && prsRaw !== '[]') {
       const prs = JSON.parse(prsRaw)
-      md += `### Merged Pull Requests (Included in your current view)\n`
+      let md = `Last release tag published at: ${tagDate}\n\n`
       for (const pr of prs) {
         const prViewRaw = runGh(`pr view ${pr.number} -R h0tp-ftw/ankimon --json files`)
         let fileDetails = ''
@@ -84,25 +82,22 @@ try {
         }
         md += `- #${pr.number} - ${pr.title} (@${pr.author.login})${fileDetails}\n`
       }
-    } else {
-      md += `*No new PRs merged since this release.*\n`
+      mergedPrsSinceTag = md.trim()
     }
-    fs.writeFileSync(path.join(bootstrapDir, 'zz_cmd_030_gh_prs_since_last_tag.md'), md)
-    console.log('+ Generated: zz_cmd_030_gh_prs_since_last_tag.md')
+  } catch (err) {
+    console.error('Failed to fetch merged PRs since tag:', err)
   }
-} catch (err) {
-  console.error('Failed to generate PRs since last tag:', err)
 }
 
-// 4. Generate zz_cmd_035_gh_open_prs.md
+// 4. Fetch Open PRs
+let openPrs = '*No open pull requests.*'
 try {
-  console.log('> Generating zz_cmd_035_gh_open_prs.md...')
-  let md = `## Open Pull Requests\n`
   const prsRaw = runGh(
     `pr list -R h0tp-ftw/ankimon --state open --json number,title,author --limit 20`,
   )
   if (prsRaw && prsRaw !== '[]') {
     const prs = JSON.parse(prsRaw)
+    let md = ''
     for (const pr of prs) {
       const prViewRaw = runGh(`pr view ${pr.number} -R h0tp-ftw/ankimon --json files`)
       let fileDetails = ''
@@ -118,59 +113,46 @@ try {
       }
       md += `- #${pr.number} - ${pr.title} (@${pr.author.login})${fileDetails}\n`
     }
-  } else {
-    md += `*No open pull requests.*\n`
+    openPrs = md.trim()
   }
-  fs.writeFileSync(path.join(bootstrapDir, 'zz_cmd_035_gh_open_prs.md'), md)
-  console.log('+ Generated: zz_cmd_035_gh_open_prs.md')
 } catch (err) {
-  console.error('Failed to generate open PRs:', err)
+  console.error('Failed to fetch open PRs:', err)
 }
 
-// 5. Generate zz_cmd_036_gh_open_issues.md
+// 5. Fetch Open Issues
+let openIssues = '*No open issues.*'
 try {
-  console.log('> Generating zz_cmd_036_gh_open_issues.md...')
-  let md = `## Open Issues\n`
   const issuesRaw = runGh(
     `issue list -R h0tp-ftw/ankimon --state open --json number,title,author,labels --limit 20`,
   )
   if (issuesRaw && issuesRaw !== '[]') {
     const issues = JSON.parse(issuesRaw)
+    let md = ''
     for (const issue of issues) {
       const labels = (issue.labels || []).map((l) => l.name).join(',')
       const labelDetails = labels ? ` [labels: ${labels}]` : ''
       md += `- #${issue.number} - ${issue.title} (@${issue.author.login})${labelDetails}\n`
     }
-  } else {
-    md += `*No open issues.*\n`
+    openIssues = md.trim()
   }
-  fs.writeFileSync(path.join(bootstrapDir, 'zz_cmd_036_gh_open_issues.md'), md)
-  console.log('+ Generated: zz_cmd_036_gh_open_issues.md')
 } catch (err) {
-  console.error('Failed to generate open issues:', err)
+  console.error('Failed to fetch open issues:', err)
 }
 
-// 6. Generate zz_cmd_040_ankimon_release_link.md
-try {
-  console.log('> Generating zz_cmd_040_ankimon_release_link.md...')
-  const releaseInfoRaw = runGh('api repos/h0tp-ftw/ankimon/releases/latest')
-  let md = `## Latest Experimental Release\n`
-  if (releaseInfoRaw) {
-    const release = JSON.parse(releaseInfoRaw)
-    const lastTag = release.tag_name
-    const releaseUrl = `https://github.com/h0tp-ftw/ankimon/releases/download/${lastTag}/ankimon-${lastTag}-anki21-ankiweb.ankiaddon`
+// Replace placeholders in the template
+let outputContent = templateContent
+  .replace('{{LATEST_RELEASE_TAG_AND_DOWNLOAD_LINK}}', latestReleaseTagAndDownloadLink)
+  .replace('{{MERGED_PRS_SINCE_TAG}}', mergedPrsSinceTag)
+  .replace('{{OPEN_PRS}}', openPrs)
+  .replace('{{OPEN_ISSUES}}', openIssues)
 
-    md += `Latest Tag: \`${lastTag}\`\n`
-    md += `Download Link: [ankimon-${lastTag}.ankiaddon](${releaseUrl})\n\n`
-    md += `### Usage Instructions\n`
-    md += `- **Fixed Issues**: If an issue is already fixed in this version, **directly provide the download link provided above** in your response to the user. Encourage users who are on the outdated AnkiWeb version to upgrade to this Experimental version to receive the latest fixes and features immediately.\n`
-  } else {
-    md += `No tags found to generate release link.\n`
-  }
-  fs.writeFileSync(path.join(bootstrapDir, 'zz_cmd_040_ankimon_release_link.md'), md)
-  console.log('+ Generated: zz_cmd_040_ankimon_release_link.md')
+// 6. Write populated soul.md to bootstrap/010_soul.md
+try {
+  const destPath = path.join(bootstrapDir, '010_soul.md')
+  fs.writeFileSync(destPath, outputContent, 'utf8')
+  console.log(`+ Generated: 010_soul.md from template`)
 } catch (err) {
-  console.error('Failed to generate release link:', err)
+  console.error('Failed to write 010_soul.md:', err)
 }
 
 console.log('\n🎉 Bootstrap generation complete!')
