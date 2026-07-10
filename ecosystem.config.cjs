@@ -15,7 +15,19 @@ module.exports = {
       script: 'dist/index.js',
       exec_mode: 'fork',
       instances: 1,
+      // Automatically restart on crash. The in-code loginWithRetry() handles
+      // transient network blips without exiting; autorestart here is a safety
+      // net for anything that slips through.
       autorestart: true,
+      // If the process dies within 10 s of starting it counts as a crash
+      // restart (rather than a deliberate shutdown).
+      min_uptime: '10s',
+      // After 15 consecutive crash-restarts pm2 stops retrying so a genuine
+      // fatal error (bad token, broken build) doesn't spin forever.
+      max_restarts: 15,
+      // Exponential backoff between restarts: starts at 100 ms, doubles each
+      // time up to the max_restarts cap.
+      exp_backoff_restart_delay: 100,
       // Restart if memory creeps past this — tune for your host (a 512MB Pi
       // may want this lower, a roomier box can raise it).
       max_memory_restart: '400M',

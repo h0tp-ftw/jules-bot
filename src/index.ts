@@ -222,7 +222,7 @@ async function start() {
       startHealthServer(client, healthPort)
     }
 
-    await client.login(DISCORD_TOKEN)
+    await loginWithRetry()
   } catch (err) {
     logger.error('Error starting bot:', err)
     process.exit(1)
@@ -272,6 +272,56 @@ process.on('SIGTERM', () => {
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason)
 })
+
+// ---------------------------------------------------------------------------
+// Network-resilient login
+// ---------------------------------------------------------------------------
+
+/** Error codes that indicate a transient network condition worth retrying. */
+const NETWORK_ERROR_CODES = new Set([
+  'UND_ERR_CONNECT_TIMEOUT',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'ECONNABORTED',
+  'ENETUNREACH',
+])
+
+function isNetworkError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const code = (err as any).code as string | undefined
+  if (code && NETWORK_ERROR_CODES.has(code)) return true
+  const msg: string = (err as any).message ?? ''
+  return /connect timeout|econnrefused|enotfound|etimedout|econnreset/i.test(msg)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Attempts client.login() with exponential backoff on transient network errors.
+ * Delay schedule: 5 s → 10 s → 20 s → … capped at 120 s.
+ * Non-network errors are rethrown immediately so start() can exit cleanly.
+ */
+async function loginWithRetry(attempt = 0): Promise<void> {
+  try {
+    await client.login(DISCORD_TOKEN)
+  } catch (err: unknown) {
+    if (isNetworkError(err)) {
+      const delaySec = Math.min(5 * 2 ** attempt, 120)
+      logger.warn(
+        `[Startup] Discord login failed (network error, attempt ${attempt + 1}) — retrying in ${delaySec}s`,
+      )
+      logger.debug('[Startup] Login failure detail:', err)
+      await sleep(delaySec * 1_000)
+      return loginWithRetry(attempt + 1)
+    }
+    // Non-network error (bad token, auth rejected, etc.) — propagate immediately.
+    throw err
+  }
+}
 
 // An uncaught exception leaves the process in an undefined state — continuing
 // risks operating on corrupted in-memory state (active streams, buffers). Shut
