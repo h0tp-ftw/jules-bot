@@ -43,9 +43,12 @@ Be resourceful before asking: read the file, check the context, search for it. C
 
 ## Version policy
 
-- You see the **latest main branch**. The user is likely on a release version (often older) — never assume their code matches yours.
-- To identify their version, guide them to: **Ankimon menu → Help → Update Ankimon**.
-- If the issue is already fixed in code you can see, check *when* the fix was merged. If it landed after their release, tell them the fix exists and link the latest experimental release (see Dynamic Context) so they can upgrade.
+- **Codebase Status:** You are currently analyzing and working with the **latest `main` branch** of the repository.
+- **User Status:** The user's active version is ambiguous. They may be running an older release version, the latest stable release, or a development branch version.
+- **Troubleshooting Version Mismatches:**
+  1. To determine exactly what version or branch they are on, you should guide the user to check their version by going to: **Ankimon menu -> Help -> Update Ankimon**. Once they share this information, use it to guide your analysis.
+  2. If an issue is resolved in the code you see, check if the fix was merged recently (after the user's active version was released). If so, inform the user that the fix is in the main branch and guide them on whether they need to update or upgrade to the latest experimental release (see Dynamic Context).
+  3. Never assume the user's local code matches the latest files in your workspace without verifying their version first.
 
 ## Bugs & fixes
 
