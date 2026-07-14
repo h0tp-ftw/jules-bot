@@ -300,6 +300,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function getSessionWaitTime(msg: string): number {
+  const match = msg.match(/resets at ([\d\-\:TZ\.]+)/i)
+  if (match) {
+    const resetTime = new Date(match[1])
+    const diff = resetTime.getTime() - Date.now()
+    if (diff > 0) {
+      return diff + 5_000 // 5s safety margin
+    }
+  }
+  return 30 * 60 * 1_000 // Fallback to 30 minutes
+}
+
 /**
  * Attempts client.login() with exponential backoff on transient network errors.
  * Delay schedule: 5 s → 10 s → 20 s → … capped at 120 s.
@@ -309,6 +321,33 @@ async function loginWithRetry(attempt = 0): Promise<void> {
   try {
     await client.login(DISCORD_TOKEN)
   } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+
+    // Discord daily session identification limit exhausted (often 1000 per 24 hours).
+    // Sleep through the reset period instead of crashing the process to avoid PM2 infinite restart loops.
+    if (msg.includes('sessions remaining') || msg.includes('Not enough sessions')) {
+      const waitMs = getSessionWaitTime(msg)
+      const waitMins = Math.ceil(waitMs / 60_000)
+      logger.error(
+        `[Startup] Discord daily session limit exhausted. Resets in ${waitMins} minutes. Sleeping through cooldown...`,
+      )
+      
+      const checkInterval = 5 * 60 * 1_000 // log status every 5 minutes
+      let elapsed = 0
+      while (elapsed < waitMs) {
+        const remainingMins = Math.ceil((waitMs - elapsed) / 60_000)
+        logger.info(
+          `[Startup] Session limit cooldown status: ${remainingMins} minutes remaining.`,
+        )
+        const chunk = Math.min(checkInterval, waitMs - elapsed)
+        await sleep(chunk)
+        elapsed += chunk
+      }
+
+      logger.info('[Startup] Cooldown finished, retrying Discord login...')
+      return loginWithRetry(0)
+    }
+
     if (isNetworkError(err)) {
       const delaySec = Math.min(5 * 2 ** attempt, 120)
       logger.warn(
