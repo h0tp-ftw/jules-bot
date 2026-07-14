@@ -8,7 +8,7 @@ import globals from 'globals'
 // that would only nag are set to 'warn' so `npm run lint` stays green in CI.
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'prisma/migrations/**', '**/*.db'],
+    ignores: ['dist/**', 'prisma/migrations/**', '**/*.db', '.venv/**', 'node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

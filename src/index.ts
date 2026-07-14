@@ -301,7 +301,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function getSessionWaitTime(msg: string): number {
-  const match = msg.match(/resets at ([\d\-\:TZ\.]+)/i)
+  const match = msg.match(/resets at ([\d\-:TZ.]+)/i)
   if (match) {
     const resetTime = new Date(match[1])
     const diff = resetTime.getTime() - Date.now()
@@ -331,14 +331,12 @@ async function loginWithRetry(attempt = 0): Promise<void> {
       logger.error(
         `[Startup] Discord daily session limit exhausted. Resets in ${waitMins} minutes. Sleeping through cooldown...`,
       )
-      
+
       const checkInterval = 5 * 60 * 1_000 // log status every 5 minutes
       let elapsed = 0
       while (elapsed < waitMs) {
         const remainingMins = Math.ceil((waitMs - elapsed) / 60_000)
-        logger.info(
-          `[Startup] Session limit cooldown status: ${remainingMins} minutes remaining.`,
-        )
+        logger.info(`[Startup] Session limit cooldown status: ${remainingMins} minutes remaining.`)
         const chunk = Math.min(checkInterval, waitMs - elapsed)
         await sleep(chunk)
         elapsed += chunk
