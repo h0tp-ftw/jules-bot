@@ -38,7 +38,7 @@ const MAX_REACTION_STAGE_ENTRIES = 5000
 function teardownStreamState(threadId: string, sessionId?: string) {
   activeStreams.delete(threadId)
   processedActivityIdsMap.delete(threadId)
-  if (sessionId) autoRejectedSessions.delete(sessionId)
+  // if (sessionId) autoRejectedSessions.delete(sessionId) // removed to persist across stream restarts
 }
 
 function parseEmojiForReaction(client: any, emojiStr: string): string {
@@ -535,6 +535,7 @@ export async function runJulesStream(
             await updateReaction(target, 'failed')
             const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
             await streamManager.finalizeSession(thread.id, false, reason)
+            autoRejectedSessions.delete(sessionId)
             teardownStreamState(thread.id, sessionId)
             stopTyping()
             return
