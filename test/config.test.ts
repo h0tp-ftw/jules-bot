@@ -217,3 +217,19 @@ test('tag messages deep-merge between parent and thread layers', () => {
   assert.equal(cfg.messages.errors.guild_only, 'TAG-ONLY')
   assert.equal(cfg.messages.plan.approve_button, MESSAGES.plan.approve_button) // sibling intact
 })
+
+test('reply_mode resolves default and honors overrides', () => {
+  // Default fallback
+  assert.equal(getEffectiveConfig({ id: 'rep-none' }).reply_mode, 'reply_ping')
+
+  // Thread override
+  chan('rep-t1', { reply_mode: 'reply_silent' })
+  assert.equal(getEffectiveConfig({ id: 'rep-t1' }).reply_mode, 'reply_silent')
+
+  // Role override
+  role('SilentDev', { reply_mode: 'send' })
+  assert.equal(
+    getEffectiveConfig({ id: 'rep-t1' }, memberWithRole('SilentDev')).reply_mode,
+    'send',
+  )
+})

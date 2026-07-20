@@ -435,10 +435,13 @@ export async function runJulesStream(
             )
 
             let msg
-            if (target) {
+            if (target && threadConfig.reply_mode !== 'send') {
+              const allowedMentions =
+                threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
               msg = await target.reply({
                 embeds: [embed],
                 components: [row],
+                allowedMentions,
               })
             } else {
               msg = await thread.send({
@@ -480,11 +483,11 @@ export async function runJulesStream(
             const rawMessage = activity.message || (activity as any).agentMessaged?.message || ''
             if (rawMessage) {
               const target = await getTarget()
+              const threadConfig = getEffectiveConfig(thread, target?.member)
               // Resolve the toggle with the same (thread + creator-role) context the
               // session prompt was built with, so the parse/strip behavior matches
               // whether Jules was actually told about the marker protocol.
-              const reactionsEnabled =
-                getEffectiveConfig(thread, target?.member).jules_reactions?.enabled === true
+              const reactionsEnabled = threadConfig.jules_reactions?.enabled === true
               const { text: bodyText, emojis } = reactionsEnabled
                 ? extractReactionMarkers(rawMessage)
                 : { text: rawMessage, emojis: [] as string[] }
@@ -494,10 +497,12 @@ export async function runJulesStream(
               if (bodyText) {
                 const resolved = resolveMessageEmojis(thread.client, bodyText)
                 const splits = splitMessage(resolved, 2000)
-                if (target) {
+                if (target && threadConfig.reply_mode !== 'send') {
+                  const allowedMentions =
+                    threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
                   for (let i = 0; i < splits.length; i++) {
                     if (i === 0) {
-                      await target.reply(splits[i])
+                      await target.reply({ content: splits[i], allowedMentions })
                     } else {
                       await thread.send(splits[i])
                     }

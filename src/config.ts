@@ -409,6 +409,7 @@ export function getEffectiveConfig(
   typing_indicator_mode: string
   messages: Messages
   bootstrap: boolean
+  reply_mode: 'reply_ping' | 'reply_silent' | 'send'
 } {
   const channelsConfig = yamlConfig.channels || {}
 
@@ -735,6 +736,23 @@ export function getEffectiveConfig(
     resolvedBootstrap = roleOverride.bootstrap
   }
 
+  // Resolve reply_mode
+  let resolvedReplyMode: 'reply_ping' | 'reply_silent' | 'send' =
+    yamlConfig.reply_mode || 'reply_ping'
+
+  if (parentOverride && (parentOverride as any).reply_mode) {
+    resolvedReplyMode = (parentOverride as any).reply_mode
+  }
+  if (tagOverride && tagOverride.reply_mode) {
+    resolvedReplyMode = tagOverride.reply_mode
+  }
+  if (threadOverride && (threadOverride as any).reply_mode) {
+    resolvedReplyMode = (threadOverride as any).reply_mode
+  }
+  if (roleOverride && roleOverride.reply_mode) {
+    resolvedReplyMode = roleOverride.reply_mode
+  }
+
   // Resolve user-facing strings: code defaults <- global YAML <- parent channel
   // <- thread <- role. Each layer only needs to supply the keys it changes.
   // MESSAGES already folds DEFAULT_MESSAGES <- global YAML once at module load,
@@ -774,5 +792,6 @@ export function getEffectiveConfig(
     typing_indicator_mode: resolvedTypingMode,
     messages: resolvedMessages,
     bootstrap: resolvedBootstrap,
+    reply_mode: resolvedReplyMode,
   }
 }
