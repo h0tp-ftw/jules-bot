@@ -738,7 +738,7 @@ export function getEffectiveConfig(
 
   // Resolve reply_mode
   let resolvedReplyMode: 'reply_ping' | 'reply_silent' | 'send' =
-    yamlConfig.reply_mode || 'reply_ping'
+    yamlConfig.reply_mode || 'send'
 
   if (parentOverride && (parentOverride as any).reply_mode) {
     resolvedReplyMode = (parentOverride as any).reply_mode

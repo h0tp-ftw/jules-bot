@@ -220,7 +220,7 @@ test('tag messages deep-merge between parent and thread layers', () => {
 
 test('reply_mode resolves default and honors overrides', () => {
   // Default fallback
-  assert.equal(getEffectiveConfig({ id: 'rep-none' }).reply_mode, 'reply_ping')
+  assert.equal(getEffectiveConfig({ id: 'rep-none' }).reply_mode, 'send')
 
   // Thread override
   chan('rep-t1', { reply_mode: 'reply_silent' })
