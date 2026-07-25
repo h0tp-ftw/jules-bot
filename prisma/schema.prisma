@@ -15,14 +15,17 @@ model GuildConfig {
 }
 
 model DebugSession {
-  threadId        String   @id
-  guildId         String
-  julesSessionId  String
-  statusMessageId String?
-  planMessageId   String?
-  repoName        String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  threadId                  String   @id
+  guildId                   String
+  julesSessionId            String
+  statusMessageId           String?
+  planMessageId             String?
+  repoName                  String
+  lastDeliveredActivityId   String?
+  lastDeliveredActivityAt   DateTime?
+  deliveryCursorInitialized Boolean  @default(false)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 }
 
 model PreWarmedSession {

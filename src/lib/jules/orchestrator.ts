@@ -81,6 +81,172 @@ export async function getLastHumanMessage(thread: ThreadChannel): Promise<Messag
   }
 }
 
+function getActivityDate(activity: any): Date | null {
+  if (!activity?.createTime) return null
+  const date = new Date(activity.createTime)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+async function getLatestBotMessageTimestamp(thread: ThreadChannel): Promise<number | null> {
+  const botId = thread.client.user?.id
+  if (!botId) return null
+
+  try {
+    const messages = await thread.messages.fetch({ limit: 100 })
+    let latest: number | null = null
+    for (const message of messages.values()) {
+      if (message.author.id !== botId) continue
+      if (latest === null || message.createdTimestamp > latest) {
+        latest = message.createdTimestamp
+      }
+    }
+    return latest
+  } catch (err) {
+    logger.warn(
+      `[runJulesStream] Could not inspect recent Discord messages for legacy delivery recovery in thread ${thread.id}:`,
+      err,
+    )
+    return null
+  }
+}
+
+async function hydrateSessionHistory(
+  session: any,
+  sessionId: string,
+): Promise<{
+  activities: any[]
+  hydrated: boolean
+}> {
+  let hydrated = false
+  try {
+    const synced = await session.activities.hydrate()
+    hydrated = true
+    logger.debug(`[runJulesStream] Hydrated ${synced} activities for session ${sessionId}.`)
+  } catch (err) {
+    logger.warn(`[runJulesStream] Failed to hydrate history for session ${sessionId}:`, err)
+  }
+
+  const activities: any[] = []
+  try {
+    for await (const activity of session.history()) {
+      activities.push(activity)
+    }
+  } catch (err) {
+    logger.error(`[runJulesStream] Failed to read history for session ${sessionId}:`, err)
+  }
+
+  return { activities, hydrated }
+}
+
+async function initializeProcessedActivityIds(
+  session: any,
+  sessionId: string,
+  thread: ThreadChannel,
+  initialProcessedIds?: Set<string>,
+): Promise<{ ids: Set<string>; hydrated: boolean }> {
+  const { activities, hydrated } = await hydrateSessionHistory(session, sessionId)
+  const ids = initialProcessedIds ? new Set(initialProcessedIds) : new Set<string>()
+
+  if (initialProcessedIds) {
+    logger.debug(
+      `[runJulesStream] Using provided initial processed activity IDs (count: ${ids.size})`,
+    )
+    return { ids, hydrated }
+  }
+
+  const sessionRecord = await prisma.debugSession.findUnique({
+    where: { threadId: thread.id },
+    select: {
+      lastDeliveredActivityId: true,
+      lastDeliveredActivityAt: true,
+      deliveryCursorInitialized: true,
+    },
+  })
+
+  if (sessionRecord?.deliveryCursorInitialized) {
+    const cursorIndex = sessionRecord.lastDeliveredActivityId
+      ? activities.findIndex((activity) => activity.id === sessionRecord.lastDeliveredActivityId)
+      : -1
+
+    if (cursorIndex >= 0) {
+      for (let i = 0; i <= cursorIndex; i++) ids.add(activities[i].id)
+    } else if (sessionRecord.lastDeliveredActivityAt) {
+      const cutoff = sessionRecord.lastDeliveredActivityAt.getTime()
+      for (const activity of activities) {
+        const createdAt = getActivityDate(activity)
+        if (createdAt && createdAt.getTime() <= cutoff) ids.add(activity.id)
+      }
+    }
+
+    logger.debug(
+      `[runJulesStream] Restored ${ids.size} delivered activities from the persisted cursor for thread ${thread.id}.`,
+    )
+    return { ids, hydrated }
+  }
+
+  // Existing installations have no delivery cursor. Establish a one-time
+  // baseline from the newest message this bot actually posted in Discord. Jules
+  // activities newer than that message remain unprocessed and are replayed,
+  // which recovers replies that completed while the bot was offline.
+  const latestBotMessageTimestamp = await getLatestBotMessageTimestamp(thread)
+  let lastBaselineActivity: any = null
+  if (latestBotMessageTimestamp !== null) {
+    for (const activity of activities) {
+      const createdAt = getActivityDate(activity)
+      if (createdAt && createdAt.getTime() <= latestBotMessageTimestamp) {
+        ids.add(activity.id)
+        if (
+          !lastBaselineActivity ||
+          createdAt.getTime() >= (getActivityDate(lastBaselineActivity)?.getTime() || 0)
+        ) {
+          lastBaselineActivity = activity
+        }
+      }
+    }
+  }
+
+  try {
+    await prisma.debugSession.update({
+      where: { threadId: thread.id },
+      data: {
+        deliveryCursorInitialized: true,
+        lastDeliveredActivityId: lastBaselineActivity?.id || null,
+        lastDeliveredActivityAt: getActivityDate(lastBaselineActivity),
+      },
+    })
+  } catch (err) {
+    logger.error(
+      `[runJulesStream] Failed to initialize delivery cursor for thread ${thread.id}:`,
+      err,
+    )
+  }
+
+  logger.info(
+    `[runJulesStream] Initialized legacy delivery cursor for thread ${thread.id}; ${ids.size} historical activities treated as delivered and ${activities.length - ids.size} left for recovery.`,
+  )
+  return { ids, hydrated }
+}
+
+async function persistDeliveredActivity(threadId: string, activity: any) {
+  try {
+    await prisma.debugSession.update({
+      where: { threadId },
+      data: {
+        deliveryCursorInitialized: true,
+        lastDeliveredActivityId: activity.id,
+        lastDeliveredActivityAt: getActivityDate(activity),
+      },
+    })
+  } catch (err) {
+    // Discord delivery already succeeded. Keep the in-memory ID so this process
+    // does not duplicate the message, and log the persistence failure for repair.
+    logger.error(
+      `[runJulesStream] Discord delivery succeeded but cursor persistence failed for activity ${activity.id} in thread ${threadId}:`,
+      err,
+    )
+  }
+}
+
 // Remove every reaction this bot previously added to `message`. Shared by the
 // state-driven updateReaction and the Jules-driven applyJulesReactions so a new
 // reaction set always cleanly replaces the old one.
@@ -226,28 +392,29 @@ export async function runJulesStream(
     }
   }
 
+  let historyHydratedForNextStream = false
   let processedActivityIds = processedActivityIdsMap.get(thread.id)
   if (!processedActivityIds) {
-    processedActivityIds = initialProcessedIds || new Set<string>()
-    processedActivityIdsMap.set(thread.id, processedActivityIds)
-    if (!initialProcessedIds) {
-      try {
-        const session = JulesClient.getSession(sessionId)
-        logger.debug(
-          `[runJulesStream] Pre-populating processed activities for thread ${thread.id} from history...`,
-        )
-        for await (const act of session.history()) {
-          processedActivityIds.add(act.id)
-        }
-        logger.debug(`[runJulesStream] Pre-populated ${processedActivityIds.size} activities.`)
-      } catch (err) {
-        logger.error(`Failed to pre-populate processed activities for thread ${thread.id}:`, err)
-      }
-    } else {
-      logger.debug(
-        `[runJulesStream] Using provided initial processed activity IDs (count: ${processedActivityIds.size})`,
+    try {
+      const session = JulesClient.getSession(sessionId)
+      const initialized = await initializeProcessedActivityIds(
+        session,
+        sessionId,
+        thread,
+        initialProcessedIds,
       )
+      processedActivityIds = initialized.ids
+      historyHydratedForNextStream = initialized.hydrated
+    } catch (err) {
+      // Prefer at-least-once delivery if cursor restoration itself fails. This can
+      // duplicate an old activity, but it avoids silently losing a new reply.
+      logger.error(
+        `[runJulesStream] Failed to restore delivery cursor for thread ${thread.id}; falling back to replay:`,
+        err,
+      )
+      processedActivityIds = initialProcessedIds ? new Set(initialProcessedIds) : new Set<string>()
     }
+    processedActivityIdsMap.set(thread.id, processedActivityIds)
   }
 
   // Skip set is ready: any activity produced by a send() issued from here on is
@@ -260,6 +427,14 @@ export async function runJulesStream(
   let consecutiveFailures = 0
   const maxRetries = 20
   let retryDelay = 5000
+  let operationPhase: 'jules' | 'activity' = 'jules'
+
+  const markActivityProcessed = async (activity: any) => {
+    processedActivityIds.add(activity.id)
+    await persistDeliveredActivity(thread.id, activity)
+    consecutiveFailures = 0
+    retryDelay = 5000
+  }
 
   // Cache the "last human message" used as the reaction/reply target. Fetching it
   // hits the Discord REST API, so fetch once and only refresh when a new user
@@ -279,6 +454,7 @@ export async function runJulesStream(
 
   while (consecutiveFailures < maxRetries) {
     try {
+      operationPhase = 'jules'
       if (thread.archived) {
         logger.debug(`[runJulesStream] Thread ${thread.id} is archived. Exiting stream handler.`)
         stopTyping()
@@ -357,6 +533,18 @@ export async function runJulesStream(
       // so resolve it once per connect instead of re-resolving for every activity.
       const typingMode = getEffectiveConfig(thread).typing_indicator_mode || 'until_response'
 
+      // stream() replays the SDK's local cache and then switches to future
+      // updates. Force a network sync first so replies produced during a bot
+      // restart or transient disconnect are present in that replay.
+      if (historyHydratedForNextStream) {
+        historyHydratedForNextStream = false
+      } else {
+        const synced = await session.activities.hydrate()
+        logger.debug(
+          `[runJulesStream] Hydrated ${synced} activities before subscribing to session ${sessionId}.`,
+        )
+      }
+
       logger.debug(`[runJulesStream] Subscribing to session stream for ${sessionId}...`)
       for await (const activity of session.stream()) {
         const id = activity.id
@@ -367,9 +555,7 @@ export async function runJulesStream(
           logger.debug(`[runJulesStream] Activity ${id} already processed. Skipping.`)
           continue
         }
-        processedActivityIds.add(id)
-        consecutiveFailures = 0
-        retryDelay = 5000
+        operationPhase = 'activity'
 
         const type = activity.type
         const typeStr = type as string
@@ -540,6 +726,7 @@ export async function runJulesStream(
             await updateReaction(target, 'failed')
             const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
             await streamManager.finalizeSession(thread.id, false, reason)
+            await markActivityProcessed(activity)
             teardownStreamState(thread.id, sessionId)
             stopTyping()
             return
@@ -577,13 +764,22 @@ export async function runJulesStream(
             stopTyping()
           }
         }
+
+        // Only acknowledge an activity after every Discord/Jules side effect for
+        // it succeeds. A failed send therefore remains eligible for replay after
+        // the stream reconnects instead of being silently skipped forever.
+        await markActivityProcessed(activity)
+        operationPhase = 'jules'
       }
 
       logger.debug(`[runJulesStream] Stream loop finished for ${sessionId}.`)
       stopTyping()
     } catch (err: any) {
-      // Check if error is 404 Not Found or 403 Forbidden (permanent failure)
+      // Only treat 403/404 errors as permanent while talking to Jules itself.
+      // Discord can also return those statuses for a particular message/reply;
+      // classifying those as a deleted Jules session used to discard the reply.
       const isPermanentError =
+        operationPhase === 'jules' &&
         err &&
         (err.status === 404 ||
           err.status === 403 ||
@@ -592,8 +788,8 @@ export async function runJulesStream(
           err.message?.includes('Not Found') ||
           err.message?.includes('Forbidden'))
       if (isPermanentError) {
-        console.log(
-          `[runJulesStream] Permanent error (${err.status || '404/403'}) for session ${sessionId}. Exiting stream handler permanently.`,
+        logger.warn(
+          `[runJulesStream] Permanent Jules error (${err.status || '404/403'}) for session ${sessionId}. Exiting stream handler permanently.`,
         )
         stopTyping()
         activeStreams.delete(thread.id)
@@ -672,6 +868,7 @@ export async function initializeJulesSession(
   let session: any = null
   let usedPreWarmed = false
   let initialSkipIds: Set<string> | undefined
+  let initialCursorActivity: any = null
   let welcomePlanRejected = false
   let welcomeFeedback = ''
 
@@ -815,6 +1012,7 @@ export async function initializeJulesSession(
             `[initializeJulesSession] Session ${session.id} has ${activities.length} activities.`,
           )
           initialSkipIds = new Set(activities.map((a: any) => a.id))
+          initialCursorActivity = activities[activities.length - 1]
           for (const activity of activities) {
             logger.debug(`[initializeJulesSession] Activity Type: ${activity.type}`)
             if (activity.type === 'agentMessaged') {
@@ -918,6 +1116,9 @@ export async function initializeJulesSession(
       guildId: thread.guildId,
       julesSessionId: session.id,
       repoName: repoName,
+      deliveryCursorInitialized: true,
+      lastDeliveredActivityId: initialCursorActivity?.id || null,
+      lastDeliveredActivityAt: getActivityDate(initialCursorActivity),
     },
   })
 
