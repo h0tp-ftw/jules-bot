@@ -80,9 +80,10 @@ Key modules:
   rehydrate the stream if inactive, honor `ignore_prefix`.
 - `src/events/interactionCreate.ts` — buttons (`plan-approve` / `plan-reject`), select menus
   (`select-repo` / `select-branch`), and branch search/custom modals. Note the Discord **25-option** menu cap handled here.
-- `src/lib/jules/orchestrator.ts` — **core.** `runJulesStream` (dedup via `processedActivityIds`, reconnect
-  up to 20×, typing indicators, reactions, plan embeds, auto-reject), `initializeJulesSession` (creation +
-  pre-warmed consumption + welcome-plan handling), `rehydrateActiveStreams`.
+- `src/lib/jules/orchestrator.ts` — **core.** `runJulesStream` (persisted delivery cursor, reconnect
+  up to 20×, typing indicators, reactions, plan embeds, plan-feedback flow, completion-result fallback),
+  `initializeJulesSession` (creation + pre-warmed consumption + welcome-plan handling),
+  `rehydrateActiveStreams`.
 - `src/lib/jules/JulesClient.ts` — thin `@google/jules-sdk` wrapper. Builds the full prompt =
   `diagnostic_prompt` + persona + soul + bootstrap + user issue. `createSession` / `getSession` / `getConnectedRepos`.
 - `src/lib/jules/PreWarmedManager.ts` — pre-warmed session pools to hide clone/queue latency
@@ -100,7 +101,8 @@ awaitingPlanApproval → completed / failed` (via `session.info()`). Activities 
 Control: `session.approve()`, `session.send()`; replay with `session.history()`; list repos with `jules.sources()`.
 
 **Available but currently unused:** `progressUpdated.artifacts` (code `changeSet` diffs + `media` screenshots),
-`session.waitFor(state)`, `session.ask()`, `session.result()` (final state + PR URL).
+`session.waitFor(state)`, `session.ask()`. `session.result()` is used on completion to report authoritative
+PR metadata and provide a fallback when Jules emits no final `agentMessaged` activity.
 Pull current SDK docs from Context7 (`/google-labs-code/jules-sdk`) before changing SDK calls.
 
 ## Data model (`prisma/schema.prisma`)

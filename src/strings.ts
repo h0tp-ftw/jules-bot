@@ -42,6 +42,12 @@ export const DEFAULT_MESSAGES = {
     prewarmed_ready: '🚀 **Ready session found! Processing your issue...**',
     message_delivery_failed:
       '❌ **Failed to deliver message to Jules. Please make sure the session is still active.**',
+    completion_fallback:
+      '✅ **Jules finished the run but did not send a final conversational reply.**\nNo pull request or merge was confirmed by the Jules result.',
+    completion_fallback_progress:
+      '✅ **Jules finished the run but did not send a final conversational reply.**\nLatest recorded update: `{progress}`\nNo pull request or merge was confirmed by the Jules result.',
+    completion_fallback_pr:
+      '✅ **Jules finished the run but did not send a final conversational reply.**\nA pull request was reported by Jules: {url}\n**Merge status was not verified.**',
     default_title: 'Diagnostic Session',
   },
 
@@ -92,7 +98,7 @@ export const DEFAULT_MESSAGES = {
     rejected:
       '❌ **Plan rejected. Please describe the changes or alternative approach you want Jules to take.**',
     auto_rejected_notice:
-      '{emoji} **Plan Automatically Rejected:**\nFeedback: "{feedback}"\nJules is revising the plan...',
+      '{emoji} **Plan feedback sent:**\nFeedback: "{feedback}"\nJules was asked to revise or continue without a plan...',
   },
 
   // Streamed status message (StreamManager). The status message is assembled
@@ -103,7 +109,9 @@ export const DEFAULT_MESSAGES = {
     current_step: '⚡ **Current Step:**\n> **{title}**',
     current_step_description: '> *{description}*',
     execution_logs_header: '**Execution Logs:**',
-    completed: '✅ **Jules analysis completed successfully.**',
+    completed: '✅ **Jules run reached a completed state.**',
+    pull_request_reported:
+      '🔎 **Pull request reported by Jules:** {url}\n*Merge status was not verified.*',
     failed: '❌ **Jules analysis failed.**',
     failed_reason_suffix: ' Reason: {reason}',
     final_logs_header: '**Final execution logs:**',
@@ -156,6 +164,8 @@ export const DEFAULT_MESSAGES = {
     // parses back out into real Discord reactions.
     jules_reactions_instruction:
       "Reaction ability: you can add a Discord emoji reaction to the user's message you are replying to. To react, include a marker of the exact form [[react:EMOJI]] anywhere in your reply — for example [[react:👍]] or [[react:✅]]. EMOJI may be a standard Unicode emoji, or a custom server emoji written as :name: or <:name:id>. Use one marker per reaction; you may include several to add multiple reactions. The marker is removed from your message before it is shown, so it never appears as literal text — if you want to react without saying anything, reply with only the marker. React sparingly, and only when it adds value (acknowledging, agreeing, celebrating, or signalling status); most replies need no reaction.",
+    delivery_status_instruction:
+      'Be precise about repository delivery status. Creating or updating a branch or pull request is not the same as pushing or merging code into the main branch. Only claim that a fix is on main, merged, released, or available through an updater when you verified that exact state using repository or tool output. Otherwise say that the change is ready for review in a pull request, and provide its URL when available. Never tell a user to update from main unless main is verified to contain the fix.',
   },
 
   // Attachment metadata block appended to user messages for Jules.

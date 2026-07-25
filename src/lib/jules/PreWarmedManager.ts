@@ -37,6 +37,7 @@ export async function preWarmSession(repoName: string, contextKey: string | null
     if (bootstrapContext) {
       defaultPrompt += `\n\nBootstrap Knowledge and Context:\n${bootstrapContext}`
     }
+    defaultPrompt += `\n\n${config.messages.prompts.delivery_status_instruction}`
     if (config.jules_reactions?.enabled) {
       defaultPrompt += `\n\n${config.messages.prompts.jules_reactions_instruction}`
     }

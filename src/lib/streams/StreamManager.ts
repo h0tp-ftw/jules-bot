@@ -92,7 +92,12 @@ export class StreamManager {
     this.activeSteps.clear()
   }
 
-  async finalizeSession(threadId: string, success: boolean, reason?: string) {
+  async finalizeSession(
+    threadId: string,
+    success: boolean,
+    reason?: string,
+    result?: { pullRequestUrl?: string },
+  ) {
     // Clear any pending timers
     const timer = this.timers.get(threadId)
     if (timer) {
@@ -115,11 +120,15 @@ export class StreamManager {
         ? m.completed
         : `${m.failed}${reason ? t(m.failed_reason_suffix, { reason }) : ''}`
 
+      const resultBlock =
+        success && result?.pullRequestUrl
+          ? `\n\n${t(m.pull_request_reported, { url: result.pullRequestUrl })}`
+          : ''
       const logsBlock =
         buf.length > 0 ? `\n\n${m.final_logs_header}\n\`\`\`\n${buf.join('\n')}\n\`\`\`` : ''
 
       const msg = await thread.messages.fetch(session.statusMessageId)
-      await msg.edit({ content: `${statusText}${logsBlock}`.slice(0, 1990) })
+      await msg.edit({ content: `${statusText}${resultBlock}${logsBlock}`.slice(0, 1990) })
     } catch (err) {
       logger.error('Failed to finalize status message:', err)
     }

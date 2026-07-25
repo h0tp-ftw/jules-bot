@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.js'
+import type { Outcome } from '@google/jules-sdk'
 import {
   ThreadChannel,
   ActionRowBuilder,
@@ -18,6 +19,12 @@ import { splitMessage } from '../utils/messageSplitter.js'
 import { formatAttachmentMetadata } from '../utils/attachments.js'
 import { reactionStageForState } from '../utils/sessionState.js'
 import { formatErrorForDiscord } from '../utils/errors.js'
+import {
+  applyActivityToTurnState,
+  deriveTurnResponseState,
+  formatCompletionFallback,
+  type TurnResponseState,
+} from '../utils/sessionOutcome.js'
 
 export const activeStreams = new Set<string>()
 export const autoRejectedSessions = new Set<string>()
@@ -143,15 +150,20 @@ async function initializeProcessedActivityIds(
   sessionId: string,
   thread: ThreadChannel,
   initialProcessedIds?: Set<string>,
-): Promise<{ ids: Set<string>; hydrated: boolean }> {
+): Promise<{ ids: Set<string>; hydrated: boolean; turnState: TurnResponseState }> {
   const { activities, hydrated } = await hydrateSessionHistory(session, sessionId)
   const ids = initialProcessedIds ? new Set(initialProcessedIds) : new Set<string>()
+  const result = () => ({
+    ids,
+    hydrated,
+    turnState: deriveTurnResponseState(activities, ids),
+  })
 
   if (initialProcessedIds) {
     logger.debug(
       `[runJulesStream] Using provided initial processed activity IDs (count: ${ids.size})`,
     )
-    return { ids, hydrated }
+    return result()
   }
 
   const sessionRecord = await prisma.debugSession.findUnique({
@@ -181,7 +193,7 @@ async function initializeProcessedActivityIds(
     logger.debug(
       `[runJulesStream] Restored ${ids.size} delivered activities from the persisted cursor for thread ${thread.id}.`,
     )
-    return { ids, hydrated }
+    return result()
   }
 
   // Existing installations have no delivery cursor. Establish a one-time
@@ -224,7 +236,7 @@ async function initializeProcessedActivityIds(
   logger.info(
     `[runJulesStream] Initialized legacy delivery cursor for thread ${thread.id}; ${ids.size} historical activities treated as delivered and ${activities.length - ids.size} left for recovery.`,
   )
-  return { ids, hydrated }
+  return result()
 }
 
 async function persistDeliveredActivity(threadId: string, activity: any) {
@@ -244,6 +256,18 @@ async function persistDeliveredActivity(threadId: string, activity: any) {
       `[runJulesStream] Discord delivery succeeded but cursor persistence failed for activity ${activity.id} in thread ${threadId}:`,
       err,
     )
+  }
+}
+
+async function getCompletedSessionResult(session: any, sessionId: string): Promise<Outcome | null> {
+  try {
+    return await session.result({ timeoutMs: 15_000 })
+  } catch (err) {
+    logger.warn(
+      `[runJulesStream] Session ${sessionId} completed, but its result could not be retrieved:`,
+      err,
+    )
+    return null
   }
 }
 
@@ -393,6 +417,7 @@ export async function runJulesStream(
   }
 
   let historyHydratedForNextStream = false
+  let turnState: TurnResponseState = { awaitingAgentReply: false }
   let processedActivityIds = processedActivityIdsMap.get(thread.id)
   if (!processedActivityIds) {
     try {
@@ -405,6 +430,7 @@ export async function runJulesStream(
       )
       processedActivityIds = initialized.ids
       historyHydratedForNextStream = initialized.hydrated
+      turnState = initialized.turnState
     } catch (err) {
       // Prefer at-least-once delivery if cursor restoration itself fails. This can
       // duplicate an old activity, but it avoids silently losing a new reply.
@@ -713,8 +739,40 @@ export async function runJulesStream(
           case 'sessionCompleted': {
             logger.debug(`[runJulesStream] sessionCompleted for ${sessionId}`)
             const target = await getTarget()
+            const outcome = await getCompletedSessionResult(session, sessionId)
+            const pullRequestUrl = outcome?.pullRequest?.url
+
             await updateReaction(target, 'completed')
-            await streamManager.finalizeSession(thread.id, true)
+            await streamManager.finalizeSession(thread.id, true, undefined, { pullRequestUrl })
+
+            if (turnState.awaitingAgentReply) {
+              logger.warn(
+                `[runJulesStream] Session ${sessionId} completed without an agent reply for the latest Discord turn; posting a result fallback.`,
+              )
+              const threadConfig = getEffectiveConfig(thread, target?.member)
+              const fallback = formatCompletionFallback(threadConfig.messages, {
+                pullRequestUrl,
+                latestProgress: turnState.latestProgress,
+              })
+              const splits = splitMessage(fallback, 2000)
+              if (target && threadConfig.reply_mode !== 'send') {
+                const allowedMentions =
+                  threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
+                for (let i = 0; i < splits.length; i++) {
+                  if (i === 0) {
+                    await target.reply({ content: splits[i], allowedMentions })
+                  } else {
+                    await thread.send(splits[i])
+                  }
+                }
+              } else {
+                for (const chunk of splits) {
+                  await thread.send(chunk)
+                }
+              }
+              turnState = { awaitingAgentReply: false }
+            }
+
             autoRejectedSessions.delete(sessionId)
             stopTyping()
             break
@@ -764,6 +822,11 @@ export async function runJulesStream(
             stopTyping()
           }
         }
+
+        // Advance the per-turn response state only after all side effects for the
+        // activity succeeded. This state is reconstructed from persisted history
+        // after restarts, so a terminal event can detect a missing agent reply.
+        turnState = applyActivityToTurnState(turnState, activity)
 
         // Only acknowledge an activity after every Discord/Jules side effect for
         // it succeeds. A failed send therefore remains eligible for replay after
