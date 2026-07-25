@@ -49,10 +49,9 @@ export default {
     }
 
     const channelsConfig = yamlConfig.channels || {}
-    const isConfiguredChannel = thread.parentId && (
-      thread.parentId === forumChannelId || 
-      channelsConfig[thread.parentId] !== undefined
-    )
+    const isConfiguredChannel =
+      thread.parentId &&
+      (thread.parentId === forumChannelId || channelsConfig[thread.parentId] !== undefined)
 
     if (!isConfiguredChannel) {
       // Thread is not in a designated forum channel
