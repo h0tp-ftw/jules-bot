@@ -140,6 +140,12 @@ export const DEFAULT_MESSAGES = {
     setup_forum_success:
       '✅ **Successfully set debug forum channel to <#{channel}>!** Any new threads created here will initialize a Jules session.',
     setup_forum_failed: '❌ Failed to save forum channel configuration in the database.',
+    setup_chat_description:
+      'Set a normal text channel where Jules will act as a shared conversational chatbot',
+    setup_chat_option_description: 'The text channel to monitor for every human message',
+    setup_chat_success:
+      '✅ **Successfully set chatbot channel to <#{channel}>!** Jules will share one conversation across messages in this channel.',
+    setup_chat_failed: '❌ Failed to save chatbot channel configuration in the database.',
   },
 
   // Substantive prompt fragments sent to the Jules agent. (Trivial structural
@@ -149,6 +155,10 @@ export const DEFAULT_MESSAGES = {
       '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message Time: {time}]\n\n{content}',
     metadata_header_with_title:
       '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message Time: {time}, Issue/Thread Title: {title}]\n\n{content}',
+    metadata_header_with_channel:
+      '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message Time: {time}, Shared Discord Channel: #{channel}]\n\n{content}',
+    chatbot_mode_plan_feedback:
+      'This session is operating as a shared Discord chatbot. Do not create or refine an implementation plan and do not wait for plan approval. Reply directly and conversationally to the users in the channel.',
     auto_reject_default:
       'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.',
     auto_reject_directive_welcome:

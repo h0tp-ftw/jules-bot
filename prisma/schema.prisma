@@ -10,6 +10,7 @@ model GuildConfig {
   guildId        String   @id
   defaultRepo    String
   forumChannelId String?
+  chatChannelId  String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }

@@ -1,7 +1,7 @@
 {
   "name": "jules-bot",
   "version": "1.0.0",
-  "description": "A Discord bot that turns forum threads into interactive Google Jules coding-agent sessions — diagnose first, change only on human approval.",
+  "description": "A Discord bot that connects forum threads or a shared text channel to Google Jules coding-agent sessions.",
   "main": "dist/index.js",
   "scripts": {
     "dev": "prisma generate && LOG_LEVEL=debug tsx src/index.ts",

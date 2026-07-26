@@ -18,7 +18,10 @@ export async function hasPermission(
     }
   }
 
-  const config = getEffectiveConfig(thread, creatorMember)
+  // Forum threads inherit role-based configuration from their creator. Normal
+  // text channels have no owner, so evaluate role overrides for the speaker.
+  const configMember = thread?.ownerId ? creatorMember : member
+  const config = getEffectiveConfig(thread, configMember)
   const ac = config.access_control
   const isSilent = ac.silent === true
 

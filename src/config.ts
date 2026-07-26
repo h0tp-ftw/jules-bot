@@ -179,8 +179,15 @@ export const REACTIONS: Record<string, string> = {
 }
 
 // Guild override mappings from YAML
-export const YAML_GUILDS: Record<string, { default_repo?: string; forum_channel_id?: string }> =
-  yamlConfig.guilds || {}
+export const YAML_GUILDS: Record<
+  string,
+  {
+    default_repo?: string
+    default_branch?: string
+    forum_channel_id?: string
+    chat_channel_id?: string
+  }
+> = yamlConfig.guilds || {}
 
 // API Keys and Tokens
 export const DISCORD_TOKEN = process.env.DISCORD_TOKEN || ''

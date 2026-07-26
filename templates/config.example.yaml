@@ -26,6 +26,7 @@ guilds: {}
   # "YOUR_GUILD_ID":
   #   default_repo: "owner/repo"
   #   forum_channel_id: "YOUR_FORUM_CHANNEL_ID"
+  #   chat_channel_id: "YOUR_NORMAL_TEXT_CHANNEL_ID" # Optional shared chatbot channel
 
 # Auto-reject proposed plans once per session
 auto_reject:
@@ -80,7 +81,7 @@ pre_warmed_sessions:
 #       allow_all: true
 #     auto_reject:
 #       enabled: true
-#       message: "Plan automatically rejected for this forum channel."
+#       message: "Plan automatically rejected for this channel."
 #     reactions:
 #       queued: "⏳"
 #       in_progress: "⚙️"

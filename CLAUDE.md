@@ -5,8 +5,10 @@ Guidance for AI coding agents working on **JulesBot**. Keep this current as the 
 ## What this is
 
 JulesBot is a Discord bot that turns each **forum thread** into an interactive **Google Jules**
-coding-agent session. It streams Jules's live activity into a Discord thread and gates any proposed
-plan behind **Approve / Reject** buttons — "diagnose first, change only on human approval."
+coding-agent session. It can also bind one normal text channel per guild as a shared conversational
+chatbot. Forum sessions stream live activity and gate plans behind **Approve / Reject** buttons;
+text-channel sessions listen to every human message, suppress progress UI, and redirect plans into
+direct replies.
 
 Stack: **TypeScript (ESM) · discord.js v14 · @google/jules-sdk · Prisma v7 + SQLite (better-sqlite3)**.
 
@@ -58,7 +60,8 @@ If the SQLite file is missing, `src/config.ts` auto-provisions it on boot via `n
 
 ## Architecture / request flow
 
-Forum thread created → Jules session → live stream into Discord → human gates the plan.
+Forum thread created → isolated Jules session → live stream into Discord → human gates the plan.
+Configured text-channel message → shared Jules session → direct conversational replies.
 
 ```
 ThreadCreate ─▶ (optional repo/branch select) ─▶ initializeJulesSession ─▶ JulesClient.createSession
@@ -76,8 +79,9 @@ Key modules:
   Has process-level `unhandledRejection` / `uncaughtException` guards.
 - `src/events/threadCreate.ts` — gate on the configured forum channel; optional interactive repo/branch
   pickers; otherwise `initializeJulesSession`.
-- `src/events/messageCreate.ts` — forward user messages to the mapped session (with a metadata header),
-  rehydrate the stream if inactive, honor `ignore_prefix`.
+- `src/events/messageCreate.ts` — forward forum-thread messages to their mapped session; in a configured
+  normal text channel, serialize first-message initialization and then forward every human message to one
+  shared session. Rehydrates inactive streams and honors `ignore_prefix`.
 - `src/events/interactionCreate.ts` — buttons (`plan-approve` / `plan-reject`), select menus
   (`select-repo` / `select-branch`), and branch search/custom modals. Note the Discord **25-option** menu cap handled here.
 - `src/lib/jules/orchestrator.ts` — **core.** `runJulesStream` (persisted delivery cursor, reconnect
@@ -107,10 +111,12 @@ Pull current SDK docs from Context7 (`/google-labs-code/jules-sdk`) before chang
 
 ## Data model (`prisma/schema.prisma`)
 
-- `GuildConfig(guildId, defaultRepo, forumChannelId)` — per-server repo + forum binding (set via
-  `/link-repo`, `/setup-forum`); YAML `guilds:` can override.
-- `DebugSession(threadId, julesSessionId, statusMessageId, planMessageId, repoName, …)` — the thread⇄session
-  map; source of truth for rehydration.
+- `GuildConfig(guildId, defaultRepo, forumChannelId, chatChannelId)` — per-server repo plus optional
+  forum and normal-text-channel bindings (set via `/link-repo`, `/setup-forum`, `/setup-chat`); YAML
+  `guilds:` can override with `forum_channel_id` / `chat_channel_id`.
+- `DebugSession(threadId, julesSessionId, statusMessageId, planMessageId, repoName, …)` — the Discord
+  thread-or-channel ID ⇄ Jules session map; source of truth for rehydration. The legacy `threadId` column
+  also stores configured text-channel IDs.
 - `PreWarmedSession(id = julesSessionId, repoName, contextKey, ready, …)` — warm-pool entries.
 
 ## Config & personality (`src/config.ts`)

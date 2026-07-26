@@ -2,6 +2,8 @@ import { logger } from '../utils/logger.js'
 import type { Outcome } from '@google/jules-sdk'
 import {
   ThreadChannel,
+  TextChannel,
+  ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -10,7 +12,7 @@ import {
 } from 'discord.js'
 import { JulesClient } from './JulesClient.js'
 import { StreamManager } from '../streams/StreamManager.js'
-import { prisma, getEffectiveConfig, yamlConfig } from '../../config.js'
+import { prisma, getEffectiveConfig, yamlConfig, YAML_GUILDS } from '../../config.js'
 import { t } from '../../strings.js'
 import { replenishPool } from './PreWarmedManager.js'
 import { resolveMessageEmojis } from '../utils/emojis.js'
@@ -25,6 +27,8 @@ import {
   formatCompletionFallback,
   type TurnResponseState,
 } from '../utils/sessionOutcome.js'
+
+export type JulesDiscordChannel = ThreadChannel | TextChannel
 
 export const activeStreams = new Set<string>()
 export const autoRejectedSessions = new Set<string>()
@@ -74,7 +78,7 @@ function parseEmojiForReaction(client: any, emojiStr: string): string {
   return trimmed
 }
 
-export async function getLastHumanMessage(thread: ThreadChannel): Promise<Message | null> {
+export async function getLastHumanMessage(thread: JulesDiscordChannel): Promise<Message | null> {
   try {
     const messages = await thread.messages.fetch({ limit: 20 })
     const sorted = Array.from(messages.values()).sort(
@@ -94,7 +98,7 @@ function getActivityDate(activity: any): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-async function getLatestBotMessageTimestamp(thread: ThreadChannel): Promise<number | null> {
+async function getLatestBotMessageTimestamp(thread: JulesDiscordChannel): Promise<number | null> {
   const botId = thread.client.user?.id
   if (!botId) return null
 
@@ -148,7 +152,7 @@ async function hydrateSessionHistory(
 async function initializeProcessedActivityIds(
   session: any,
   sessionId: string,
-  thread: ThreadChannel,
+  thread: JulesDiscordChannel,
   initialProcessedIds?: Set<string>,
 ): Promise<{ ids: Set<string>; hydrated: boolean; turnState: TurnResponseState }> {
   const { activities, hydrated } = await hydrateSessionHistory(session, sessionId)
@@ -364,7 +368,7 @@ export async function getFreshSessionInfo(session: any): Promise<any> {
 
 export async function runJulesStream(
   sessionId: string,
-  thread: ThreadChannel,
+  thread: JulesDiscordChannel,
   streamManager: StreamManager,
   initialProcessedIds?: Set<string>,
   // Fired once the processed-activity skip set is populated (history replayed),
@@ -372,7 +376,10 @@ export async function runJulesStream(
   // new activities being swallowed by history pre-population. Used by
   // messageCreate to gate the send instead of racing a fixed timeout.
   onReady?: () => void,
+  options: { chatbotMode?: boolean } = {},
 ) {
+  const chatbotMode = options.chatbotMode === true
+
   if (activeStreams.has(thread.id)) {
     logger.debug(
       `[runJulesStream] activeStreams already has thread ${thread.id}. Exiting stream handler creation.`,
@@ -481,7 +488,7 @@ export async function runJulesStream(
   while (consecutiveFailures < maxRetries) {
     try {
       operationPhase = 'jules'
-      if (thread.archived) {
+      if (thread.isThread() && thread.archived) {
         logger.debug(`[runJulesStream] Thread ${thread.id} is archived. Exiting stream handler.`)
         stopTyping()
         teardownStreamState(thread.id, sessionId)
@@ -595,17 +602,21 @@ export async function runJulesStream(
             const lastHuman = await getTarget()
             const threadConfig = getEffectiveConfig(thread, lastHuman?.member)
             const autoReject = threadConfig.auto_reject || {}
-            const shouldAutoReject = autoReject.enabled && !autoRejectedSessions.has(sessionId)
+            const shouldAutoReject =
+              chatbotMode || (autoReject.enabled && !autoRejectedSessions.has(sessionId))
             if (shouldAutoReject) {
-              autoRejectedSessions.add(sessionId)
-              const feedback =
-                autoReject.message || threadConfig.messages.prompts.auto_reject_default
-              await thread.send(
-                t(threadConfig.messages.plan.auto_rejected_notice, {
-                  emoji: '🤖',
-                  feedback,
-                }),
-              )
+              if (!chatbotMode) autoRejectedSessions.add(sessionId)
+              const feedback = chatbotMode
+                ? threadConfig.messages.prompts.chatbot_mode_plan_feedback
+                : autoReject.message || threadConfig.messages.prompts.auto_reject_default
+              if (!chatbotMode) {
+                await thread.send(
+                  t(threadConfig.messages.plan.auto_rejected_notice, {
+                    emoji: '🤖',
+                    feedback,
+                  }),
+                )
+              }
               await session.send(feedback)
               const target = await getTarget()
               await updateReaction(target, 'in_progress')
@@ -680,7 +691,7 @@ export async function runJulesStream(
             // Pass title and description separately so StreamManager can render
             // the current step and its description distinctly. Fall back to using
             // the description as the title when no title is present.
-            if (title || description) {
+            if (!chatbotMode && (title || description)) {
               await streamManager.handleProgress(
                 thread.id,
                 title || description,
@@ -1243,6 +1254,70 @@ export async function initializeJulesSession(
   }
 }
 
+export async function initializeChatSession(
+  message: Message,
+  repoName: string,
+  branchName: string,
+  streamManager: StreamManager,
+) {
+  if (!message.guildId || message.channel.type !== ChannelType.GuildText) {
+    throw new Error('Chat sessions can only be initialized from a normal guild text channel.')
+  }
+
+  const channel = message.channel as TextChannel
+  const channelConfig = getEffectiveConfig(channel, message.member, repoName)
+
+  let messageContent = message.content || ''
+  if (message.attachments.size > 0) {
+    const attachmentList = Array.from(message.attachments.values()).map((att) => ({
+      name: att.name,
+      url: att.url,
+      contentType: att.contentType || undefined,
+      size: att.size || undefined,
+    }))
+    messageContent += formatAttachmentMetadata(attachmentList, channelConfig.messages.attachments)
+  }
+
+  const promptWithMetadata = t(channelConfig.messages.prompts.metadata_header_with_channel, {
+    nickname: message.member?.displayName || message.author.username,
+    username: message.author.username,
+    id: message.author.id,
+    time: message.createdAt.toISOString(),
+    channel: channel.name,
+    content: messageContent,
+  })
+
+  const session = await JulesClient.createSession({
+    prompt: promptWithMetadata,
+    repo: repoName,
+    branch: branchName,
+    title: channel.name,
+    thread: channel,
+    member: message.member,
+  })
+
+  await prisma.debugSession.create({
+    data: {
+      threadId: channel.id,
+      guildId: message.guildId,
+      julesSessionId: session.id,
+      repoName,
+      deliveryCursorInitialized: true,
+    },
+  })
+
+  void runJulesStream(session.id, channel, streamManager, undefined, undefined, {
+    chatbotMode: true,
+  }).catch((err) => {
+    logger.error(
+      `[initializeChatSession] Stream failed for chatbot channel ${channel.id}, session ${session.id}:`,
+      err,
+    )
+  })
+
+  return session
+}
+
 export async function rehydrateActiveStreams(client: any, streamManager: StreamManager) {
   logger.debug('[rehydrateActiveStreams] Starting rehydration of active streams...')
   try {
@@ -1261,23 +1336,47 @@ export async function rehydrateActiveStreams(client: any, streamManager: StreamM
       `[rehydrateActiveStreams] Found ${sessions.length} sessions in DB updated in the last 24 hours.`,
     )
 
+    const guildConfigs = await prisma.guildConfig.findMany({
+      select: { guildId: true, chatChannelId: true },
+    })
+    const guildConfigById = new Map(guildConfigs.map((config) => [config.guildId, config]))
+
     for (const session of sessions) {
       try {
         const channel = await client.channels.fetch(session.threadId)
-        if (!channel || !channel.isThread()) continue
-        const thread = channel as ThreadChannel
-        if (thread.archived || thread.locked) {
+        if (!channel || (!channel.isThread() && channel.type !== ChannelType.GuildText)) continue
+        const sessionChannel = channel as JulesDiscordChannel
+        if (!sessionChannel.isThread()) {
+          const configuredChatChannelId =
+            YAML_GUILDS[session.guildId]?.chat_channel_id ||
+            guildConfigById.get(session.guildId)?.chatChannelId
+          if (configuredChatChannelId !== sessionChannel.id) {
+            logger.debug(
+              `[rehydrateActiveStreams] Text channel ${sessionChannel.id} is no longer the configured chatbot channel for guild ${session.guildId}. Skipping.`,
+            )
+            continue
+          }
+        }
+        if (sessionChannel.isThread() && (sessionChannel.archived || sessionChannel.locked)) {
           logger.debug(
-            `[rehydrateActiveStreams] Thread ${thread.id} is archived or locked. Skipping.`,
+            `[rehydrateActiveStreams] Thread ${sessionChannel.id} is archived or locked. Skipping.`,
           )
           continue
         }
 
+        const chatbotMode = !sessionChannel.isThread()
         logger.debug(
-          `[rehydrateActiveStreams] Rehydrating stream for thread ${thread.id}, sessionId: ${session.julesSessionId}`,
+          `[rehydrateActiveStreams] Rehydrating stream for ${chatbotMode ? 'chatbot channel' : 'thread'} ${sessionChannel.id}, sessionId: ${session.julesSessionId}`,
         )
         // runJulesStream checks if it's already active, so this is safe
-        runJulesStream(session.julesSessionId, thread, streamManager)
+        runJulesStream(
+          session.julesSessionId,
+          sessionChannel,
+          streamManager,
+          undefined,
+          undefined,
+          { chatbotMode },
+        )
 
         // Wait 1.5 seconds between rehydrations to avoid hitting Jules API rate limits
         await new Promise((resolve) => setTimeout(resolve, 1500))

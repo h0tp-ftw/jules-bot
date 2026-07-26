@@ -21,6 +21,7 @@ import { t } from './strings.js'
 import { formatErrorForDiscord } from './lib/utils/errors.js'
 import linkRepoCmd from './commands/link-repo.js'
 import setupForumCmd from './commands/setup-forum.js'
+import setupChatCmd from './commands/setup-chat.js'
 import approveCmd from './commands/approve.js'
 import threadCreateEvt from './events/threadCreate.js'
 import messageCreateEvt from './events/messageCreate.js'
@@ -54,6 +55,7 @@ const streamManager = new StreamManager(client)
 const commands = new Collection<string, any>()
 commands.set(linkRepoCmd.data.name, linkRepoCmd)
 commands.set(setupForumCmd.data.name, setupForumCmd)
+commands.set(setupChatCmd.data.name, setupChatCmd)
 commands.set(approveCmd.data.name, approveCmd)
 
 import { hasPermission } from './lib/utils/permissions.js'
@@ -133,8 +135,8 @@ client.once(Events.ClientReady, async () => {
   }
 
   // Surface per-guild setup state so an operator can see what's left after
-  // inviting the bot — a forum thread does nothing until both a forum channel
-  // (/setup-forum) and a repo (/link-repo) are configured for that guild.
+  // inviting the bot. A guild needs a repo plus at least one destination: a
+  // forum (/setup-forum), a shared text channel (/setup-chat), or both.
   try {
     const configs = await prisma.guildConfig.findMany()
     const byId = new Map(configs.map((c) => [c.guildId, c]))
@@ -143,13 +145,20 @@ client.once(Events.ClientReady, async () => {
       const cfg = byId.get(guild.id)
       const repo = yamlGuild.default_repo || cfg?.defaultRepo
       const forum = yamlGuild.forum_channel_id || cfg?.forumChannelId
+      const chat = yamlGuild.chat_channel_id || cfg?.chatChannelId
       const missing: string[] = []
-      if (!forum) missing.push('forum channel (/setup-forum)')
+      if (!forum && !chat) {
+        missing.push('forum or chatbot channel (/setup-forum or /setup-chat)')
+      }
       if (!repo) missing.push('repo (/link-repo)')
       if (missing.length) {
         logger.warn(`[Setup] "${guild.name}" not ready — still needs: ${missing.join(' + ')}`)
       } else {
-        logger.info(`[Setup] "${guild.name}" ready — repo ${repo}, forum channel ${forum}`)
+        const destinations = [
+          forum ? `forum channel ${forum}` : '',
+          chat ? `chatbot channel ${chat}` : '',
+        ].filter(Boolean)
+        logger.info(`[Setup] "${guild.name}" ready — repo ${repo}, ${destinations.join(' + ')}`)
       }
     }
   } catch (err) {

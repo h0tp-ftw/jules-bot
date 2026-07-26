@@ -1,7 +1,7 @@
 <h1 align="center">🐙 JulesBot</h1>
 
 <p align="center">
-  <strong>Turn Discord forum threads into interactive Google Jules coding-agent sessions.</strong><br>
+  <strong>Turn Discord forum threads or a designated text channel into Google Jules conversations.</strong><br>
   <em>Diagnose first — change only on human approval.</em>
 </p>
 
@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  JulesBot is a Discord bot designed to act as a <strong>friendly, interactive diagnostic helper</strong> for developers and non-technical stakeholders alike. Powered by the <strong>Google Jules SDK</strong>, it enables live conversations about your codebase inside Discord Forum channels.
+  JulesBot is a Discord bot designed to act as a <strong>friendly, interactive diagnostic helper</strong> for developers and non-technical stakeholders alike. Powered by the <strong>Google Jules SDK</strong>, it supports isolated sessions in Discord Forum posts and an optional shared chatbot conversation in a normal text channel.
 </p>
 
 ---
@@ -44,6 +44,7 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 ## ✨ Features
 
 * 📁 **Forum-to-Session Mapping**: Each forum post automatically initializes a unique interactive Google Jules session.
+* 💬 **Shared Text-Channel Chatbot**: Optionally designate one normal text channel per server; the first human message starts a shared Jules conversation and every later human message continues it.
 * ⚡ **Live Log Streaming**: Stream terminal executions and tools into a single status message without hitting Discord rate limits.
 * 🛡️ **Access Control allowlists**: Allowlist commands and debug thread usage by User IDs, Role IDs, or toggle globally.
 * 🔌 **Seamless Recovery**: Database-backed rehydration re-establishes streaming listeners on bot restarts or serverless pauses.
@@ -63,29 +64,30 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 
 ## 🧩 Architecture
 
-A forum thread becomes a Jules session; activity streams back into the thread; the human gates the plan.
+A forum thread becomes an isolated Jules session with plan controls. A configured normal text channel instead keeps one shared conversational session and automatically redirects plans into direct replies.
 
 ```
 ThreadCreate ─▶ (optional repo/branch pick) ─▶ initializeJulesSession ─▶ JulesClient.createSession
-                                                      │                          │
-MessageCreate ─▶ session.send(prompt + metadata)      ▼                          ▼
-InteractionCreate (Approve/Reject) ──────────▶ runJulesStream  ◀── jules-sdk session.stream()
+Text Message ─▶ initializeChatSession (first message) ───────────────┘
                                                       │
-                    StreamManager (status msg) · reactions · plan embeds · auto-reject
+MessageCreate ─▶ session.send(prompt + metadata)      ▼
+InteractionCreate (forum controls) ──────────▶ runJulesStream  ◀── jules-sdk session.stream()
+                                                      │
+          forum: status msg + plan embeds · text channel: direct conversational replies
 ```
 
 | Layer | Module | Responsibility |
 | :--- | :--- | :--- |
 | Bootstrap | `src/index.ts` | Client/intents, event wiring, slash-command registration, presence, lifecycle |
 | Events | `src/events/*` | `threadCreate`, `messageCreate`, `interactionCreate` (buttons/menus/modals) |
-| Orchestration | `src/lib/jules/orchestrator.ts` | `runJulesStream`, `initializeJulesSession`, rehydration |
+| Orchestration | `src/lib/jules/orchestrator.ts` | `runJulesStream`, forum/chat initialization, rehydration |
 | SDK wrapper | `src/lib/jules/JulesClient.ts` | Prompt assembly + `@google/jules-sdk` calls |
 | Warm pools | `src/lib/jules/PreWarmedManager.ts` | Background session pre-warming |
-| Streaming | `src/lib/streams/StreamManager.ts` | One editable status message per thread |
+| Streaming | `src/lib/streams/StreamManager.ts` | One editable status message per forum thread |
 | Config | `src/config.ts` | Layered YAML + persona resolution via `getEffectiveConfig()` |
 | Strings | `src/strings.ts` | Single source of truth for all user-facing copy |
 
-**State of record** lives in SQLite (via Prisma); in-memory stream state is **rehydrated on boot** from sessions touched in the last 7 days. See [`CLAUDE.md`](./CLAUDE.md) for the full tour and repo-specific landmines.
+**State of record** lives in SQLite (via Prisma); in-memory stream state is **rehydrated on boot** for both forum threads and configured text channels. See [`CLAUDE.md`](./CLAUDE.md) for the full tour and repo-specific landmines.
 
 ---
 
@@ -156,13 +158,17 @@ docker compose logs -f      # follow logs
 
 ## 🎬 Your first session
 
-Once the bot is **running and invited** to your server:
+Once the bot is **running and invited** to your server, link a repo with `/link-repo owner/repo`, then choose either or both conversation modes:
 
-1. **Create a Discord Forum channel** for debug/support threads (a *Forum*, not a text channel).
-2. **Point the bot at it:** `/setup-forum #your-forum` (requires *Manage Server*).
-3. **Link a repo:** `/link-repo owner/repo` — the GitHub repo Jules will work in. *(It must already be connected in Jules.)*
-4. **Open a thread:** create a post in that forum describing your issue. The bot spins up a Jules session and streams live progress into a status message.
-5. **Gate the plan:** when Jules proposes a plan, use the **Approve** / **Reject** buttons (or `/approve`).
+**Forum mode**
+1. Create a Discord Forum channel for debug/support threads.
+2. Run `/setup-forum #your-forum` (requires *Manage Server*).
+3. Create a post describing an issue. Each post gets its own Jules session, live status message, and **Approve** / **Reject** plan controls.
+
+**Shared chatbot mode**
+1. Create or choose a normal Discord text channel.
+2. Run `/setup-chat #your-channel` (requires *Manage Server*).
+3. Talk normally in that channel. The first human message creates one shared Jules session; every later human message continues the same conversation. Plans and progress UI are suppressed so Jules responds like a regular chatbot.
 
 On startup the bot logs each server's readiness, so a missed step is visible — e.g.
 `[Setup] "My Server" not ready — still needs: repo (/link-repo)`.
@@ -240,7 +246,7 @@ tags:
 ## 🔒 Security & Access Control
 
 - **Secrets** (`DISCORD_TOKEN`, `JULES_API_KEY`) live only in `.env`, which is gitignored — never commit them. The same goes for your runtime `config.yaml`, `AGENTS.md`, and `SOUL.md`.
-- **Access** is gated by the `access_control` block (`allow_all`, `allowed_users`, `allowed_roles`), evaluated against commands, thread messages, **and** component interactions (Approve/Reject buttons, select menus). The thread creator can always use their own thread.
+- **Access** is gated by the `access_control` block (`allow_all`, `allowed_users`, `allowed_roles`), evaluated against commands, forum messages, text-channel chatbot messages, **and** component interactions. Forum threads inherit creator-role overrides; normal text channels evaluate role overrides for the current speaker.
 - Set `silent: true` to ignore unauthorized messages without replying.
 
 ---
@@ -249,7 +255,7 @@ tags:
 
 Ensure the following settings are enabled on your bot application page:
 1. **Intents**:
-   - `Message Content Intent` (Required to read forum posts and thread content)
+   - `Message Content Intent` (Required to read forum posts, threads, and configured text-channel messages)
 2. **Permissions**:
    - `Read Messages/View Channels`
    - `Send Messages`
@@ -288,7 +294,8 @@ Operational notes:
 
 | Command | Arguments | Permissions | Description |
 | :--- | :--- | :--- | :--- |
-| `/setup-forum` | `channel` (Forum) | `Manage Server` | Assigns the designated channel where Jules bot will spin up debug sessions. |
+| `/setup-forum` | `channel` (Forum) | `Manage Server` | Assigns the forum where each new post receives its own Jules session. |
+| `/setup-chat` | `channel` (Text) | `Manage Server` | Assigns a normal text channel that shares one conversational Jules session. |
 | `/link-repo` | `repository` (owner/repo) | `Manage Server` | Links a target GitHub repository to the server as the default codebase. |
 | `/approve` | — | Allowlisted users | Approves the pending Jules plan in the current thread (a slash-command alternative to the **Approve** button). |
 

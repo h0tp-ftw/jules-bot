@@ -1,7 +1,9 @@
 import { logger } from '../utils/logger.js'
-import { Client, ThreadChannel } from 'discord.js'
+import { Client, ThreadChannel, TextChannel } from 'discord.js'
 import { prisma, getEffectiveConfig } from '../../config.js'
 import { t } from '../../strings.js'
+
+type JulesDiscordChannel = ThreadChannel | TextChannel
 
 export class StreamManager {
   private buffers = new Map<string, string[]>()
@@ -16,7 +18,7 @@ export class StreamManager {
     })
     if (!session) return
 
-    const thread = (await this.client.channels.fetch(threadId)) as ThreadChannel
+    const thread = (await this.client.channels.fetch(threadId)) as JulesDiscordChannel
     if (!thread) return
 
     let statusMessageId = session.statusMessageId
@@ -49,7 +51,7 @@ export class StreamManager {
     this.timers.set(threadId, timer)
   }
 
-  private async flush(thread: ThreadChannel, statusMessageId: string) {
+  private async flush(thread: JulesDiscordChannel, statusMessageId: string) {
     this.timers.delete(thread.id)
     const buf = this.buffers.get(thread.id) ?? []
     const activeStep = this.activeSteps.get(thread.id)
@@ -111,7 +113,7 @@ export class StreamManager {
     if (!session || !session.statusMessageId) return
 
     try {
-      const thread = (await this.client.channels.fetch(threadId)) as ThreadChannel
+      const thread = (await this.client.channels.fetch(threadId)) as JulesDiscordChannel
       if (!thread) return
 
       const m = getEffectiveConfig(thread).messages.stream

@@ -70,6 +70,20 @@ test('role allowlist is ignored when no member is supplied', async () => {
   assert.equal((await hasPermission(null, userObj('x'), thread)).authorized, false)
 })
 
+test('normal text channels apply role overrides to the current speaker', async () => {
+  const id = `perm-chat-${n++}`
+  yamlConfig.channels = yamlConfig.channels || {}
+  yamlConfig.roles = yamlConfig.roles || {}
+  yamlConfig.channels[id] = { access_control: closed }
+  yamlConfig.roles.ChatSpeaker = { access_control: { allow_all: true } }
+
+  const channel = { id }
+  const result = await hasPermission(apiMember(['ChatSpeaker']), userObj('speaker'), channel)
+  assert.equal(result.authorized, true)
+
+  delete yamlConfig.roles.ChatSpeaker
+})
+
 test('the silent flag is reported on both authorized and denied results', async () => {
   const open = threadWithAccess({ ...closed, allow_all: true, silent: true })
   const denyT = threadWithAccess({ ...closed, silent: true })
