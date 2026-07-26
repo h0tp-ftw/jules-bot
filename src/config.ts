@@ -8,6 +8,7 @@ import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 import { PrismaClient } from '@prisma/client'
 import { execSync } from 'child_process'
 import { DEFAULT_MESSAGES, deepMergeMessages, type Messages } from './strings.js'
+import { validateUserConfig } from './lib/utils/configValidation.js'
 
 // Detect active profile from command line (--profile <name>) or BOT_PROFILE environment variable
 let profileName: string | undefined = process.env.BOT_PROFILE
@@ -77,6 +78,7 @@ try {
   if (fs.existsSync(userPath)) {
     const userContent = fs.readFileSync(userPath, 'utf8')
     userYaml = parse(userContent) || {}
+    validateUserConfig(userYaml, userPath)
   }
 
   yamlConfig = {
@@ -119,7 +121,8 @@ try {
     messages: deepMergeMessages({}, defaultYaml.messages || {}, userYaml.messages || {}),
   }
 } catch (err) {
-  logger.error('Failed to parse config files, using empty defaults:', err)
+  logger.error('Failed to load config files. Refusing to start with silent defaults:', err)
+  throw err
 }
 
 // Centralized user-facing strings: code defaults (src/strings.ts) overlaid with
