@@ -15,22 +15,14 @@ module.exports = {
       script: 'dist/index.js',
       exec_mode: 'fork',
       instances: 1,
-      // Automatically restart on crash. The in-code loginWithRetry() handles
-      // transient network blips without exiting; autorestart here is a safety
-      // net for anything that slips through.
-      autorestart: true,
-      // If the process dies within 10 s of starting it counts as a crash
-      // restart (rather than a deliberate shutdown).
-      min_uptime: '10s',
-      // After 15 consecutive crash-restarts pm2 stops retrying so a genuine
-      // fatal error (bad token, broken build) doesn't spin forever.
-      max_restarts: 15,
-      // Exponential backoff between restarts: starts at 100 ms, doubles each
-      // time up to the max_restarts cap.
-      exp_backoff_restart_delay: 100,
-      // Restart if memory creeps past this — tune for your host (a 512MB Pi
-      // may want this lower, a roomier box can raise it).
-      max_memory_restart: '400M',
+      // Leave the process stopped after a fatal exit. PM2 keeps stdout/stderr
+      // logs, so the failure remains inspectable instead of entering a restart
+      // loop that can exhaust Discord gateway sessions.
+      autorestart: false,
+      // Prefix PM2 log lines with timestamps so the first failure can be tied
+      // to Discord/Jules activity without relying on surrounding daemon logs.
+      time: true,
+      merge_logs: true,
       // Give the SIGINT/SIGTERM graceful-shutdown handler time to close the
       // Discord gateway and flush SQLite before pm2 escalates to SIGKILL.
       kill_timeout: 5000,
