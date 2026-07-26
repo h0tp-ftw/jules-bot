@@ -60,11 +60,15 @@ import { hasPermission } from './lib/utils/permissions.js'
 
 // Register events
 client.on(Events.ThreadCreate, (thread) => {
-  threadCreateEvt.execute(thread, streamManager)
+  void threadCreateEvt.execute(thread, streamManager).catch((err) => {
+    logger.error(`[Event: ThreadCreate] Unhandled failure for thread ${thread.id}:`, err)
+  })
 })
 
 client.on(Events.MessageCreate, (message) => {
-  messageCreateEvt.execute(message, streamManager)
+  void messageCreateEvt.execute(message, streamManager).catch((err) => {
+    logger.error(`[Event: MessageCreate] Unhandled failure for message ${message.id}:`, err)
+  })
 })
 
 client.on(Events.InteractionCreate, async (interaction) => {

@@ -54,7 +54,15 @@ export default {
       (thread.parentId === forumChannelId || channelsConfig[thread.parentId] !== undefined)
 
     if (!isConfiguredChannel) {
-      // Thread is not in a designated forum channel
+      if (!forumChannelId) {
+        logger.warn(
+          `[Event: ThreadCreate] Ignoring thread ${thread.id}: guild ${thread.guildId} has no configured forum channel. Run /setup-forum or restore its guild mapping in config.yaml.`,
+        )
+      } else {
+        logger.debug(
+          `[Event: ThreadCreate] Ignoring thread ${thread.id}: parent ${thread.parentId} does not match configured forum ${forumChannelId}.`,
+        )
+      }
       return
     }
 
