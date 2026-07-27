@@ -4,6 +4,7 @@ import type { Message } from 'discord.js'
 import {
   completeConversationTurn,
   enqueueConversationMessage,
+  getActiveConversationQueueSnapshots,
   getActiveConversationTurn,
   getConversationQueueDepth,
   markConversationTurnDispatched,
@@ -51,6 +52,35 @@ test('serializes turns until the active Jules session completes', async () => {
 
   assert.deepEqual(dispatched, ['message-1', 'message-2'])
   assert.equal(getConversationQueueDepth(channelId), 0)
+})
+
+test('snapshots the active turn and pending queue depth for shutdown notices', async () => {
+  const channelId = 'queue-shutdown-snapshot'
+  let firstTurnId = ''
+
+  const first = enqueueConversationMessage(channelId, fakeMessage('message-1'), async (turn) => {
+    firstTurnId = turn.id
+    markConversationTurnDispatched(channelId, turn.id)
+    return true
+  })
+  const second = enqueueConversationMessage(channelId, fakeMessage('message-2'), async () => false)
+
+  await nextTick()
+  const snapshot = getActiveConversationQueueSnapshots().find(
+    (candidate) => candidate.turn.channelId === channelId,
+  )
+  assert.equal(snapshot?.turn.message.id, 'message-1')
+  assert.equal(snapshot?.pendingCount, 1)
+  assert.equal(snapshot?.depth, 2)
+
+  completeConversationTurn(channelId, 'session_completed', firstTurnId)
+  await Promise.all([first, second])
+  assert.equal(
+    getActiveConversationQueueSnapshots().some(
+      (candidate) => candidate.turn.channelId === channelId,
+    ),
+    false,
+  )
 })
 
 test('runs the queued-reaction preparation for pending turns immediately', async () => {

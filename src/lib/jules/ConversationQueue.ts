@@ -18,6 +18,12 @@ export interface ConversationTurn {
   completionReason?: ConversationTurnCompletionReason
 }
 
+export interface ActiveConversationQueueSnapshot {
+  turn: ConversationTurn
+  pendingCount: number
+  depth: number
+}
+
 type DispatchConversationTurn = (turn: ConversationTurn) => Promise<boolean>
 
 type QueueEntry = {
@@ -149,6 +155,19 @@ export function enqueueConversationMessage(
 
 export function getActiveConversationTurn(channelId: string): ConversationTurn | undefined {
   return channelQueues.get(channelId)?.active?.turn
+}
+
+export function getActiveConversationQueueSnapshots(): ActiveConversationQueueSnapshot[] {
+  const snapshots: ActiveConversationQueueSnapshot[] = []
+  for (const state of channelQueues.values()) {
+    if (!state.active) continue
+    snapshots.push({
+      turn: state.active.turn,
+      pendingCount: state.pending.length,
+      depth: state.pending.length + 1,
+    })
+  }
+  return snapshots
 }
 
 export function getConversationQueueDepth(channelId: string): number {

@@ -35,6 +35,14 @@ test('nudge notice reports the configured delay', () => {
   )
 })
 
+test('shutdown queue notice includes the pending-message summary', () => {
+  const pending = t(DEFAULT_MESSAGES.session.shutdown_queue_pending_many, { count: 2 })
+  assert.equal(
+    t(DEFAULT_MESSAGES.session.shutdown_queue_active, { pending }),
+    '🛑 **The bot is stopping while this message is active.**\nJules may continue working, but Discord delivery is paused until the bot returns. Please resend this message only if no reply appears after restart.\n⚠️ **2 later queued messages are held only in memory and may need to be resent.**',
+  )
+})
+
 test('deepMergeMessages overrides a single leaf and keeps siblings', () => {
   const merged = deepMergeMessages(DEFAULT_MESSAGES, {
     errors: { session_not_found: 'gone' },

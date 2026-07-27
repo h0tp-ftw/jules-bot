@@ -43,6 +43,12 @@ export const DEFAULT_MESSAGES = {
     message_delivery_failed:
       '❌ **Failed to deliver message to Jules. Please make sure the session is still active.**',
     nudge_sent: '🔔 **Jules had not replied after {delay}, so I sent a reminder.**',
+    shutdown_queue_active:
+      '🛑 **The bot is stopping while this message is active.**\nJules may continue working, but Discord delivery is paused until the bot returns. Please resend this message only if no reply appears after restart.{pending}',
+    shutdown_queue_pending_one:
+      '\n⚠️ **1 later queued message is held only in memory and may need to be resent.**',
+    shutdown_queue_pending_many:
+      '\n⚠️ **{count} later queued messages are held only in memory and may need to be resent.**',
     completion_fallback:
       '✅ **Jules finished the run but did not send a final conversational reply.**\nNo pull request or merge was confirmed by the Jules result.',
     completion_fallback_progress:

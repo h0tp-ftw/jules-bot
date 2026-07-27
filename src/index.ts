@@ -16,6 +16,7 @@ import {
   yamlConfig,
   MESSAGES,
   YAML_GUILDS,
+  getEffectiveConfig,
 } from './config.js'
 import { t } from './strings.js'
 import { formatErrorForDiscord } from './lib/utils/errors.js'
@@ -30,6 +31,11 @@ import { StreamManager } from './lib/streams/StreamManager.js'
 import { initPreWarmedPools } from './lib/jules/PreWarmedManager.js'
 import { rehydrateActiveStreams } from './lib/jules/orchestrator.js'
 import { startHealthServer, stopHealthServer } from './lib/health.js'
+import {
+  getActiveConversationQueueSnapshots,
+  type ActiveConversationQueueSnapshot,
+} from './lib/jules/ConversationQueue.js'
+import { splitMessage } from './lib/utils/messageSplitter.js'
 
 if (!DISCORD_TOKEN || DISCORD_TOKEN === 'YOUR_DISCORD_TOKEN') {
   logger.error('Error: DISCORD_TOKEN is not configured in .env file.')
@@ -245,11 +251,79 @@ async function start() {
 // Gracefully tear down on shutdown signals (pm2 reload/stop, Ctrl+C) so pending
 // status-message edits are dropped cleanly and the gateway/DB connections close
 // instead of being hard-killed mid-write.
+const SHUTDOWN_NOTICE_TIMEOUT_MS = 2500
+
+function getShutdownPendingText(snapshot: ActiveConversationQueueSnapshot): string {
+  const cfg = getEffectiveConfig(snapshot.turn.message.channel, snapshot.turn.message.member)
+  if (snapshot.pendingCount === 0) return ''
+  if (snapshot.pendingCount === 1) return cfg.messages.session.shutdown_queue_pending_one
+  return t(cfg.messages.session.shutdown_queue_pending_many, { count: snapshot.pendingCount })
+}
+
+async function sendShutdownQueueNotice(snapshot: ActiveConversationQueueSnapshot): Promise<void> {
+  const { message } = snapshot.turn
+  const cfg = getEffectiveConfig(message.channel, message.member)
+  const content = t(cfg.messages.session.shutdown_queue_active, {
+    pending: getShutdownPendingText(snapshot),
+  })
+  const chunks = splitMessage(content, 2000)
+  if (chunks.length === 0) return
+
+  const sendInChannel = async (chunk: string) => {
+    if (!('send' in message.channel) || typeof message.channel.send !== 'function') {
+      throw new Error(`Channel ${message.channel.id} is not sendable`)
+    }
+    await message.channel.send(chunk)
+  }
+
+  try {
+    await message.reply({ content: chunks[0], allowedMentions: { repliedUser: false } })
+  } catch (err) {
+    logger.warn(
+      `[Shutdown] Could not reply to active queue message ${message.id}; sending in channel instead:`,
+      err,
+    )
+    await sendInChannel(chunks[0])
+  }
+
+  for (const chunk of chunks.slice(1)) {
+    await sendInChannel(chunk)
+  }
+}
+
+async function notifyActiveConversationQueues(): Promise<void> {
+  if (!client.isReady()) return
+  const snapshots = getActiveConversationQueueSnapshots()
+  if (snapshots.length === 0) return
+
+  logger.info(`[Shutdown] Notifying ${snapshots.length} active conversation queue(s)...`)
+  let timeout: NodeJS.Timeout | undefined
+  let timedOut = false
+  await Promise.race([
+    Promise.allSettled(snapshots.map(sendShutdownQueueNotice)),
+    new Promise<void>((resolve) => {
+      timeout = setTimeout(() => {
+        timedOut = true
+        resolve()
+      }, SHUTDOWN_NOTICE_TIMEOUT_MS)
+    }),
+  ])
+  if (timeout) clearTimeout(timeout)
+  if (timedOut) {
+    logger.warn('[Shutdown] Queue notices exceeded the shutdown time budget; continuing cleanup.')
+  }
+}
+
 let shuttingDown = false
 async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return
   shuttingDown = true
   logger.info(`[Shutdown] ${signal} received — cleaning up...`)
+  try {
+    await notifyActiveConversationQueues()
+  } catch (err) {
+    logger.error('[Shutdown] active queue notification failed:', err)
+  }
   try {
     stopHealthServer()
   } catch (err) {
