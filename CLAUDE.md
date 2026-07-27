@@ -93,7 +93,7 @@ Key modules:
   `rehydrateActiveStreams`.
 - `src/lib/jules/ConversationQueue.ts` — process-local per-channel turn queue. Tracks enqueue, dispatch,
   first-response, one-shot nudge, and terminal timestamps. Nudge timers cancel on an agent reply, visible
-  plan, terminal activity, or queue cleanup.
+  plan, terminal activity, or queue cleanup; successful nudges can post a configurable Discord notice.
 - `src/lib/jules/JulesClient.ts` — thin `@google/jules-sdk` wrapper. Builds the full prompt =
   `diagnostic_prompt` + persona + soul + bootstrap + user issue. `createSession` / `getSession` / `getConnectedRepos`.
 - `src/lib/jules/PreWarmedManager.ts` — pre-warmed session pools to hide clone/queue latency

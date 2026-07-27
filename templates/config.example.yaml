@@ -45,11 +45,16 @@ jules_reactions:
 
 # Send Jules one reminder when a dispatched Discord message has not received a
 # user-facing response within this many minutes. The timer is cancelled as soon
-# as Jules replies or presents a plan. Customize the reminder text through
-# messages.prompts.response_nudge.
+# as Jules replies or presents a plan. By default, a silent Discord reply also
+# confirms that the reminder was sent.
 nudge:
   enabled: false
   after_minutes: 5
+  notify_discord: true
+  # Optional direct text overrides. When omitted, the defaults come from
+  # messages.prompts.response_nudge and messages.session.nudge_sent.
+  # message: "Please respond directly to the most recent Discord message now."
+  # discord_message: "🔔 **No reply after {delay}, so I reminded Jules.**"
 
 # Force interactive repository and branch selection on thread creation.
 # If true, shows an embed with select menus allowing developers to pick a connected repo and branch.

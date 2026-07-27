@@ -273,6 +273,12 @@ export const NUDGE = {
   enabled: typeof nudge.enabled === 'boolean' ? nudge.enabled : false,
   after_minutes:
     typeof nudge.after_minutes === 'number' && nudge.after_minutes > 0 ? nudge.after_minutes : 5,
+  notify_discord: typeof nudge.notify_discord === 'boolean' ? nudge.notify_discord : true,
+  message: typeof nudge.message === 'string' && nudge.message.trim() ? nudge.message : undefined,
+  discord_message:
+    typeof nudge.discord_message === 'string' && nudge.discord_message.trim()
+      ? nudge.discord_message
+      : undefined,
 }
 
 // Load Agent Personality Markdown
@@ -420,6 +426,9 @@ export function getEffectiveConfig(
   nudge: {
     enabled: boolean
     after_minutes: number
+    notify_discord: boolean
+    message?: string
+    discord_message?: string
   }
   pre_warmed_sessions: {
     enabled: boolean
@@ -595,6 +604,19 @@ export function getEffectiveConfig(
       typeof rawResolvedNudge.after_minutes === 'number' && rawResolvedNudge.after_minutes > 0
         ? rawResolvedNudge.after_minutes
         : NUDGE.after_minutes,
+    notify_discord:
+      typeof rawResolvedNudge.notify_discord === 'boolean'
+        ? rawResolvedNudge.notify_discord
+        : NUDGE.notify_discord,
+    message:
+      typeof rawResolvedNudge.message === 'string' && rawResolvedNudge.message.trim()
+        ? rawResolvedNudge.message
+        : undefined,
+    discord_message:
+      typeof rawResolvedNudge.discord_message === 'string' &&
+      rawResolvedNudge.discord_message.trim()
+        ? rawResolvedNudge.discord_message
+        : undefined,
   }
 
   const resolvedPreWarmed = {

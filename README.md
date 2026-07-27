@@ -211,13 +211,16 @@ reactions:
 ```
 
 ### 4. Response Nudges
-Optionally send Jules one reminder when a dispatched message has not received a user-facing reply within the configured interval. The timer is cancelled by an agent reply or visible plan:
+Optionally send Jules one reminder when a dispatched message has not received a user-facing reply within the configured interval. The timer is cancelled by an agent reply or visible plan. After a successful nudge, the bot silently replies to the original Discord message so users can see that the reminder occurred:
 ```yaml
 nudge:
   enabled: true
   after_minutes: 5
+  notify_discord: true
+  message: "Please respond directly to the most recent Discord message now."
+  discord_message: "🔔 **No reply after {delay}, so I reminded Jules.**"
 ```
-The reminder text can be overridden through `messages.prompts.response_nudge` globally or within a channel, tag, thread, or role override.
+Both text fields are optional. Without them, the defaults come from `messages.prompts.response_nudge` and `messages.session.nudge_sent`. All nudge settings can also be overridden per channel, tag, thread, or role.
 
 ### 5. Interactive Selection
 Toggle interactive repository and branch selection on thread creation:

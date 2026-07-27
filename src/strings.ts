@@ -42,6 +42,7 @@ export const DEFAULT_MESSAGES = {
     prewarmed_ready: '🚀 **Ready session found! Processing your issue...**',
     message_delivery_failed:
       '❌ **Failed to deliver message to Jules. Please make sure the session is still active.**',
+    nudge_sent: '🔔 **Jules had not replied after {delay}, so I sent a reminder.**',
     completion_fallback:
       '✅ **Jules finished the run but did not send a final conversational reply.**\nNo pull request or merge was confirmed by the Jules result.',
     completion_fallback_progress:

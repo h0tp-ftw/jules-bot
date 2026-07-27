@@ -28,6 +28,13 @@ test('t skips null/undefined values', () => {
   assert.equal(t('a {x} b', { x: undefined }), 'a {x} b')
 })
 
+test('nudge notice reports the configured delay', () => {
+  assert.equal(
+    t(DEFAULT_MESSAGES.session.nudge_sent, { delay: '5 minutes' }),
+    '🔔 **Jules had not replied after 5 minutes, so I sent a reminder.**',
+  )
+})
+
 test('deepMergeMessages overrides a single leaf and keeps siblings', () => {
   const merged = deepMergeMessages(DEFAULT_MESSAGES, {
     errors: { session_not_found: 'gone' },

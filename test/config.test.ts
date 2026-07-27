@@ -103,11 +103,24 @@ test('jules_reactions defaults off and resolves from thread and role overrides',
 test('nudge defaults off and merges thread and role settings', () => {
   assert.deepEqual(getEffectiveConfig({ id: 'nudge-none' }).nudge, NUDGE)
 
-  chan('nudge-thread', { nudge: { enabled: true, after_minutes: 3 } })
-  role('NudgeRole', { nudge: { after_minutes: 1 } })
+  chan('nudge-thread', {
+    nudge: {
+      enabled: true,
+      after_minutes: 3,
+      notify_discord: false,
+      message: 'thread prompt',
+      discord_message: 'thread notice',
+    },
+  })
+  role('NudgeRole', {
+    nudge: { after_minutes: 1, notify_discord: true, message: 'role prompt' },
+  })
   assert.deepEqual(getEffectiveConfig({ id: 'nudge-thread' }, memberWithRole('NudgeRole')).nudge, {
     enabled: true,
     after_minutes: 1,
+    notify_discord: true,
+    message: 'role prompt',
+    discord_message: 'thread notice',
   })
 })
 

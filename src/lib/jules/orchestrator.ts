@@ -376,6 +376,10 @@ export async function getFreshSessionInfo(session: any): Promise<any> {
   return await session.info()
 }
 
+function formatNudgeDelay(minutes: number): string {
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`
+}
+
 export function scheduleNudgeForConversationTurn(
   channel: JulesDiscordChannel,
   turnId: string,
@@ -387,6 +391,10 @@ export function scheduleNudgeForConversationTurn(
   if (!channelConfig.nudge.enabled) return false
 
   const delayMs = channelConfig.nudge.after_minutes * 60 * 1000
+  const nudgePrompt = channelConfig.nudge.message || channelConfig.messages.prompts.response_nudge
+  const discordNotice =
+    channelConfig.nudge.discord_message || channelConfig.messages.session.nudge_sent
+
   return scheduleConversationNudge(
     channel.id,
     delayMs,
@@ -394,7 +402,42 @@ export function scheduleNudgeForConversationTurn(
       logger.info(
         `[Nudge] Sending response reminder for Discord message ${turn.message.id} to Jules session ${session.id}`,
       )
-      await session.send(channelConfig.messages.prompts.response_nudge)
+      await session.send(nudgePrompt)
+
+      if (!channelConfig.nudge.notify_discord) return
+
+      const content = t(discordNotice, {
+        delay: formatNudgeDelay(channelConfig.nudge.after_minutes),
+      })
+      const chunks = splitMessage(content, 2000)
+      if (chunks.length === 0) return
+
+      try {
+        await turn.message.reply({
+          content: chunks[0],
+          allowedMentions: { repliedUser: false },
+        })
+      } catch (err) {
+        logger.warn(
+          `[Nudge] Could not reply to Discord message ${turn.message.id}; sending notice in channel instead:`,
+          err,
+        )
+        try {
+          await channel.send(chunks[0])
+        } catch (sendErr) {
+          logger.warn(`[Nudge] Could not post the Discord nudge notice in ${channel.id}:`, sendErr)
+          return
+        }
+      }
+
+      for (const chunk of chunks.slice(1)) {
+        try {
+          await channel.send(chunk)
+        } catch (err) {
+          logger.warn(`[Nudge] Could not post a Discord nudge notice continuation:`, err)
+          break
+        }
+      }
     },
     turnId,
   )
