@@ -23,8 +23,9 @@ Stack: **TypeScript (ESM) · discord.js v14 · @google/jules-sdk · Prisma v7 + 
 - `npm run db:migrate` — `prisma migrate dev` (run after editing `prisma/schema.prisma`).
 - `npm run db:generate` — regenerate the Prisma client.
 - `npm run lint` / `npm run format` — ESLint + Prettier (CI-gated; `format:check` to verify without writing).
-- `npm test` — `node:test` suite over the pure utils, `strings.ts`, the `getEffectiveConfig` precedence
-  resolver, the `hasPermission` allowlist, and the level-gated `logger` (`test/*.test.ts`). The
+- `npm test` — `node:test` suite over the pure utils, conversation turn queue, `strings.ts`, the
+  `getEffectiveConfig` precedence resolver, the `hasPermission` allowlist, and the level-gated `logger`
+  (`test/*.test.ts`). The
   config/permissions suites import `config.ts`; `test/_ensureDb.ts` (imported *before* `config.js`) keeps them
   DB-free by pre-creating an empty SQLite file so no provisioning runs. No integration coverage of the
   Discord/Jules round-trip, so also verify with `npm run build` + a manual `npm run dev`.
@@ -79,15 +80,17 @@ Key modules:
   Has process-level `unhandledRejection` / `uncaughtException` guards.
 - `src/events/threadCreate.ts` — gate on the configured forum channel; optional interactive repo/branch
   pickers; otherwise `initializeJulesSession`.
-- `src/events/messageCreate.ts` — forward forum-thread messages to their mapped session; in a configured
-  normal text channel, serialize first-message initialization and then forward every human message to one
-  shared session. Rehydrates inactive streams and honors `ignore_prefix`.
+- `src/events/messageCreate.ts` — queue forum-thread and configured text-channel messages per channel, then
+  forward one turn at a time to the mapped/shared session only after the previous turn terminates. Rehydrates
+  inactive streams, pins replies to the active Discord message, and honors `ignore_prefix`.
 - `src/events/interactionCreate.ts` — buttons (`plan-approve` / `plan-reject`), select menus
   (`select-repo` / `select-branch`), and branch search/custom modals. Note the Discord **25-option** menu cap handled here.
 - `src/lib/jules/orchestrator.ts` — **core.** `runJulesStream` (persisted delivery cursor, reconnect
   up to 20×, typing indicators, reactions, plan embeds, plan-feedback flow, completion-result fallback),
   `initializeJulesSession` (creation + pre-warmed consumption + welcome-plan handling),
   `rehydrateActiveStreams`.
+- `src/lib/jules/ConversationQueue.ts` — process-local per-channel turn queue. Tracks enqueue, dispatch,
+  first-response, and terminal timestamps; the response timestamp is the hook for future timed nudges.
 - `src/lib/jules/JulesClient.ts` — thin `@google/jules-sdk` wrapper. Builds the full prompt =
   `diagnostic_prompt` + persona + soul + bootstrap + user issue. `createSession` / `getSession` / `getConnectedRepos`.
 - `src/lib/jules/PreWarmedManager.ts` — pre-warmed session pools to hide clone/queue latency

@@ -13,8 +13,11 @@ import { StreamManager } from '../lib/streams/StreamManager.js'
 import { formatAttachmentMetadata } from '../lib/utils/attachments.js'
 import { t } from '../strings.js'
 import { hasPermission } from '../lib/utils/permissions.js'
-
-const chatChannelQueues = new Map<string, Promise<void>>()
+import {
+  enqueueConversationMessage,
+  markConversationTurnDispatched,
+  type ConversationTurn,
+} from '../lib/jules/ConversationQueue.js'
 
 function shouldIgnoreMessage(
   message: Message,
@@ -35,8 +38,9 @@ async function sendToExistingSession(
   sessionRecord: { julesSessionId: string },
   streamManager: StreamManager,
   chatbotMode: boolean,
+  turnId: string,
   dbDefaultRepo?: string,
-) {
+): Promise<boolean> {
   const channelConfig = getEffectiveConfig(channel, message.member, dbDefaultRepo)
 
   const { authorized, silent } = await hasPermission(message.member, message.author, channel)
@@ -44,7 +48,8 @@ async function sendToExistingSession(
     if (!silent) {
       await message.reply(channelConfig.messages.errors.no_permission_session)
     }
-    return
+    await updateReaction(message, 'failed')
+    return false
   }
 
   let messageContent = message.content || ''
@@ -59,7 +64,10 @@ async function sendToExistingSession(
     messageContent += formatAttachmentMetadata(attachmentList, channelConfig.messages.attachments)
   }
 
-  if (!messageContent) return
+  if (!messageContent) {
+    await updateReaction(message, 'failed')
+    return false
+  }
 
   logger.debug(
     `[MessageCreate] Event triggered for ${chatbotMode ? 'chatbot channel' : 'thread'} ${channel.id}. Content length: ${messageContent.length}`,
@@ -111,13 +119,17 @@ async function sendToExistingSession(
     logger.debug(
       `[MessageCreate] Sending message to Jules session ${sessionRecord.julesSessionId}...`,
     )
+    markConversationTurnDispatched(channel.id, turnId)
     await session.send(promptWithMetadata)
     logger.debug(
       `[MessageCreate] Message sent successfully to Jules session ${sessionRecord.julesSessionId}`,
     )
+    return true
   } catch (err) {
     logger.error(`Failed to send message to Jules for channel ${channel.id}:`, err)
+    await updateReaction(message, 'failed').catch(() => {})
     await message.reply(channelConfig.messages.session.message_delivery_failed)
+    return false
   }
 }
 
@@ -125,34 +137,65 @@ async function processThreadMessage(
   message: Message,
   thread: ThreadChannel,
   streamManager: StreamManager,
-) {
-  if (shouldIgnoreMessage(message, thread)) return
-
+  turn: ConversationTurn,
+): Promise<boolean> {
   const sessionRecord = await prisma.debugSession.findUnique({
     where: { threadId: thread.id },
   })
-  if (!sessionRecord) return
+  if (!sessionRecord) {
+    await updateReaction(message, 'failed')
+    return false
+  }
 
-  await sendToExistingSession(message, thread, sessionRecord, streamManager, false)
+  return await sendToExistingSession(message, thread, sessionRecord, streamManager, false, turn.id)
+}
+
+type ChatRoutingContext = {
+  dbDefaultRepo?: string
+}
+
+async function resolveChatRoutingContext(
+  message: Message,
+  channel: TextChannel,
+): Promise<ChatRoutingContext | null> {
+  if (!message.guildId) return null
+
+  const yamlGuild = YAML_GUILDS[message.guildId]
+  const dbConfig = await prisma.guildConfig.findUnique({
+    where: { guildId: message.guildId },
+  })
+  const chatChannelId = yamlGuild?.chat_channel_id || dbConfig?.chatChannelId
+  if (!chatChannelId || channel.id !== chatChannelId) return null
+
+  const dbDefaultRepo = dbConfig?.defaultRepo || undefined
+  if (shouldIgnoreMessage(message, channel, dbDefaultRepo)) return null
+  if (!message.content && message.attachments.size === 0) return null
+
+  return { dbDefaultRepo }
 }
 
 async function processChatChannelMessage(
   message: Message,
   channel: TextChannel,
   streamManager: StreamManager,
+  turn: ConversationTurn,
   dbDefaultRepo?: string,
-) {
-  if (shouldIgnoreMessage(message, channel, dbDefaultRepo)) return
-  if (!message.content && message.attachments.size === 0) return
-
+): Promise<boolean> {
   const channelConfig = getEffectiveConfig(channel, message.member, dbDefaultRepo)
   const sessionRecord = await prisma.debugSession.findUnique({
     where: { threadId: channel.id },
   })
 
   if (sessionRecord) {
-    await sendToExistingSession(message, channel, sessionRecord, streamManager, true, dbDefaultRepo)
-    return
+    return await sendToExistingSession(
+      message,
+      channel,
+      sessionRecord,
+      streamManager,
+      true,
+      turn.id,
+      dbDefaultRepo,
+    )
   }
 
   const { authorized, silent } = await hasPermission(message.member, message.author, channel)
@@ -160,45 +203,28 @@ async function processChatChannelMessage(
     if (!silent) {
       await message.reply(channelConfig.messages.errors.no_permission_session)
     }
-    return
+    await updateReaction(message, 'failed')
+    return false
   }
 
   const repoName = channelConfig.default_repo
   if (!repoName) {
     await message.reply(channelConfig.messages.setup.no_default_repo)
-    return
+    await updateReaction(message, 'failed')
+    return false
   }
 
   const branchName = channelConfig.default_branch || 'main'
   try {
-    await updateReaction(message, 'queued')
     channel.sendTyping().catch(() => {})
+    markConversationTurnDispatched(channel.id, turn.id)
     await initializeChatSession(message, repoName, branchName, streamManager)
+    return true
   } catch (err) {
     logger.error(`Failed to start chatbot session for channel ${channel.id}:`, err)
     await updateReaction(message, 'failed').catch(() => {})
     await message.reply(channelConfig.messages.session.start_failed)
-  }
-}
-
-async function enqueueChatChannelMessage(
-  message: Message,
-  channel: TextChannel,
-  streamManager: StreamManager,
-  dbDefaultRepo?: string,
-) {
-  const previous = chatChannelQueues.get(channel.id) || Promise.resolve()
-  const current = previous
-    .catch(() => {})
-    .then(() => processChatChannelMessage(message, channel, streamManager, dbDefaultRepo))
-
-  chatChannelQueues.set(channel.id, current)
-  try {
-    await current
-  } finally {
-    if (chatChannelQueues.get(channel.id) === current) {
-      chatChannelQueues.delete(channel.id)
-    }
+    return false
   }
 }
 
@@ -208,24 +234,39 @@ export default {
     if (message.author.bot) return
 
     if (message.channel.isThread()) {
-      await processThreadMessage(message, message.channel as ThreadChannel, streamManager)
+      const thread = message.channel as ThreadChannel
+      if (message.id === thread.id) return
+      if (shouldIgnoreMessage(message, thread)) return
+      await enqueueConversationMessage(
+        thread.id,
+        message,
+        (turn) => processThreadMessage(message, thread, streamManager, turn),
+        () => updateReaction(message, 'queued'),
+      )
       return
     }
 
     if (!message.guildId || message.channel.type !== ChannelType.GuildText) return
 
-    const yamlGuild = YAML_GUILDS[message.guildId]
-    const dbConfig = await prisma.guildConfig.findUnique({
-      where: { guildId: message.guildId },
-    })
-    const chatChannelId = yamlGuild?.chat_channel_id || dbConfig?.chatChannelId
-    if (!chatChannelId || message.channel.id !== chatChannelId) return
-
-    await enqueueChatChannelMessage(
+    const channel = message.channel as TextChannel
+    const routing = resolveChatRoutingContext(message, channel)
+    await enqueueConversationMessage(
+      channel.id,
       message,
-      message.channel as TextChannel,
-      streamManager,
-      dbConfig?.defaultRepo || undefined,
+      async (turn) => {
+        const context = await routing
+        if (!context) return false
+        return await processChatChannelMessage(
+          message,
+          channel,
+          streamManager,
+          turn,
+          context.dbDefaultRepo,
+        )
+      },
+      async () => {
+        if (await routing) await updateReaction(message, 'queued')
+      },
     )
   },
 }

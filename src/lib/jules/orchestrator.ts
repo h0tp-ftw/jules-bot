@@ -22,9 +22,18 @@ import { formatAttachmentMetadata } from '../utils/attachments.js'
 import { reactionStageForState } from '../utils/sessionState.js'
 import { formatErrorForDiscord } from '../utils/errors.js'
 import {
+  completeConversationTurn,
+  enqueueConversationMessage,
+  getActiveConversationTurn,
+  markConversationTurnDispatched,
+  markConversationTurnResponded,
+  type ConversationTurnCompletionReason,
+} from './ConversationQueue.js'
+import {
   applyActivityToTurnState,
   deriveTurnResponseState,
   formatCompletionFallback,
+  isDiscordUserMessageActivity,
   type TurnResponseState,
 } from '../utils/sessionOutcome.js'
 
@@ -469,12 +478,27 @@ export async function runJulesStream(
     retryDelay = 5000
   }
 
-  // Cache the "last human message" used as the reaction/reply target. Fetching it
-  // hits the Discord REST API, so fetch once and only refresh when a new user
-  // message arrives (userMessaged) instead of re-fetching on every activity.
+  // Keep the response target pinned to the queue turn that produced the current
+  // Jules activities. Without this, several rapid Discord messages make a
+  // getLastHumanMessage() lookup attach the first reply to the newest message.
+  let currentQueuedTurnId: string | undefined
+  let currentQueuedTarget: Message | null = null
   let cachedTarget: Message | null = null
   let targetFetched = false
+
+  const releaseActiveQueuedTurn = (reason: ConversationTurnCompletionReason) => {
+    const activeTurn = getActiveConversationTurn(thread.id)
+    if (activeTurn) completeConversationTurn(thread.id, reason, activeTurn.id)
+  }
+
   const getTarget = async (forceRefresh = false): Promise<Message | null> => {
+    const activeTurn = getActiveConversationTurn(thread.id)
+    if (currentQueuedTurnId && activeTurn?.id === currentQueuedTurnId) {
+      currentQueuedTarget = activeTurn.message
+    }
+    if (currentQueuedTarget) return currentQueuedTarget
+    if (!currentQueuedTurnId && activeTurn) return activeTurn.message
+
     if (forceRefresh || !targetFetched) {
       const fetched = await getLastHumanMessage(thread)
       if (fetched) {
@@ -491,6 +515,7 @@ export async function runJulesStream(
       if (thread.isThread() && thread.archived) {
         logger.debug(`[runJulesStream] Thread ${thread.id} is archived. Exiting stream handler.`)
         stopTyping()
+        releaseActiveQueuedTurn('stream_ended')
         teardownStreamState(thread.id, sessionId)
         return
       }
@@ -505,6 +530,7 @@ export async function runJulesStream(
           `Session ${sessionId} not found or deleted on backend. Exiting stream handler.`,
         )
         stopTyping()
+        releaseActiveQueuedTurn('stream_ended')
         teardownStreamState(thread.id, sessionId)
         return
       }
@@ -512,6 +538,7 @@ export async function runJulesStream(
       if (info && info.state === 'failed') {
         logger.debug(`Session ${sessionId} is failed. Exiting stream handler.`)
         stopTyping()
+        releaseActiveQueuedTurn('session_failed')
         teardownStreamState(thread.id, sessionId)
         return
       }
@@ -535,6 +562,7 @@ export async function runJulesStream(
         if (queuedWaitMs >= maxQueuedWaitMs) {
           logger.error(`Session ${sessionId} stuck in queued state for too long. Aborting.`)
           await thread.send(getEffectiveConfig(thread).messages.session.queued_timeout)
+          releaseActiveQueuedTurn('stream_ended')
           teardownStreamState(thread.id, sessionId)
           stopTyping()
           return
@@ -592,6 +620,10 @@ export async function runJulesStream(
 
         const type = activity.type
         const typeStr = type as string
+        let queuedTurnRespondedId: string | undefined
+        let queuedTurnCompletion:
+          | { reason: ConversationTurnCompletionReason; turnId: string }
+          | undefined
 
         switch (type) {
           case 'planGenerated': {
@@ -744,6 +776,7 @@ export async function runJulesStream(
                 await updateReaction(target, 'responded')
               }
             }
+            if (currentQueuedTurnId) queuedTurnRespondedId = currentQueuedTurnId
             break
           }
 
@@ -784,6 +817,13 @@ export async function runJulesStream(
               turnState = { awaitingAgentReply: false }
             }
 
+            if (currentQueuedTurnId) {
+              queuedTurnCompletion = {
+                reason: 'session_completed',
+                turnId: currentQueuedTurnId,
+              }
+            }
+
             autoRejectedSessions.delete(sessionId)
             stopTyping()
             break
@@ -796,6 +836,11 @@ export async function runJulesStream(
             const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
             await streamManager.finalizeSession(thread.id, false, reason)
             await markActivityProcessed(activity)
+            if (currentQueuedTurnId) {
+              completeConversationTurn(thread.id, 'session_failed', currentQueuedTurnId)
+            } else {
+              releaseActiveQueuedTurn('session_failed')
+            }
             teardownStreamState(thread.id, sessionId)
             stopTyping()
             return
@@ -803,6 +848,13 @@ export async function runJulesStream(
 
           case 'userMessaged': {
             logger.debug(`[runJulesStream] userMessaged for ${sessionId}`)
+            if (isDiscordUserMessageActivity(activity)) {
+              const activeTurn = getActiveConversationTurn(thread.id)
+              currentQueuedTurnId = activeTurn?.id
+              currentQueuedTarget = activeTurn?.message || null
+              cachedTarget = currentQueuedTarget
+              targetFetched = currentQueuedTarget !== null
+            }
             // A new human message arrived — refresh the cached reaction/reply target.
             await getTarget(true)
             // Typing indicators handled below.
@@ -843,6 +895,16 @@ export async function runJulesStream(
         // it succeeds. A failed send therefore remains eligible for replay after
         // the stream reconnects instead of being silently skipped forever.
         await markActivityProcessed(activity)
+        if (queuedTurnRespondedId) {
+          markConversationTurnResponded(thread.id, queuedTurnRespondedId)
+        }
+        if (queuedTurnCompletion) {
+          completeConversationTurn(
+            thread.id,
+            queuedTurnCompletion.reason,
+            queuedTurnCompletion.turnId,
+          )
+        }
         operationPhase = 'jules'
       }
 
@@ -866,6 +928,7 @@ export async function runJulesStream(
           `[runJulesStream] Permanent Jules error (${err.status || '404/403'}) for session ${sessionId}. Exiting stream handler permanently.`,
         )
         stopTyping()
+        releaseActiveQueuedTurn('stream_ended')
         activeStreams.delete(thread.id)
         processedActivityIdsMap.delete(thread.id)
         return
@@ -895,6 +958,7 @@ export async function runJulesStream(
   }
 
   logger.debug(`[runJulesStream] Exited outer while loop for thread ${thread.id}`)
+  releaseActiveQueuedTurn('stream_ended')
   teardownStreamState(thread.id, sessionId)
 }
 
@@ -910,6 +974,50 @@ export async function initializeJulesSession(
     return
   }
 
+  let resolveInitialized: () => void = () => {}
+  let rejectInitialized: (error: unknown) => void = () => {}
+  const initialized = new Promise<void>((resolve, reject) => {
+    resolveInitialized = resolve
+    rejectInitialized = reject
+  })
+
+  const completion = enqueueConversationMessage(
+    thread.id,
+    starterMessage,
+    async (turn) => {
+      try {
+        await initializeJulesSessionCore(
+          thread,
+          repoName,
+          branchName,
+          streamManager,
+          starterMessage,
+          turn.id,
+        )
+        resolveInitialized()
+        return true
+      } catch (err) {
+        rejectInitialized(err)
+        throw err
+      }
+    },
+    () => updateReaction(starterMessage, 'queued'),
+  )
+  void completion.catch((err) => {
+    logger.error(`[initializeJulesSession] Queued starter turn failed for ${thread.id}:`, err)
+  })
+
+  await initialized
+}
+
+async function initializeJulesSessionCore(
+  thread: ThreadChannel,
+  repoName: string,
+  branchName: string,
+  streamManager: StreamManager,
+  starterMessage: Message,
+  queueTurnId: string,
+) {
   const authorNickname = starterMessage.member?.displayName || starterMessage.author.username
   const authorUsername = starterMessage.author.username
   const authorId = starterMessage.author.id
@@ -1174,6 +1282,7 @@ export async function initializeJulesSession(
   }
 
   if (!session) {
+    markConversationTurnDispatched(thread.id, queueTurnId)
     session = await JulesClient.createSession({
       prompt: promptWithMetadata,
       repo: repoName,
@@ -1243,6 +1352,7 @@ export async function initializeJulesSession(
     }
 
     logger.debug(`[initializeJulesSession] Sending user prompt to session ${session.id}`)
+    markConversationTurnDispatched(thread.id, queueTurnId)
     await session.send(promptWithMetadata)
 
     // Start processing events in the background for prewarmed session after sending the prompt
