@@ -199,23 +199,33 @@ pre_warmed_sessions:
 ```
 
 ### 3. Status Reactions
-Custom emojis applied to the thread starter message depending on the session stage:
+Custom emojis applied to each accepted message depending on its stage. Messages waiting behind an active Jules turn keep the queued reaction (hourglass by default) until dispatched:
 ```yaml
 reactions:
   queued: "⏳"
   in_progress: "⚙️"
+  responded: "💬"
   awaiting_plan_approval: "📋"
   completed: "✅"
   failed: "❌"
 ```
 
-### 4. Interactive Selection
+### 4. Response Nudges
+Optionally send Jules one reminder when a dispatched message has not received a user-facing reply within the configured interval. The timer is cancelled by an agent reply or visible plan:
+```yaml
+nudge:
+  enabled: true
+  after_minutes: 5
+```
+The reminder text can be overridden through `messages.prompts.response_nudge` globally or within a channel, tag, thread, or role override.
+
+### 5. Interactive Selection
 Toggle interactive repository and branch selection on thread creation:
 ```yaml
 interactive_selection: true # Ask developers to select target repo and branch on thread creation
 ```
 
-### 5. Role-Based Overrides
+### 6. Role-Based Overrides
 Merge specific overrides based on the thread creator's role (supports restricting access per role):
 ```yaml
 roles:
@@ -228,7 +238,7 @@ roles:
     diagnostic_prompt: "Provide deep technical diagnostic details."
 ```
 
-### 6. Tag-Based Overrides
+### 7. Tag-Based Overrides
 Merge overrides when a forum post carries a matching tag (keyed by tag **name or ID**). A post can have several tags; matches merge in config order. Useful for routing posts by category — e.g. give `urgent` posts a different repo or a more concise prompt:
 ```yaml
 tags:

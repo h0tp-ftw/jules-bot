@@ -1,7 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import './_ensureDb.js' // must precede the config import (see file comment)
-import { getEffectiveConfig, yamlConfig, YAML_GUILDS, REACTIONS, MESSAGES } from '../src/config.js'
+import {
+  getEffectiveConfig,
+  yamlConfig,
+  YAML_GUILDS,
+  REACTIONS,
+  DEFAULT_REACTIONS,
+  MESSAGES,
+  NUDGE,
+} from '../src/config.js'
 
 // getEffectiveConfig layers: global YAML -> parent channel -> thread -> role.
 // Channel/thread overrides come from yamlConfig.channels[id]; role overrides
@@ -60,6 +68,11 @@ test('access_control merges per-field across thread and role layers', () => {
   assert.deepEqual(cfg.access_control.allowed_users, ['u1']) // thread's array is retained
 })
 
+test('queued messages use the hourglass reaction by default', () => {
+  assert.equal(DEFAULT_REACTIONS.queued, '⏳')
+  assert.equal(getEffectiveConfig({ id: 'queued-default' }).reactions.queued, REACTIONS.queued)
+})
+
 test('reactions override only the named stage and keep the rest', () => {
   chan('t4', { reactions: { queued: 'Q!' } })
   const cfg = getEffectiveConfig({ id: 't4' })
@@ -85,6 +98,17 @@ test('jules_reactions defaults off and resolves from thread and role overrides',
     getEffectiveConfig({ id: 'jr-none' }, memberWithRole('JrRole')).jules_reactions.enabled,
     true,
   )
+})
+
+test('nudge defaults off and merges thread and role settings', () => {
+  assert.deepEqual(getEffectiveConfig({ id: 'nudge-none' }).nudge, NUDGE)
+
+  chan('nudge-thread', { nudge: { enabled: true, after_minutes: 3 } })
+  role('NudgeRole', { nudge: { after_minutes: 1 } })
+  assert.deepEqual(getEffectiveConfig({ id: 'nudge-thread' }, memberWithRole('NudgeRole')).nudge, {
+    enabled: true,
+    after_minutes: 1,
+  })
 })
 
 test('pre_warmed_sessions is resolved from the thread override', () => {
@@ -228,8 +252,5 @@ test('reply_mode resolves default and honors overrides', () => {
 
   // Role override
   role('SilentDev', { reply_mode: 'send' })
-  assert.equal(
-    getEffectiveConfig({ id: 'rep-t1' }, memberWithRole('SilentDev')).reply_mode,
-    'send',
-  )
+  assert.equal(getEffectiveConfig({ id: 'rep-t1' }, memberWithRole('SilentDev')).reply_mode, 'send')
 })

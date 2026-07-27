@@ -104,6 +104,10 @@ try {
       ...(defaultYaml.jules_reactions || {}),
       ...(userYaml.jules_reactions || {}),
     },
+    nudge: {
+      ...(defaultYaml.nudge || {}),
+      ...(userYaml.nudge || {}),
+    },
     pre_warmed_sessions: {
       ...(defaultYaml.pre_warmed_sessions || {}),
       ...(userYaml.pre_warmed_sessions || {}),
@@ -164,7 +168,7 @@ export const ALLOWED_ROLES: string[] = Array.isArray(accessControl.allowed_roles
 export const ALLOW_SILENT = typeof accessControl.silent === 'boolean' ? accessControl.silent : false
 
 // Reactions mapping config
-const defaultReactions = {
+export const DEFAULT_REACTIONS = {
   queued: '⏳',
   in_progress: '⚙️',
   responded: '💬',
@@ -174,7 +178,7 @@ const defaultReactions = {
 }
 
 export const REACTIONS: Record<string, string> = {
-  ...defaultReactions,
+  ...DEFAULT_REACTIONS,
   ...(yamlConfig.reactions || {}),
 }
 
@@ -260,6 +264,15 @@ export const AUTO_REJECT = {
 const julesReactions = yamlConfig.jules_reactions || {}
 export const JULES_REACTIONS = {
   enabled: typeof julesReactions.enabled === 'boolean' ? julesReactions.enabled : false,
+}
+
+// One-shot reminder sent to Jules when a dispatched Discord turn has not received
+// a user-facing response within the configured interval. Opt-in by default.
+const nudge = yamlConfig.nudge || {}
+export const NUDGE = {
+  enabled: typeof nudge.enabled === 'boolean' ? nudge.enabled : false,
+  after_minutes:
+    typeof nudge.after_minutes === 'number' && nudge.after_minutes > 0 ? nudge.after_minutes : 5,
 }
 
 // Load Agent Personality Markdown
@@ -404,6 +417,10 @@ export function getEffectiveConfig(
   jules_reactions: {
     enabled: boolean
   }
+  nudge: {
+    enabled: boolean
+    after_minutes: number
+  }
   pre_warmed_sessions: {
     enabled: boolean
     pool_size: number
@@ -477,6 +494,10 @@ export function getEffectiveConfig(
               ...(tagOverride.jules_reactions || {}),
               ...((tagVal as any).jules_reactions || {}),
             },
+            nudge: {
+              ...(tagOverride.nudge || {}),
+              ...((tagVal as any).nudge || {}),
+            },
             pre_warmed_sessions: {
               ...(tagOverride.pre_warmed_sessions || {}),
               ...((tagVal as any).pre_warmed_sessions || {}),
@@ -521,6 +542,10 @@ export function getEffectiveConfig(
             ...(roleOverride.jules_reactions || {}),
             ...((roleVal as any).jules_reactions || {}),
           },
+          nudge: {
+            ...(roleOverride.nudge || {}),
+            ...((roleVal as any).nudge || {}),
+          },
           pre_warmed_sessions: {
             ...(roleOverride.pre_warmed_sessions || {}),
             ...((roleVal as any).pre_warmed_sessions || {}),
@@ -554,6 +579,22 @@ export function getEffectiveConfig(
     ...(tagOverride as any).jules_reactions,
     ...(threadOverride as any).jules_reactions,
     ...(roleOverride as any).jules_reactions,
+  }
+
+  const rawResolvedNudge = {
+    ...NUDGE,
+    ...(parentOverride as any).nudge,
+    ...(tagOverride as any).nudge,
+    ...(threadOverride as any).nudge,
+    ...(roleOverride as any).nudge,
+  }
+  const resolvedNudge = {
+    enabled:
+      typeof rawResolvedNudge.enabled === 'boolean' ? rawResolvedNudge.enabled : NUDGE.enabled,
+    after_minutes:
+      typeof rawResolvedNudge.after_minutes === 'number' && rawResolvedNudge.after_minutes > 0
+        ? rawResolvedNudge.after_minutes
+        : NUDGE.after_minutes,
   }
 
   const resolvedPreWarmed = {
@@ -747,8 +788,7 @@ export function getEffectiveConfig(
   }
 
   // Resolve reply_mode
-  let resolvedReplyMode: 'reply_ping' | 'reply_silent' | 'send' =
-    yamlConfig.reply_mode || 'send'
+  let resolvedReplyMode: 'reply_ping' | 'reply_silent' | 'send' = yamlConfig.reply_mode || 'send'
 
   if (parentOverride && (parentOverride as any).reply_mode) {
     resolvedReplyMode = (parentOverride as any).reply_mode
@@ -791,6 +831,7 @@ export function getEffectiveConfig(
     reactions: resolvedReactions,
     auto_reject: resolvedAutoReject,
     jules_reactions: resolvedJulesReactions,
+    nudge: resolvedNudge,
     pre_warmed_sessions: resolvedPreWarmed,
     agents_personality: resolvedAgents,
     soul_personality: resolvedSoul,

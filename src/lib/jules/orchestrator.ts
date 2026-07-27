@@ -27,6 +27,7 @@ import {
   getActiveConversationTurn,
   markConversationTurnDispatched,
   markConversationTurnResponded,
+  scheduleConversationNudge,
   type ConversationTurnCompletionReason,
 } from './ConversationQueue.js'
 import {
@@ -375,6 +376,30 @@ export async function getFreshSessionInfo(session: any): Promise<any> {
   return await session.info()
 }
 
+export function scheduleNudgeForConversationTurn(
+  channel: JulesDiscordChannel,
+  turnId: string,
+  session: any,
+  member?: any,
+  dbDefaultRepo?: string,
+): boolean {
+  const channelConfig = getEffectiveConfig(channel, member, dbDefaultRepo)
+  if (!channelConfig.nudge.enabled) return false
+
+  const delayMs = channelConfig.nudge.after_minutes * 60 * 1000
+  return scheduleConversationNudge(
+    channel.id,
+    delayMs,
+    async (turn) => {
+      logger.info(
+        `[Nudge] Sending response reminder for Discord message ${turn.message.id} to Jules session ${session.id}`,
+      )
+      await session.send(channelConfig.messages.prompts.response_nudge)
+    },
+    turnId,
+  )
+}
+
 export async function runJulesStream(
   sessionId: string,
   thread: JulesDiscordChannel,
@@ -709,6 +734,7 @@ export async function runJulesStream(
               where: { threadId: thread.id },
               data: { planMessageId: msg.id },
             })
+            if (currentQueuedTurnId) queuedTurnRespondedId = currentQueuedTurnId
             break
           }
 
@@ -1362,6 +1388,8 @@ async function initializeJulesSessionCore(
   } else if (usePool) {
     replenishPool(repoName, contextKey).catch(() => {})
   }
+
+  scheduleNudgeForConversationTurn(thread, queueTurnId, session, starterMessage.member, repoName)
 }
 
 export async function initializeChatSession(

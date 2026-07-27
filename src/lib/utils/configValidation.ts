@@ -6,6 +6,7 @@ const KNOWN_TOP_LEVEL_KEYS = new Set([
   'guilds',
   'auto_reject',
   'jules_reactions',
+  'nudge',
   'interactive_selection',
   'ignore_prefix',
   'presence',

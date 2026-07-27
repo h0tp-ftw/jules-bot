@@ -50,7 +50,8 @@ If the SQLite file is missing, `src/config.ts` auto-provisions it on boot via `n
    thread override → role override. Don't read `yamlConfig.*` directly when behavior should vary by
    channel/tag/role.
 4. **Module-level state is process-local and lost on restart.** `activeStreams`, `autoRejectedSessions`,
-   `processedActivityIdsMap` (orchestrator) and `StreamManager`'s buffers/timers do not survive a restart.
+   `processedActivityIdsMap` (orchestrator), conversation queues/nudge timers, and `StreamManager`'s
+   buffers/timers do not survive a restart.
    Persisted truth lives in SQLite (`DebugSession`); on boot `rehydrateActiveStreams()` re-attaches streams
    for sessions touched in the last 7 days. Anything new you add to module state must tolerate restarts / serverless pauses.
 5. **Discord 2000-char limit.** Use `splitMessage()` (`src/lib/utils/messageSplitter.ts`) for agent output;
@@ -86,11 +87,13 @@ Key modules:
 - `src/events/interactionCreate.ts` — buttons (`plan-approve` / `plan-reject`), select menus
   (`select-repo` / `select-branch`), and branch search/custom modals. Note the Discord **25-option** menu cap handled here.
 - `src/lib/jules/orchestrator.ts` — **core.** `runJulesStream` (persisted delivery cursor, reconnect
-  up to 20×, typing indicators, reactions, plan embeds, plan-feedback flow, completion-result fallback),
+  up to 20×, typing indicators, reactions, plan embeds, response-nudge scheduling, plan-feedback flow,
+  completion-result fallback),
   `initializeJulesSession` (creation + pre-warmed consumption + welcome-plan handling),
   `rehydrateActiveStreams`.
 - `src/lib/jules/ConversationQueue.ts` — process-local per-channel turn queue. Tracks enqueue, dispatch,
-  first-response, and terminal timestamps; the response timestamp is the hook for future timed nudges.
+  first-response, one-shot nudge, and terminal timestamps. Nudge timers cancel on an agent reply, visible
+  plan, terminal activity, or queue cleanup.
 - `src/lib/jules/JulesClient.ts` — thin `@google/jules-sdk` wrapper. Builds the full prompt =
   `diagnostic_prompt` + persona + soul + bootstrap + user issue. `createSession` / `getSession` / `getConnectedRepos`.
 - `src/lib/jules/PreWarmedManager.ts` — pre-warmed session pools to hide clone/queue latency

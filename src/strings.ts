@@ -159,6 +159,8 @@ export const DEFAULT_MESSAGES = {
       '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message Time: {time}, Shared Discord Channel: #{channel}]\n\n{content}',
     chatbot_mode_plan_feedback:
       'This session is operating as a shared Discord chatbot. Do not create or refine an implementation plan and do not wait for plan approval. Reply directly and conversationally to the users in the channel.',
+    response_nudge:
+      '[System Directive: Response Nudge]\nYou have not yet sent a user-facing response to the most recent Discord message delivered to this session. Please respond directly to that message now. Do not repeat internal progress or create a new plan unless the user explicitly requested one.',
     auto_reject_default:
       'Please do not create or refine an implementation plan. Instead, just talk directly with me to understand the goals and discuss the issue.',
     auto_reject_directive_welcome:

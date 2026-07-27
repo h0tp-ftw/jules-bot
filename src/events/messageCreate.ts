@@ -7,6 +7,7 @@ import {
   activeStreams,
   updateReaction,
   initializeChatSession,
+  scheduleNudgeForConversationTurn,
   type JulesDiscordChannel,
 } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
@@ -121,6 +122,7 @@ async function sendToExistingSession(
     )
     markConversationTurnDispatched(channel.id, turnId)
     await session.send(promptWithMetadata)
+    scheduleNudgeForConversationTurn(channel, turnId, session, message.member, dbDefaultRepo)
     logger.debug(
       `[MessageCreate] Message sent successfully to Jules session ${sessionRecord.julesSessionId}`,
     )
@@ -218,7 +220,8 @@ async function processChatChannelMessage(
   try {
     channel.sendTyping().catch(() => {})
     markConversationTurnDispatched(channel.id, turn.id)
-    await initializeChatSession(message, repoName, branchName, streamManager)
+    const session = await initializeChatSession(message, repoName, branchName, streamManager)
+    scheduleNudgeForConversationTurn(channel, turn.id, session, message.member, dbDefaultRepo)
     return true
   } catch (err) {
     logger.error(`Failed to start chatbot session for channel ${channel.id}:`, err)

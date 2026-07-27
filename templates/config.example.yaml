@@ -13,6 +13,7 @@ access_control:
   allowed_roles: [] # e.g. ["112233445566778899"]
 
 # Status Reactions Emojis (Supports Unicode, <:name:id>, name:id, or raw ID)
+# Messages waiting behind another Jules turn keep the queued reaction until sent.
 reactions:
   queued: "⏳"
   in_progress: "⚙️"
@@ -41,6 +42,14 @@ auto_reject:
 # Customise the wording via messages.prompts.jules_reactions_instruction below.
 jules_reactions:
   enabled: false
+
+# Send Jules one reminder when a dispatched Discord message has not received a
+# user-facing response within this many minutes. The timer is cancelled as soon
+# as Jules replies or presents a plan. Customize the reminder text through
+# messages.prompts.response_nudge.
+nudge:
+  enabled: false
+  after_minutes: 5
 
 # Force interactive repository and branch selection on thread creation.
 # If true, shows an embed with select menus allowing developers to pick a connected repo and branch.
@@ -71,7 +80,7 @@ pre_warmed_sessions:
     Do NOT propose code changes yet; generate the initial plan to welcome them and begin investigation.
 
 # Optional Channel and Thread-specific Overrides
-# You can override any global configuration options (e.g., diagnostic_prompt, access_control, reactions, auto_reject)
+# You can override any global configuration options (e.g., diagnostic_prompt, access_control, reactions, auto_reject, nudge)
 # at the Channel ID level or Thread ID level.
 # channels:
 #   "YOUR_CHANNEL_OR_FORUM_ID": # Channel or Forum ID

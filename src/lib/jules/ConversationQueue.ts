@@ -13,6 +13,7 @@ export interface ConversationTurn {
   enqueuedAt: number
   dispatchedAt?: number
   respondedAt?: number
+  nudgedAt?: number
   completedAt?: number
   completionReason?: ConversationTurnCompletionReason
 }
@@ -23,6 +24,7 @@ type QueueEntry = {
   turn: ConversationTurn
   dispatch: DispatchConversationTurn
   preparation: Promise<void>
+  nudgeTimer?: NodeJS.Timeout
   resolve: () => void
   reject: (error: unknown) => void
 }
@@ -42,6 +44,12 @@ type ChannelQueue = {
 
 const channelQueues = new Map<string, ChannelQueue>()
 let nextTurnId = 1
+
+function clearNudgeTimer(entry: QueueEntry | undefined) {
+  if (!entry?.nudgeTimer) return
+  clearTimeout(entry.nudgeTimer)
+  entry.nudgeTimer = undefined
+}
 
 function createTurnWaiter(): TurnWaiter {
   let resolvePromise: (reason: ConversationTurnCompletionReason) => void = () => {}
@@ -88,6 +96,7 @@ async function drainChannelQueue(channelId: string, state: ChannelQueue) {
       } catch (err) {
         entry.reject(err)
       } finally {
+        clearNudgeTimer(entry)
         if (state.active === entry) state.active = undefined
         if (state.waiter === waiter) state.waiter = undefined
       }
@@ -162,7 +171,48 @@ export function markConversationTurnResponded(channelId: string, turnId?: string
   if (!active || !active.turn.dispatchedAt) return false
   if (turnId && active.turn.id !== turnId) return false
   if (!active.turn.respondedAt) active.turn.respondedAt = Date.now()
+  clearNudgeTimer(active)
   logger.debug(`[ConversationQueue] Jules responded to turn ${active.turn.id}`)
+  return true
+}
+
+export function scheduleConversationNudge(
+  channelId: string,
+  delayMs: number,
+  sendNudge: (turn: ConversationTurn) => Promise<void>,
+  turnId?: string,
+): boolean {
+  const active = channelQueues.get(channelId)?.active
+  if (!active || !active.turn.dispatchedAt || active.turn.respondedAt || active.turn.completedAt) {
+    return false
+  }
+  if (turnId && active.turn.id !== turnId) return false
+  if (!Number.isFinite(delayMs) || delayMs <= 0 || active.nudgeTimer || active.turn.nudgedAt) {
+    return false
+  }
+
+  const expectedTurnId = active.turn.id
+  active.nudgeTimer = setTimeout(() => {
+    active.nudgeTimer = undefined
+    const current = channelQueues.get(channelId)?.active
+    if (
+      current !== active ||
+      current.turn.id !== expectedTurnId ||
+      current.turn.respondedAt ||
+      current.turn.completedAt ||
+      current.turn.nudgedAt
+    ) {
+      return
+    }
+
+    current.turn.nudgedAt = Date.now()
+    logger.info(`[ConversationQueue] Nudging unanswered turn ${current.turn.id}`)
+    void sendNudge(current.turn).catch((err) => {
+      logger.warn(`[ConversationQueue] Failed to nudge turn ${current.turn.id}:`, err)
+    })
+  }, delayMs)
+
+  logger.debug(`[ConversationQueue] Scheduled nudge for turn ${active.turn.id} in ${delayMs}ms`)
   return true
 }
 
@@ -179,6 +229,7 @@ export function completeConversationTurn(
 
   active.turn.completedAt = Date.now()
   active.turn.completionReason = reason
+  clearNudgeTimer(active)
   waiter.resolve(reason)
   logger.debug(
     `[ConversationQueue] Completed turn ${active.turn.id} for channel ${channelId} (${reason}); remaining=${Math.max(0, getConversationQueueDepth(channelId) - 1)}`,
