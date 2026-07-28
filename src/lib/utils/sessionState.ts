@@ -6,6 +6,10 @@
 // (src/config.ts `defaultReactions`): queued, in_progress, awaiting_plan_approval,
 // completed, failed. ("responded" is event-driven, not a session state, so it has
 // no mapping here.)
+export function isSessionWaitingForUser(state: string | undefined | null): boolean {
+  return state === 'awaitingUserFeedback' || state === 'completed'
+}
+
 export function reactionStageForState(state: string | undefined | null): string | null {
   switch (state) {
     case 'queued':

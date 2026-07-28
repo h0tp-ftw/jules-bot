@@ -19,7 +19,7 @@ import { resolveMessageEmojis } from '../utils/emojis.js'
 import { extractReactionMarkers } from '../utils/reactionMarkers.js'
 import { splitMessage } from '../utils/messageSplitter.js'
 import { formatAttachmentMetadata } from '../utils/attachments.js'
-import { reactionStageForState } from '../utils/sessionState.js'
+import { isSessionWaitingForUser, reactionStageForState } from '../utils/sessionState.js'
 import { formatErrorForDiscord } from '../utils/errors.js'
 import {
   completeConversationTurn,
@@ -376,6 +376,39 @@ export async function getFreshSessionInfo(session: any): Promise<any> {
   return await session.info()
 }
 
+async function releaseConversationTurnWhenWaitingForUser(
+  session: any,
+  channelId: string,
+  turnId: string,
+): Promise<void> {
+  const delays = [0, 1000, 3000]
+
+  for (const delayMs of delays) {
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+
+    const activeTurn = getActiveConversationTurn(channelId)
+    if (!activeTurn || activeTurn.id !== turnId || activeTurn.completedAt) return
+
+    try {
+      const info = await getFreshSessionInfo(session)
+      if (isSessionWaitingForUser(info?.state)) {
+        completeConversationTurn(channelId, 'awaiting_user_feedback', turnId)
+        return
+      }
+      if (info?.state === 'failed') {
+        completeConversationTurn(channelId, 'session_failed', turnId)
+        return
+      }
+      if (info?.state === 'awaitingPlanApproval') return
+    } catch (err) {
+      logger.warn(
+        `[ConversationQueue] Failed to check whether Jules is waiting for user feedback for turn ${turnId}:`,
+        err,
+      )
+    }
+  }
+}
+
 function formatNudgeDelay(minutes: number): string {
   return minutes === 1 ? '1 minute' : `${minutes} minutes`
 }
@@ -549,10 +582,14 @@ export async function runJulesStream(
   // Keep the response target pinned to the queue turn that produced the current
   // Jules activities. Without this, several rapid Discord messages make a
   // getLastHumanMessage() lookup attach the first reply to the newest message.
-  let currentQueuedTurnId: string | undefined
-  let currentQueuedTarget: Message | null = null
-  let cachedTarget: Message | null = null
-  let targetFetched = false
+  // Newly created sessions can emit an agent reply without replaying their
+  // initial user activity, so bind an already-dispatched starter turn up front.
+  const initialActiveTurn = getActiveConversationTurn(thread.id)
+  const initialQueuedTurn = initialActiveTurn?.dispatchedAt ? initialActiveTurn : undefined
+  let currentQueuedTurnId: string | undefined = initialQueuedTurn?.id
+  let currentQueuedTarget: Message | null = initialQueuedTurn?.message || null
+  let cachedTarget: Message | null = currentQueuedTarget
+  let targetFetched = currentQueuedTarget !== null
 
   const releaseActiveQueuedTurn = (reason: ConversationTurnCompletionReason) => {
     const activeTurn = getActiveConversationTurn(thread.id)
@@ -689,6 +726,7 @@ export async function runJulesStream(
         const type = activity.type
         const typeStr = type as string
         let queuedTurnRespondedId: string | undefined
+        let queuedTurnFeedbackCheckId: string | undefined
         let queuedTurnCompletion:
           | { reason: ConversationTurnCompletionReason; turnId: string }
           | undefined
@@ -845,13 +883,15 @@ export async function runJulesStream(
                 await updateReaction(target, 'responded')
               }
             }
-            if (currentQueuedTurnId) {
+            if (currentQueuedTurnId && rawMessage) {
               queuedTurnRespondedId = currentQueuedTurnId
-              if (chatbotMode && rawMessage) {
+              if (chatbotMode) {
                 queuedTurnCompletion = {
                   reason: 'agent_responded',
                   turnId: currentQueuedTurnId,
                 }
+              } else {
+                queuedTurnFeedbackCheckId = currentQueuedTurnId
               }
             }
             break
@@ -980,6 +1020,12 @@ export async function runJulesStream(
             thread.id,
             queuedTurnCompletion.reason,
             queuedTurnCompletion.turnId,
+          )
+        } else if (queuedTurnFeedbackCheckId) {
+          void releaseConversationTurnWhenWaitingForUser(
+            session,
+            thread.id,
+            queuedTurnFeedbackCheckId,
           )
         }
         operationPhase = 'jules'

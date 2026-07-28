@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js'
 
 export type ConversationTurnCompletionReason =
   | 'agent_responded'
+  | 'awaiting_user_feedback'
   | 'session_completed'
   | 'session_failed'
   | 'stream_ended'
