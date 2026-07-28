@@ -54,8 +54,9 @@ If the SQLite file is missing, `src/config.ts` auto-provisions it on boot via `n
    buffers/timers do not survive a restart.
    Persisted truth lives in SQLite (`DebugSession`); on boot `rehydrateActiveStreams()` re-attaches streams
    for sessions touched in the last 7 days. Anything new you add to module state must tolerate restarts / serverless pauses.
-5. **Discord 2000-char limit.** Use `splitMessage()` (`src/lib/utils/messageSplitter.ts`) for agent output;
-   status-message edits are sliced to ~1990 chars.
+5. **Discord 2000-char limit.** Use `splitMessage()` (`src/lib/utils/messageSplitter.ts`) for agent output.
+   `StreamManager` keeps the primary status message editable and synchronizes overflow into reusable silent
+   replies instead of truncating long progress or final-status content.
 6. **Prisma uses a driver adapter.** `prisma/schema.prisma`'s `datasource` has **no `url`** — it comes from
    `prisma.config.ts` / `DATABASE_URL` plus the `@prisma/adapter-better-sqlite3` adapter in `src/config.ts`.
    Export `DATABASE_URL` when running raw `prisma` CLI commands.

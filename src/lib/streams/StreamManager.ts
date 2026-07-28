@@ -1,7 +1,8 @@
 import { logger } from '../utils/logger.js'
-import { Client, ThreadChannel, TextChannel } from 'discord.js'
+import { Client, Message, ThreadChannel, TextChannel } from 'discord.js'
 import { prisma, getEffectiveConfig } from '../../config.js'
 import { t } from '../../strings.js'
+import { splitMessage } from '../utils/messageSplitter.js'
 
 type JulesDiscordChannel = ThreadChannel | TextChannel
 
@@ -9,6 +10,7 @@ export class StreamManager {
   private buffers = new Map<string, string[]>()
   private timers = new Map<string, NodeJS.Timeout>()
   private activeSteps = new Map<string, { title: string; description?: string }>()
+  private overflowMessageIds = new Map<string, string[]>()
 
   constructor(private client: Client) {}
 
@@ -51,6 +53,80 @@ export class StreamManager {
     this.timers.set(threadId, timer)
   }
 
+  private async findOverflowMessages(
+    thread: JulesDiscordChannel,
+    statusMessageId: string,
+  ): Promise<Message[]> {
+    const cachedIds = this.overflowMessageIds.get(thread.id) ?? []
+    if (cachedIds.length > 0) {
+      const cached: Message[] = []
+      for (const id of cachedIds) {
+        try {
+          cached.push(await thread.messages.fetch(id))
+        } catch {
+          // Fall through to recent-message recovery below.
+        }
+      }
+      if (cached.length === cachedIds.length) return cached
+    }
+
+    try {
+      const recent = await thread.messages.fetch({ limit: 100 })
+      const recovered = [...recent.values()]
+        .filter(
+          (message) =>
+            message.author.id === this.client.user?.id &&
+            message.reference?.messageId === statusMessageId,
+        )
+        .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
+      this.overflowMessageIds.set(
+        thread.id,
+        recovered.map((message) => message.id),
+      )
+      return recovered
+    } catch (err) {
+      logger.warn(`[StreamManager] Could not recover overflow messages for ${thread.id}:`, err)
+      return []
+    }
+  }
+
+  private async syncStatusContent(
+    thread: JulesDiscordChannel,
+    statusMessageId: string,
+    content: string,
+  ) {
+    const chunks = splitMessage(content, 1990)
+    const primary = await thread.messages.fetch(statusMessageId)
+    await primary.edit({ content: chunks[0] || '\u200b' })
+
+    const overflowChunks = chunks.slice(1)
+    const existing = await this.findOverflowMessages(thread, statusMessageId)
+    const nextIds: string[] = []
+
+    for (let i = 0; i < overflowChunks.length; i++) {
+      const current = existing[i]
+      if (current) {
+        await current.edit({ content: overflowChunks[i] })
+        nextIds.push(current.id)
+      } else {
+        const sent = await primary.reply({
+          content: overflowChunks[i],
+          allowedMentions: { repliedUser: false },
+        })
+        nextIds.push(sent.id)
+      }
+    }
+
+    for (const stale of existing.slice(overflowChunks.length)) {
+      await stale.delete().catch((err) => {
+        logger.warn(`[StreamManager] Could not delete stale overflow message ${stale.id}:`, err)
+      })
+    }
+
+    if (nextIds.length > 0) this.overflowMessageIds.set(thread.id, nextIds)
+    else this.overflowMessageIds.delete(thread.id)
+  }
+
   private async flush(thread: JulesDiscordChannel, statusMessageId: string) {
     this.timers.delete(thread.id)
     const buf = this.buffers.get(thread.id) ?? []
@@ -74,8 +150,7 @@ export class StreamManager {
     }
 
     try {
-      const msg = await thread.messages.fetch(statusMessageId)
-      await msg.edit({ content: content.slice(0, 1990) })
+      await this.syncStatusContent(thread, statusMessageId, content)
     } catch (err) {
       logger.error('Failed to update status message:', err)
     }
@@ -92,6 +167,7 @@ export class StreamManager {
     this.timers.clear()
     this.buffers.clear()
     this.activeSteps.clear()
+    this.overflowMessageIds.clear()
   }
 
   async finalizeSession(
@@ -129,8 +205,11 @@ export class StreamManager {
       const logsBlock =
         buf.length > 0 ? `\n\n${m.final_logs_header}\n\`\`\`\n${buf.join('\n')}\n\`\`\`` : ''
 
-      const msg = await thread.messages.fetch(session.statusMessageId)
-      await msg.edit({ content: `${statusText}${resultBlock}${logsBlock}`.slice(0, 1990) })
+      await this.syncStatusContent(
+        thread,
+        session.statusMessageId,
+        `${statusText}${resultBlock}${logsBlock}`,
+      )
     } catch (err) {
       logger.error('Failed to finalize status message:', err)
     }
