@@ -845,7 +845,15 @@ export async function runJulesStream(
                 await updateReaction(target, 'responded')
               }
             }
-            if (currentQueuedTurnId) queuedTurnRespondedId = currentQueuedTurnId
+            if (currentQueuedTurnId) {
+              queuedTurnRespondedId = currentQueuedTurnId
+              if (chatbotMode && rawMessage) {
+                queuedTurnCompletion = {
+                  reason: 'agent_responded',
+                  turnId: currentQueuedTurnId,
+                }
+              }
+            }
             break
           }
 

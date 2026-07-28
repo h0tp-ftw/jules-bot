@@ -2,6 +2,7 @@ import type { Message } from 'discord.js'
 import { logger } from '../utils/logger.js'
 
 export type ConversationTurnCompletionReason =
+  | 'agent_responded'
   | 'session_completed'
   | 'session_failed'
   | 'stream_ended'
