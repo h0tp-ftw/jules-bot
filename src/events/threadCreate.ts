@@ -11,6 +11,7 @@ import { t } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { initializeJulesSession, updateReaction } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
+import { isConfiguredThreadParent } from '../lib/utils/channelRouting.js'
 
 const pendingThreads = new Set<string>()
 
@@ -49,9 +50,11 @@ export default {
     }
 
     const channelsConfig = yamlConfig.channels || {}
-    const isConfiguredChannel =
-      thread.parentId &&
-      (thread.parentId === forumChannelId || channelsConfig[thread.parentId] !== undefined)
+    const isConfiguredChannel = isConfiguredThreadParent(
+      thread.parentId,
+      forumChannelId,
+      channelsConfig,
+    )
 
     if (!isConfiguredChannel) {
       if (!forumChannelId) {

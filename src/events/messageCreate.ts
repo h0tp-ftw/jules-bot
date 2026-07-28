@@ -1,6 +1,6 @@
 import { logger } from '../lib/utils/logger.js'
 import { Message, Events, ThreadChannel, TextChannel, ChannelType } from 'discord.js'
-import { prisma, getEffectiveConfig, YAML_GUILDS } from '../config.js'
+import { prisma, getEffectiveConfig, YAML_GUILDS, yamlConfig } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import {
   runJulesStream,
@@ -19,6 +19,7 @@ import {
   markConversationTurnDispatched,
   type ConversationTurn,
 } from '../lib/jules/ConversationQueue.js'
+import { isConfiguredThreadParent } from '../lib/utils/channelRouting.js'
 
 function shouldIgnoreMessage(
   message: Message,
@@ -135,21 +136,70 @@ async function sendToExistingSession(
   }
 }
 
+type SessionRoutingRecord = {
+  julesSessionId: string
+}
+
+type ThreadRoutingContext = {
+  dbDefaultRepo?: string
+  sessionRecord?: SessionRoutingRecord
+}
+
+async function resolveThreadRoutingContext(
+  message: Message,
+  thread: ThreadChannel,
+): Promise<ThreadRoutingContext | null> {
+  if (!message.guildId) return null
+
+  const sessionRecord = await prisma.debugSession.findUnique({
+    where: { threadId: thread.id },
+  })
+  const yamlGuild = YAML_GUILDS[message.guildId]
+  const dbConfig = await prisma.guildConfig.findUnique({
+    where: { guildId: message.guildId },
+  })
+  const dbDefaultRepo = dbConfig?.defaultRepo || undefined
+
+  if (sessionRecord) {
+    if (shouldIgnoreMessage(message, thread, dbDefaultRepo)) return null
+    return { dbDefaultRepo, sessionRecord }
+  }
+
+  const forumChannelId = yamlGuild?.forum_channel_id || dbConfig?.forumChannelId
+  const channelsConfig = yamlConfig.channels || {}
+  if (!isConfiguredThreadParent(thread.parentId, forumChannelId, channelsConfig)) return null
+  if (shouldIgnoreMessage(message, thread, dbDefaultRepo)) return null
+  if (!message.content && message.attachments.size === 0) return null
+
+  return { dbDefaultRepo }
+}
+
 async function processThreadMessage(
   message: Message,
   thread: ThreadChannel,
   streamManager: StreamManager,
   turn: ConversationTurn,
+  routing: ThreadRoutingContext,
 ): Promise<boolean> {
-  const sessionRecord = await prisma.debugSession.findUnique({
-    where: { threadId: thread.id },
-  })
+  const sessionRecord =
+    routing.sessionRecord ||
+    (await prisma.debugSession.findUnique({
+      where: { threadId: thread.id },
+    }))
   if (!sessionRecord) {
     await updateReaction(message, 'failed')
     return false
   }
 
-  return await sendToExistingSession(message, thread, sessionRecord, streamManager, false, turn.id)
+  return await sendToExistingSession(
+    message,
+    thread,
+    sessionRecord,
+    streamManager,
+    false,
+    turn.id,
+    routing.dbDefaultRepo,
+  )
 }
 
 type ChatRoutingContext = {
@@ -239,11 +289,13 @@ export default {
     if (message.channel.isThread()) {
       const thread = message.channel as ThreadChannel
       if (message.id === thread.id) return
-      if (shouldIgnoreMessage(message, thread)) return
+      const routing = await resolveThreadRoutingContext(message, thread)
+      if (!routing) return
+
       await enqueueConversationMessage(
         thread.id,
         message,
-        (turn) => processThreadMessage(message, thread, streamManager, turn),
+        (turn) => processThreadMessage(message, thread, streamManager, turn, routing),
         () => updateReaction(message, 'queued'),
       )
       return
@@ -252,24 +304,15 @@ export default {
     if (!message.guildId || message.channel.type !== ChannelType.GuildText) return
 
     const channel = message.channel as TextChannel
-    const routing = resolveChatRoutingContext(message, channel)
+    const routing = await resolveChatRoutingContext(message, channel)
+    if (!routing) return
+
     await enqueueConversationMessage(
       channel.id,
       message,
-      async (turn) => {
-        const context = await routing
-        if (!context) return false
-        return await processChatChannelMessage(
-          message,
-          channel,
-          streamManager,
-          turn,
-          context.dbDefaultRepo,
-        )
-      },
-      async () => {
-        if (await routing) await updateReaction(message, 'queued')
-      },
+      (turn) =>
+        processChatChannelMessage(message, channel, streamManager, turn, routing.dbDefaultRepo),
+      () => updateReaction(message, 'queued'),
     )
   },
 }
