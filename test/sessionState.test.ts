@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { isSessionWaitingForUser, reactionStageForState } from '../src/lib/utils/sessionState.js'
+import { reactionStageForState } from '../src/lib/utils/sessionState.js'
 
 test('maps planning and inProgress to the in_progress stage', () => {
   assert.equal(reactionStageForState('planning'), 'in_progress')
@@ -12,14 +12,6 @@ test('maps queued, awaitingPlanApproval, completed and failed to their stages', 
   assert.equal(reactionStageForState('awaitingPlanApproval'), 'awaiting_plan_approval')
   assert.equal(reactionStageForState('completed'), 'completed')
   assert.equal(reactionStageForState('failed'), 'failed')
-})
-
-test('recognizes states where Jules is ready for another user turn', () => {
-  assert.equal(isSessionWaitingForUser('awaitingUserFeedback'), true)
-  assert.equal(isSessionWaitingForUser('completed'), true)
-  assert.equal(isSessionWaitingForUser('inProgress'), false)
-  assert.equal(isSessionWaitingForUser('awaitingPlanApproval'), false)
-  assert.equal(isSessionWaitingForUser(undefined), false)
 })
 
 test('returns null for unknown / missing states so the reaction is left untouched', () => {

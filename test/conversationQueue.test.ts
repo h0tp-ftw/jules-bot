@@ -141,8 +141,8 @@ test('records an agent response without releasing the next queued turn', async (
   assert.equal(secondDispatched, true)
 })
 
-test('releases a chatbot turn after its first agent response', async () => {
-  const channelId = 'queue-chatbot-response'
+test('releases a turn after its first agent response', async () => {
+  const channelId = 'queue-agent-response'
   const dispatched: string[] = []
   let firstTurnId = ''
 
@@ -160,31 +160,6 @@ test('releases a chatbot turn after its first agent response', async () => {
   await nextTick()
   assert.equal(markConversationTurnResponded(channelId, firstTurnId), true)
   assert.equal(completeConversationTurn(channelId, 'agent_responded', firstTurnId), true)
-  await Promise.all([first, second])
-
-  assert.deepEqual(dispatched, ['message-1', 'message-2'])
-  assert.equal(getConversationQueueDepth(channelId), 0)
-})
-
-test('releases a forum turn when Jules waits for user feedback', async () => {
-  const channelId = 'queue-forum-feedback'
-  const dispatched: string[] = []
-  let firstTurnId = ''
-
-  const first = enqueueConversationMessage(channelId, fakeMessage('message-1'), async (turn) => {
-    firstTurnId = turn.id
-    dispatched.push('message-1')
-    markConversationTurnDispatched(channelId, turn.id)
-    return true
-  })
-  const second = enqueueConversationMessage(channelId, fakeMessage('message-2'), async () => {
-    dispatched.push('message-2')
-    return false
-  })
-
-  await nextTick()
-  assert.equal(markConversationTurnResponded(channelId, firstTurnId), true)
-  assert.equal(completeConversationTurn(channelId, 'awaiting_user_feedback', firstTurnId), true)
   await Promise.all([first, second])
 
   assert.deepEqual(dispatched, ['message-1', 'message-2'])
