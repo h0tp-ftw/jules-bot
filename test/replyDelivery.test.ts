@@ -100,3 +100,35 @@ test('the fallback send preserves the payload but not reply-only options', async
   assert.equal(sends.length, 1)
   assert.deepEqual(sends[0], { embeds: ['e'], components: ['c'] })
 })
+
+// The rethrow is load-bearing: the orchestrator only acknowledges an activity
+// after delivery succeeds, so a swallowed double-failure would permanently
+// lose the content instead of replaying it after the stream reconnects.
+test('rethrows when the reply AND the fallback send both fail', async () => {
+  const { target } = makeTarget(async () => {
+    throw new Error('reply down')
+  })
+  const channel = {
+    send: async () => {
+      throw new Error('send down')
+    },
+  }
+
+  await assert.rejects(
+    () => deliverWithReply(channel, target, 'reply_silent', { content: 'hi' }),
+    /send down/,
+  )
+})
+
+test('send-mode failures propagate to the caller', async () => {
+  const channel = {
+    send: async () => {
+      throw new Error('send down')
+    },
+  }
+
+  await assert.rejects(
+    () => deliverWithReply(channel, null, 'send', { content: 'hi' }),
+    /send down/,
+  )
+})

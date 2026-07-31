@@ -114,8 +114,14 @@ async function sendToExistingSession(
     // Sustained typing loop from dispatch onward; the stream handler stops it
     // once Jules visibly responds (or the session terminates). A one-shot
     // sendTyping() here used to expire ~10s later, leaving a gap with no
-    // indicator until Jules's own activity echo arrived.
-    startTypingLoop(channel)
+    // indicator until Jules's own activity echo arrived. In strict_state mode
+    // typing mirrors the session state (driven by the stream handler), so a
+    // dispatch-owned loop would outlive the reply — keep the one-shot bubble.
+    if (channelConfig.typing_indicator_mode === 'strict_state') {
+      channel.sendTyping().catch(() => {})
+    } else {
+      startTypingLoop(channel)
+    }
     await updateReaction(message, 'in_progress')
 
     const promptWithMetadata = t(channelConfig.messages.prompts.metadata_header, {
@@ -283,7 +289,11 @@ async function processChatChannelMessage(
 
   const branchName = channelConfig.default_branch || 'main'
   try {
-    startTypingLoop(channel)
+    if (channelConfig.typing_indicator_mode === 'strict_state') {
+      channel.sendTyping().catch(() => {})
+    } else {
+      startTypingLoop(channel)
+    }
     markConversationTurnDispatched(channel.id, turn.id)
     const session = await initializeChatSession(message, repoName, branchName, streamManager)
     scheduleNudgeForConversationTurn(channel, turn.id, session, message.member, dbDefaultRepo)

@@ -24,6 +24,12 @@ import { formatErrorForDiscord } from '../utils/errors.js'
 import { startTypingLoop, stopTypingLoop } from '../utils/typingManager.js'
 import { deliverWithReply } from '../utils/replyDelivery.js'
 import {
+  bindTurnTarget,
+  createTurnTargetState,
+  isTurnAwaitingReply,
+  resolveTurnTarget,
+} from '../utils/turnTargets.js'
+import {
   completeConversationTurn,
   enqueueConversationMessage,
   getActiveConversationTurn,
@@ -52,6 +58,9 @@ const messageReactionStage = new Map<string, string>()
 // per message that ever received a reaction. Map preserves insertion order, so we
 // evict the oldest key once over the cap.
 const MAX_REACTION_STAGE_ENTRIES = 5000
+// An activity created at least this long before its handler connected is a
+// stale pre-restart backlog item, not part of a turn racing the connect.
+const STALE_REPLAY_GRACE_MS = 60 * 1000
 
 // Release all per-thread module state for a stream handler that is exiting for
 // good (failed / archived / deleted / retries exhausted). Centralized so every
@@ -166,13 +175,23 @@ async function initializeProcessedActivityIds(
   sessionId: string,
   thread: JulesDiscordChannel,
   initialProcessedIds?: Set<string>,
-): Promise<{ ids: Set<string>; hydrated: boolean; turnState: TurnResponseState }> {
+): Promise<{
+  ids: Set<string>
+  hydrated: boolean
+  turnState: TurnResponseState
+  // Every activity id present in history at connect time. Activities in this
+  // set but not in `ids` are post-restart recovery replays: they predate any
+  // queue turn this process dispatches, so they must never be attributed to
+  // (or complete) one.
+  historyIds: Set<string>
+}> {
   const { activities, hydrated } = await hydrateSessionHistory(session, sessionId)
   const ids = initialProcessedIds ? new Set(initialProcessedIds) : new Set<string>()
   const result = () => ({
     ids,
     hydrated,
     turnState: deriveTurnResponseState(activities, ids),
+    historyIds: new Set<string>(activities.map((activity: any) => activity.id)),
   })
 
   if (initialProcessedIds) {
@@ -427,8 +446,11 @@ export function scheduleNudgeForConversationTurn(
       const chunks = splitMessage(content, 2000)
       if (chunks.length === 0) return
 
+      // A starter message for a thread spawned from a text channel lives in
+      // the parent channel — replying to it would post the notice there.
+      const noticeTarget = turn.message.channelId === channel.id ? turn.message : null
       try {
-        await deliverWithReply(channel, turn.message, 'reply_silent', { content: chunks[0] })
+        await deliverWithReply(channel, noticeTarget, 'reply_silent', { content: chunks[0] })
       } catch (err) {
         logger.warn(`[Nudge] Could not post the Discord nudge notice in ${channel.id}:`, err)
         return
@@ -480,6 +502,14 @@ export async function runJulesStream(
 
   let historyHydratedForNextStream = false
   let turnState: TurnResponseState = { awaitingAgentReply: false }
+  // Activity ids that already existed in history when this handler connected —
+  // used to tell post-restart recovery replays apart from live responses.
+  // `connectTimeHistoryKnown` records whether the snapshot was actually taken;
+  // when cursor restoration fails we fall back to time-only staleness instead
+  // of treating the empty set as "nothing is a replay".
+  const connectedAtMs = Date.now()
+  let connectTimeHistoryIds = new Set<string>()
+  let connectTimeHistoryKnown = false
   let processedActivityIds = processedActivityIdsMap.get(thread.id)
   if (!processedActivityIds) {
     try {
@@ -493,6 +523,8 @@ export async function runJulesStream(
       processedActivityIds = initialized.ids
       historyHydratedForNextStream = initialized.hydrated
       turnState = initialized.turnState
+      connectTimeHistoryIds = initialized.historyIds
+      connectTimeHistoryKnown = true
     } catch (err) {
       // Prefer at-least-once delivery if cursor restoration itself fails. This can
       // duplicate an old activity, but it avoids silently losing a new reply.
@@ -524,59 +556,68 @@ export async function runJulesStream(
     retryDelay = 5000
   }
 
+  // A stale replay is a post-restart recovery delivery of an old backlog item:
+  // present in the connect-time history snapshot AND created well before this
+  // handler connected. The time component matters — a live turn racing the
+  // connect (its send() beat the history fetch, e.g. messageCreate's 5s
+  // onReady timeout) puts its echo in the snapshot too, but created within
+  // seconds of connect, and that echo must stay bindable or the turn could
+  // never be attributed. When the snapshot itself failed, judge by time alone
+  // rather than treating everything as live.
+  const isStaleReplayActivity = (activity: any): boolean => {
+    if (connectTimeHistoryKnown && !connectTimeHistoryIds.has(activity.id)) return false
+    const createdAt = getActivityDate(activity)
+    // No timestamp to judge recency by: trust the snapshot verdict if we have
+    // one, otherwise assume live (at-least-once delivery bias).
+    if (!createdAt) return connectTimeHistoryKnown
+    return createdAt.getTime() < connectedAtMs - STALE_REPLAY_GRACE_MS
+  }
+
   // Keep the response target pinned to the queue turn that produced the current
   // Jules activities. Without this, several rapid Discord messages make a
   // getLastHumanMessage() lookup attach the first reply to the newest message.
-  // Newly created sessions can emit an agent reply without replaying their
-  // initial user activity, so bind an already-dispatched starter turn up front.
-  const initialActiveTurn = getActiveConversationTurn(thread.id)
-  const initialQueuedTurn = initialActiveTurn?.dispatchedAt ? initialActiveTurn : undefined
-  let currentQueuedTurnId: string | undefined = initialQueuedTurn?.id
-  let currentQueuedTarget: Message | null = initialQueuedTurn?.message || null
-  let cachedTarget: Message | null = currentQueuedTarget
-  let targetFetched = currentQueuedTarget !== null
+  // The binding/rebinding rules live in turnTargets.ts (unit-tested).
+  const targetState = createTurnTargetState(getActiveConversationTurn(thread.id))
 
   const releaseActiveQueuedTurn = (reason: ConversationTurnCompletionReason) => {
     const activeTurn = getActiveConversationTurn(thread.id)
     if (activeTurn) completeConversationTurn(thread.id, reason, activeTurn.id)
   }
 
-  // True while a queue turn has been sent to Jules but no user-visible response
-  // (agent reply or plan) has arrived yet. Used to keep the typing indicator
-  // alive on reconnects even when the session state is terminal — follow-ups to
-  // a completed session stay in `completed` until Jules starts replying.
-  const hasUnansweredDispatchedTurn = () => {
-    const turn = getActiveConversationTurn(thread.id)
-    return Boolean(turn?.dispatchedAt && !turn.respondedAt && !turn.completedAt)
-  }
+  // Used to keep the typing indicator alive on reconnects even when the session
+  // state is terminal — follow-ups to a completed session stay in `completed`
+  // until Jules starts replying.
+  const hasUnansweredDispatchedTurn = () =>
+    isTurnAwaitingReply(getActiveConversationTurn(thread.id))
 
   const getTarget = async (forceRefresh = false): Promise<Message | null> => {
-    const activeTurn = getActiveConversationTurn(thread.id)
-    // Rebind to the newest *dispatched* queue turn as soon as one exists. The
-    // userMessaged echo normally performs this rebind, but it can be swallowed
-    // (history replay after a restart, reconnect races) — and then replies and
-    // reactions stick to a stale turn or fall through to the "newest human
-    // message" lookup, hitting the wrong message. The serialized queue is the
-    // source of truth for which Discord message a response belongs to.
-    if (activeTurn?.dispatchedAt && activeTurn.id !== currentQueuedTurnId) {
-      currentQueuedTurnId = activeTurn.id
-      currentQueuedTarget = activeTurn.message
-      cachedTarget = activeTurn.message
-      targetFetched = true
-    } else if (currentQueuedTurnId && activeTurn?.id === currentQueuedTurnId) {
-      currentQueuedTarget = activeTurn.message
-    }
-    if (currentQueuedTarget) return currentQueuedTarget
-    if (!currentQueuedTurnId && activeTurn) return activeTurn.message
+    const resolved = resolveTurnTarget(targetState, getActiveConversationTurn(thread.id))
+    if (resolved) return resolved
 
-    if (forceRefresh || !targetFetched) {
+    if (forceRefresh || !targetState.targetFetched) {
       const fetched = await getLastHumanMessage(thread)
       if (fetched) {
-        cachedTarget = fetched
-        targetFetched = true
+        targetState.cachedTarget = fetched
+        targetState.targetFetched = true
       }
     }
-    return cachedTarget
+    return targetState.cachedTarget
+  }
+
+  // Reply only to a message with a real queue *binding* (the turn's echo, the
+  // starter binding, or the swallowed-echo recovery) that lives in this
+  // channel. Everything weaker — the "latest human message" fetch, the
+  // unbound-active-turn guess used for post-restart replays, or a
+  // parent-channel starter message (threads spawned from a text channel
+  // message — Message#reply posts into the *parent* channel) — is good enough
+  // for a status reaction, but a visible Discord reply to it would present the
+  // content as answering the wrong message or land it in the wrong channel;
+  // those cases fall back to a plain channel send instead.
+  const getReplyTarget = (): Message | null => {
+    // Refresh the same-turn message reference first.
+    resolveTurnTarget(targetState, getActiveConversationTurn(thread.id))
+    const bound = targetState.boundTarget
+    return bound && bound.channelId === thread.id ? bound : null
   }
 
   while (consecutiveFailures < maxRetries) {
@@ -613,15 +654,21 @@ export async function runJulesStream(
         return
       }
 
+      // Typing mode is process-level config (loaded at boot, not hot-reloaded),
+      // so resolve it once per connect instead of re-resolving for every activity.
+      const typingMode = getEffectiveConfig(thread).typing_indicator_mode || 'until_response'
+
       if (
         info &&
         (info.state === 'inProgress' || info.state === 'planning' || info.state === 'queued')
       ) {
         startTyping()
-      } else if (hasUnansweredDispatchedTurn()) {
-        // A dispatched Discord message is still waiting on its reply (e.g. a
-        // follow-up sent to a completed session): keep the indicator alive
-        // instead of clearing it just because the session state is terminal.
+      } else if (typingMode !== 'strict_state' && hasUnansweredDispatchedTurn()) {
+        // until_response only: a dispatched Discord message is still waiting on
+        // its reply (e.g. a follow-up sent to a completed session), so keep the
+        // indicator alive instead of clearing it just because the session state
+        // is terminal. strict_state documents typing as mirroring the session
+        // state, so there it stops.
         startTyping()
       } else {
         stopTyping()
@@ -664,10 +711,6 @@ export async function runJulesStream(
       ) {
         startTyping()
       }
-
-      // Typing mode is process-level config (loaded at boot, not hot-reloaded),
-      // so resolve it once per connect instead of re-resolving for every activity.
-      const typingMode = getEffectiveConfig(thread).typing_indicator_mode || 'until_response'
 
       // stream() replays the SDK's local cache and then switches to future
       // updates. Force a network sync first so replies produced during a bot
@@ -764,7 +807,7 @@ export async function runJulesStream(
                 .setStyle(ButtonStyle.Danger),
             )
 
-            const msg = await deliverWithReply(thread, target, threadConfig.reply_mode, {
+            const msg = await deliverWithReply(thread, getReplyTarget(), threadConfig.reply_mode, {
               embeds: [embed],
               components: [row],
             })
@@ -773,7 +816,7 @@ export async function runJulesStream(
               where: { threadId: thread.id },
               data: { planMessageId: msg.id },
             })
-            if (currentQueuedTurnId) queuedTurnRespondedId = currentQueuedTurnId
+            if (targetState.boundTurnId) queuedTurnRespondedId = targetState.boundTurnId
             break
           }
 
@@ -801,6 +844,24 @@ export async function runJulesStream(
           case 'agentMessaged': {
             logger.debug(`[runJulesStream] agentMessaged for ${sessionId}`)
             const rawMessage = activity.message || (activity as any).agentMessaged?.message || ''
+            // Swallowed-echo recovery: a live agent reply while no turn is
+            // bound answers the waiting dispatched turn — without this bind
+            // the completion below would no-op and the turn would block the
+            // channel queue forever. Connect-time history replays are excluded:
+            // they predate every turn this process dispatched (they are
+            // post-restart recovery deliveries, not answers to the current
+            // turn), so attributing them would falsely complete a fresh turn.
+            // Deliberately NOT extended to a *stale* binding (bound turn
+            // completed, newer turn dispatched): in that state a trailing
+            // activity of the completed turn is indistinguishable from an
+            // answer whose echo was swallowed, and guessing wrong would
+            // complete the new turn before Jules ever saw it — so the stale
+            // case keeps upstream's behavior (completion no-ops until the new
+            // turn's own echo binds it).
+            if (rawMessage && !targetState.boundTurnId && !isStaleReplayActivity(activity)) {
+              const activeTurn = getActiveConversationTurn(thread.id)
+              if (activeTurn?.dispatchedAt) bindTurnTarget(targetState, activeTurn)
+            }
             if (rawMessage) {
               const target = await getTarget()
               const threadConfig = getEffectiveConfig(thread, target?.member)
@@ -819,7 +880,7 @@ export async function runJulesStream(
                 const splits = splitMessage(resolved, 2000)
                 for (let i = 0; i < splits.length; i++) {
                   if (i === 0) {
-                    await deliverWithReply(thread, target, threadConfig.reply_mode, {
+                    await deliverWithReply(thread, getReplyTarget(), threadConfig.reply_mode, {
                       content: splits[i],
                     })
                   } else {
@@ -835,11 +896,11 @@ export async function runJulesStream(
                 await updateReaction(target, 'responded')
               }
             }
-            if (currentQueuedTurnId && rawMessage) {
-              queuedTurnRespondedId = currentQueuedTurnId
+            if (targetState.boundTurnId && rawMessage) {
+              queuedTurnRespondedId = targetState.boundTurnId
               queuedTurnCompletion = {
                 reason: 'agent_responded',
-                turnId: currentQueuedTurnId,
+                turnId: targetState.boundTurnId,
               }
             }
             break
@@ -866,7 +927,7 @@ export async function runJulesStream(
               const splits = splitMessage(fallback, 2000)
               for (let i = 0; i < splits.length; i++) {
                 if (i === 0) {
-                  await deliverWithReply(thread, target, threadConfig.reply_mode, {
+                  await deliverWithReply(thread, getReplyTarget(), threadConfig.reply_mode, {
                     content: splits[i],
                   })
                 } else {
@@ -876,11 +937,20 @@ export async function runJulesStream(
               turnState = { awaitingAgentReply: false }
             }
 
-            if (currentQueuedTurnId) {
+            if (targetState.boundTurnId) {
               queuedTurnCompletion = {
                 reason: 'session_completed',
-                turnId: currentQueuedTurnId,
+                turnId: targetState.boundTurnId,
               }
+            } else if (!isStaleReplayActivity(activity)) {
+              // No binding to attribute precisely (e.g. the turn's echo never
+              // streamed and the session went plan → completion with no agent
+              // message): release whatever dispatched turn is active, exactly
+              // like sessionFailed does — a live terminal event must never
+              // leave the channel queue jammed. Stale replayed completions
+              // stay excluded so a pre-restart backlog can't release a fresh
+              // turn.
+              releaseActiveQueuedTurn('session_completed')
             }
 
             autoRejectedSessions.delete(sessionId)
@@ -895,8 +965,8 @@ export async function runJulesStream(
             const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
             await streamManager.finalizeSession(thread.id, false, reason)
             await markActivityProcessed(activity)
-            if (currentQueuedTurnId) {
-              completeConversationTurn(thread.id, 'session_failed', currentQueuedTurnId)
+            if (targetState.boundTurnId) {
+              completeConversationTurn(thread.id, 'session_failed', targetState.boundTurnId)
             } else {
               releaseActiveQueuedTurn('session_failed')
             }
@@ -907,12 +977,14 @@ export async function runJulesStream(
 
           case 'userMessaged': {
             logger.debug(`[runJulesStream] userMessaged for ${sessionId}`)
-            if (isDiscordUserMessageActivity(activity)) {
-              const activeTurn = getActiveConversationTurn(thread.id)
-              currentQueuedTurnId = activeTurn?.id
-              currentQueuedTarget = activeTurn?.message || null
-              cachedTarget = currentQueuedTarget
-              targetFetched = currentQueuedTarget !== null
+            // Bind only on a *live* echo. A stale replay of an old echo
+            // (post-restart recovery of an undelivered backlog) says nothing
+            // about the queue turn active now — binding on it would attribute
+            // the stale agent reply replayed right after it to the fresh turn,
+            // delivering duplicate content onto that message and completing
+            // the turn before Jules ever saw it.
+            if (isDiscordUserMessageActivity(activity) && !isStaleReplayActivity(activity)) {
+              bindTurnTarget(targetState, getActiveConversationTurn(thread.id))
             }
             // A new human message arrived — refresh the cached reaction/reply target.
             await getTarget(true)
@@ -1298,7 +1370,8 @@ async function initializeJulesSessionCore(
                   .setFooter({ text: threadConfig.messages.plan.welcome_footer })
 
                 const histTarget = await getLastHumanMessage(thread)
-                await deliverWithReply(thread, histTarget, threadConfig.reply_mode, {
+                const replyable = histTarget?.channelId === thread.id ? histTarget : null
+                await deliverWithReply(thread, replyable, threadConfig.reply_mode, {
                   embeds: [embed],
                 })
               }
@@ -1374,45 +1447,57 @@ async function initializeJulesSessionCore(
   if (usedPreWarmed) {
     await thread.send(threadConfig.messages.session.prewarmed_ready)
     // Sustained loop instead of a one-shot bubble: the stream handler (started
-    // below) takes ownership and stops it once Jules visibly responds.
-    startTypingLoop(thread)
-
-    if (welcomePlanRejected) {
-      // Send rejection separately BEFORE the user prompt
-      const rejectionDirective = t(threadConfig.messages.prompts.auto_reject_directive_welcome, {
-        feedback: welcomeFeedback,
-      })
-      logger.debug(
-        `[initializeJulesSession] Sending auto-rejection directive for session ${session.id}`,
-      )
-      await session.send(rejectionDirective)
-
-      // Wait for it to process the rejection so it's ready for the prompt
-      logger.debug(
-        `[initializeJulesSession] Waiting for session ${session.id} to process rejection...`,
-      )
-      for (let i = 0; i < 20; i++) {
-        const info = await getFreshSessionInfo(session)
-        if (info.state !== 'queued') {
-          logger.debug(
-            `[initializeJulesSession] Session ${session.id} finished processing rejection (State: ${info.state})`,
-          )
-          break
-        }
-        await new Promise((r) => setTimeout(r, 1000))
-      }
-
-      // Briefly wait for any immediate follow-up activities to settle
-      await new Promise((r) => setTimeout(r, 2000))
-
-      // Now that we've rejected the welcome plan, we clear the set so that the
-      // FIRST plan for the ACTUAL prompt can also be rejected.
-      autoRejectedSessions.delete(session.id)
+    // below) takes ownership and stops it once Jules visibly responds. In
+    // strict_state mode typing mirrors the session state, so the stream's
+    // connect-time check drives it instead.
+    if (threadConfig.typing_indicator_mode !== 'strict_state') {
+      startTypingLoop(thread)
     }
 
-    logger.debug(`[initializeJulesSession] Sending user prompt to session ${session.id}`)
-    markConversationTurnDispatched(thread.id, queueTurnId)
-    await session.send(promptWithMetadata)
+    try {
+      if (welcomePlanRejected) {
+        // Send rejection separately BEFORE the user prompt
+        const rejectionDirective = t(threadConfig.messages.prompts.auto_reject_directive_welcome, {
+          feedback: welcomeFeedback,
+        })
+        logger.debug(
+          `[initializeJulesSession] Sending auto-rejection directive for session ${session.id}`,
+        )
+        await session.send(rejectionDirective)
+
+        // Wait for it to process the rejection so it's ready for the prompt
+        logger.debug(
+          `[initializeJulesSession] Waiting for session ${session.id} to process rejection...`,
+        )
+        for (let i = 0; i < 20; i++) {
+          const info = await getFreshSessionInfo(session)
+          if (info.state !== 'queued') {
+            logger.debug(
+              `[initializeJulesSession] Session ${session.id} finished processing rejection (State: ${info.state})`,
+            )
+            break
+          }
+          await new Promise((r) => setTimeout(r, 1000))
+        }
+
+        // Briefly wait for any immediate follow-up activities to settle
+        await new Promise((r) => setTimeout(r, 2000))
+
+        // Now that we've rejected the welcome plan, we clear the set so that the
+        // FIRST plan for the ACTUAL prompt can also be rejected.
+        autoRejectedSessions.delete(session.id)
+      }
+
+      logger.debug(`[initializeJulesSession] Sending user prompt to session ${session.id}`)
+      markConversationTurnDispatched(thread.id, queueTurnId)
+      await session.send(promptWithMetadata)
+    } catch (err) {
+      // No stream handler exists yet to own the typing loop; without this stop
+      // a failed init would leave the channel "typing" until the 30-minute
+      // safety timeout.
+      stopTypingLoop(thread.id)
+      throw err
+    }
 
     // Start processing events in the background for prewarmed session after sending the prompt
     runJulesStream(session.id, thread, streamManager, initialSkipIds)
