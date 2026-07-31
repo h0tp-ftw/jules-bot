@@ -809,8 +809,12 @@ export function getEffectiveConfig(
     resolvedBootstrap = roleOverride.bootstrap
   }
 
-  // Resolve reply_mode
-  let resolvedReplyMode: 'reply_ping' | 'reply_silent' | 'send' = yamlConfig.reply_mode || 'send'
+  // Resolve reply_mode. Defaults to reply_silent: agent messages and plans are
+  // delivered as Discord replies to the message they answer (without pinging),
+  // and a failed reply falls back to a plain channel send (deliverWithReply) so
+  // a stale reference can never lose content.
+  let resolvedReplyMode: 'reply_ping' | 'reply_silent' | 'send' =
+    yamlConfig.reply_mode || 'reply_silent'
 
   if (parentOverride && (parentOverride as any).reply_mode) {
     resolvedReplyMode = (parentOverride as any).reply_mode

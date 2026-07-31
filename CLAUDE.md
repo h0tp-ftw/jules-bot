@@ -103,7 +103,14 @@ Key modules:
   still-warming** sessions and **preserves `ready` ones** across restarts, then tops the pool back up).
 - `src/lib/streams/StreamManager.ts` — one editable "status message" per thread; buffers progress lines,
   debounced 3s flush, `finalizeSession`.
-- `src/lib/utils/` — `permissions.ts` (allowlist + thread-creator context), `emojis.ts`, `messageSplitter.ts`.
+- `src/lib/utils/` — `permissions.ts` (allowlist + thread-creator context), `emojis.ts`, `messageSplitter.ts`,
+  `typingManager.ts` (shared per-channel typing loops with a 30-min safety stop — always use this instead of
+  raw `sendTyping()`; in `strict_state` typing mode the stream handler alone drives it), `replyDelivery.ts`
+  (`deliverWithReply`: honors `reply_mode` — default `reply_silent` — and falls back to a plain channel send
+  when a reply fails; a double failure rethrows so the activity replays), `turnTargets.ts` (pure state machine
+  binding replies/reactions to the serialized queue turn that owns them — binding moves **only** via a turn's
+  own `userMessaged` echo or the orchestrator's swallowed-echo recovery, never eagerly, so trailing activities
+  of a released turn can't complete the next turn; edit it, not inline logic in `runJulesStream`).
 
 ## How Jules is driven (SDK facts)
 

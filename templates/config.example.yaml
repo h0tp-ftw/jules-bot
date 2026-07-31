@@ -5,6 +5,22 @@ diagnostic_prompt: |
 # Default Bot Emoji (rendered in message headers and plan embeds)
 bot_emoji: "🐙"
 
+# How the bot delivers Jules replies and plans in Discord.
+#   reply_silent - reply to the message being answered without pinging its author (default)
+#   reply_ping   - reply to the message and ping its author
+#   send         - post plain channel messages instead of replies
+# A reply that fails (e.g. the original message was deleted) automatically
+# falls back to a plain channel message so the content is never lost.
+reply_mode: "reply_silent"
+
+# When the bot shows the typing indicator.
+#   until_response - from a user message until Jules visibly responds, even when
+#                    the session already reports a terminal state (default)
+#   strict_state   - typing mirrors the Jules session state: on while
+#                    queued/planning/working (kept alive across reconnects and
+#                    progress updates), off once the session completes or fails
+typing_indicator_mode: "until_response"
+
 # Access Control Allowlist
 access_control:
   allow_all: false
