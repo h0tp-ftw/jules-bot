@@ -36,5 +36,14 @@ export async function deliverWithReply(
       )
     }
   }
-  return await channel.send(payload)
+  try {
+    return await channel.send(payload)
+  } catch (err) {
+    // The fallback send can fail from the same channel state (permissions,
+    // deleted channel). Log it here so every caller gets one consistent record,
+    // then propagate: callers rely on the throw for replay semantics (the
+    // stream leaves the activity unacknowledged and retries it on reconnect).
+    logger.error('[deliverWithReply] Channel send failed; the payload was not delivered:', err)
+    throw err
+  }
 }

@@ -14,9 +14,11 @@ bot_emoji: "🐙"
 reply_mode: "reply_silent"
 
 # When the bot shows the typing indicator.
-#   until_response - from a user message until Jules visibly responds (default)
-#   strict_state   - typing follows the session state (on while planning/working,
-#                    off once the session completes or fails)
+#   until_response - from a user message until Jules visibly responds, even when
+#                    the session already reports a terminal state (default)
+#   strict_state   - typing mirrors the Jules session state: on while
+#                    queued/planning/working (kept alive across reconnects and
+#                    progress updates), off once the session completes or fails
 typing_indicator_mode: "until_response"
 
 # Access Control Allowlist
