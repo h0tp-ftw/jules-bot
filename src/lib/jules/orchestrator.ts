@@ -21,6 +21,8 @@ import { splitMessage } from '../utils/messageSplitter.js'
 import { formatAttachmentMetadata } from '../utils/attachments.js'
 import { reactionStageForState } from '../utils/sessionState.js'
 import { formatErrorForDiscord } from '../utils/errors.js'
+import { startTypingLoop, stopTypingLoop } from '../utils/typingManager.js'
+import { deliverWithReply } from '../utils/replyDelivery.js'
 import {
   completeConversationTurn,
   enqueueConversationMessage,
@@ -330,6 +332,11 @@ export async function updateReaction(message: Message | null, newStage: string) 
     }
     rememberStage(message.id, newStage)
   } catch (err) {
+    // A failed clear/react can leave the message with no reaction at all while
+    // the dedup map still records the previous stage — a later update for that
+    // same stage would then be skipped forever. Forget the stage so the next
+    // attempt always re-applies.
+    messageReactionStage.delete(message.id)
     logger.error(`Failed to update reaction to stage ${newStage}:`, err)
   }
 }
@@ -357,9 +364,17 @@ export async function applyJulesReactions(
         logger.warn(`[applyJulesReactions] Could not react with "${raw}":`, err)
       }
     }
-    if (applied) rememberStage(message.id, `jules:${emojis.join(' ')}`)
+    if (applied) {
+      rememberStage(message.id, `jules:${emojis.join(' ')}`)
+    } else {
+      // The old reaction was cleared but nothing new stuck; forget the
+      // remembered stage so the state-driven fallback re-applies it instead of
+      // being deduped away.
+      messageReactionStage.delete(message.id)
+    }
     return applied
   } catch (err) {
+    messageReactionStage.delete(message.id)
     logger.error('[applyJulesReactions] Failed to apply Jules reactions:', err)
     return false
   }
@@ -413,21 +428,10 @@ export function scheduleNudgeForConversationTurn(
       if (chunks.length === 0) return
 
       try {
-        await turn.message.reply({
-          content: chunks[0],
-          allowedMentions: { repliedUser: false },
-        })
+        await deliverWithReply(channel, turn.message, 'reply_silent', { content: chunks[0] })
       } catch (err) {
-        logger.warn(
-          `[Nudge] Could not reply to Discord message ${turn.message.id}; sending notice in channel instead:`,
-          err,
-        )
-        try {
-          await channel.send(chunks[0])
-        } catch (sendErr) {
-          logger.warn(`[Nudge] Could not post the Discord nudge notice in ${channel.id}:`, sendErr)
-          return
-        }
+        logger.warn(`[Nudge] Could not post the Discord nudge notice in ${channel.id}:`, err)
+        return
       }
 
       for (const chunk of chunks.slice(1)) {
@@ -468,37 +472,11 @@ export async function runJulesStream(
     `[runJulesStream] Starting stream handler for thread ${thread.id}, sessionId: ${sessionId}`,
   )
 
-  let typingInterval: NodeJS.Timeout | null = null
-  let typingTimeout: NodeJS.Timeout | null = null
-
-  const startTyping = () => {
-    if (typingInterval) return
-    thread.sendTyping().catch(() => {})
-    typingInterval = setInterval(() => {
-      thread.sendTyping().catch(() => {})
-    }, 8000)
-
-    typingTimeout = setTimeout(
-      () => {
-        logger.warn(
-          `[runJulesStream] Typing indicator timed out after 30 minutes for thread ${thread.id}`,
-        )
-        stopTyping()
-      },
-      30 * 60 * 1000,
-    )
-  }
-
-  const stopTyping = () => {
-    if (typingInterval) {
-      clearInterval(typingInterval)
-      typingInterval = null
-    }
-    if (typingTimeout) {
-      clearTimeout(typingTimeout)
-      typingTimeout = null
-    }
-  }
+  // Typing state is shared per channel via typingManager, so the dispatch path
+  // (messageCreate / interactions) and this stream handler drive a single loop
+  // instead of racing separate timers that expire at different moments.
+  const startTyping = () => startTypingLoop(thread)
+  const stopTyping = () => stopTypingLoop(thread.id)
 
   let historyHydratedForNextStream = false
   let turnState: TurnResponseState = { awaitingAgentReply: false }
@@ -563,9 +541,29 @@ export async function runJulesStream(
     if (activeTurn) completeConversationTurn(thread.id, reason, activeTurn.id)
   }
 
+  // True while a queue turn has been sent to Jules but no user-visible response
+  // (agent reply or plan) has arrived yet. Used to keep the typing indicator
+  // alive on reconnects even when the session state is terminal — follow-ups to
+  // a completed session stay in `completed` until Jules starts replying.
+  const hasUnansweredDispatchedTurn = () => {
+    const turn = getActiveConversationTurn(thread.id)
+    return Boolean(turn?.dispatchedAt && !turn.respondedAt && !turn.completedAt)
+  }
+
   const getTarget = async (forceRefresh = false): Promise<Message | null> => {
     const activeTurn = getActiveConversationTurn(thread.id)
-    if (currentQueuedTurnId && activeTurn?.id === currentQueuedTurnId) {
+    // Rebind to the newest *dispatched* queue turn as soon as one exists. The
+    // userMessaged echo normally performs this rebind, but it can be swallowed
+    // (history replay after a restart, reconnect races) — and then replies and
+    // reactions stick to a stale turn or fall through to the "newest human
+    // message" lookup, hitting the wrong message. The serialized queue is the
+    // source of truth for which Discord message a response belongs to.
+    if (activeTurn?.dispatchedAt && activeTurn.id !== currentQueuedTurnId) {
+      currentQueuedTurnId = activeTurn.id
+      currentQueuedTarget = activeTurn.message
+      cachedTarget = activeTurn.message
+      targetFetched = true
+    } else if (currentQueuedTurnId && activeTurn?.id === currentQueuedTurnId) {
       currentQueuedTarget = activeTurn.message
     }
     if (currentQueuedTarget) return currentQueuedTarget
@@ -619,6 +617,11 @@ export async function runJulesStream(
         info &&
         (info.state === 'inProgress' || info.state === 'planning' || info.state === 'queued')
       ) {
+        startTyping()
+      } else if (hasUnansweredDispatchedTurn()) {
+        // A dispatched Discord message is still waiting on its reply (e.g. a
+        // follow-up sent to a completed session): keep the indicator alive
+        // instead of clearing it just because the session state is terminal.
         startTyping()
       } else {
         stopTyping()
@@ -761,21 +764,10 @@ export async function runJulesStream(
                 .setStyle(ButtonStyle.Danger),
             )
 
-            let msg
-            if (target && threadConfig.reply_mode !== 'send') {
-              const allowedMentions =
-                threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
-              msg = await target.reply({
-                embeds: [embed],
-                components: [row],
-                allowedMentions,
-              })
-            } else {
-              msg = await thread.send({
-                embeds: [embed],
-                components: [row],
-              })
-            }
+            const msg = await deliverWithReply(thread, target, threadConfig.reply_mode, {
+              embeds: [embed],
+              components: [row],
+            })
 
             await prisma.debugSession.update({
               where: { threadId: thread.id },
@@ -825,19 +817,13 @@ export async function runJulesStream(
               if (bodyText) {
                 const resolved = resolveMessageEmojis(thread.client, bodyText)
                 const splits = splitMessage(resolved, 2000)
-                if (target && threadConfig.reply_mode !== 'send') {
-                  const allowedMentions =
-                    threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
-                  for (let i = 0; i < splits.length; i++) {
-                    if (i === 0) {
-                      await target.reply({ content: splits[i], allowedMentions })
-                    } else {
-                      await thread.send(splits[i])
-                    }
-                  }
-                } else {
-                  for (const chunk of splits) {
-                    await thread.send(chunk)
+                for (let i = 0; i < splits.length; i++) {
+                  if (i === 0) {
+                    await deliverWithReply(thread, target, threadConfig.reply_mode, {
+                      content: splits[i],
+                    })
+                  } else {
+                    await thread.send(splits[i])
                   }
                 }
               }
@@ -878,19 +864,13 @@ export async function runJulesStream(
                 latestProgress: turnState.latestProgress,
               })
               const splits = splitMessage(fallback, 2000)
-              if (target && threadConfig.reply_mode !== 'send') {
-                const allowedMentions =
-                  threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
-                for (let i = 0; i < splits.length; i++) {
-                  if (i === 0) {
-                    await target.reply({ content: splits[i], allowedMentions })
-                  } else {
-                    await thread.send(splits[i])
-                  }
-                }
-              } else {
-                for (const chunk of splits) {
-                  await thread.send(chunk)
+              for (let i = 0; i < splits.length; i++) {
+                if (i === 0) {
+                  await deliverWithReply(thread, target, threadConfig.reply_mode, {
+                    content: splits[i],
+                  })
+                } else {
+                  await thread.send(splits[i])
                 }
               }
               turnState = { awaitingAgentReply: false }
@@ -1318,11 +1298,9 @@ async function initializeJulesSessionCore(
                   .setFooter({ text: threadConfig.messages.plan.welcome_footer })
 
                 const histTarget = await getLastHumanMessage(thread)
-                if (histTarget) {
-                  await histTarget.reply({ embeds: [embed] })
-                } else {
-                  await thread.send({ embeds: [embed] })
-                }
+                await deliverWithReply(thread, histTarget, threadConfig.reply_mode, {
+                  embeds: [embed],
+                })
               }
             }
           }
@@ -1395,7 +1373,9 @@ async function initializeJulesSessionCore(
 
   if (usedPreWarmed) {
     await thread.send(threadConfig.messages.session.prewarmed_ready)
-    thread.sendTyping().catch(() => {})
+    // Sustained loop instead of a one-shot bubble: the stream handler (started
+    // below) takes ownership and stops it once Jules visibly responds.
+    startTypingLoop(thread)
 
     if (welcomePlanRejected) {
       // Send rejection separately BEFORE the user prompt

@@ -15,6 +15,7 @@ import { t, type Messages } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import { runJulesStream, activeStreams, initializeJulesSession } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
+import { startTypingLoop } from '../lib/utils/typingManager.js'
 
 import { hasPermission } from '../lib/utils/permissions.js'
 
@@ -132,7 +133,9 @@ export default {
           // Approve the plan
           await session.approve()
 
-          thread.sendTyping().catch(() => {})
+          // Sustained loop instead of a one-shot bubble; the stream handler
+          // stops it when the session responds or terminates.
+          startTypingLoop(thread)
 
           // Rehydrate stream listener if not already active
           if (!activeStreams.has(thread.id)) {
