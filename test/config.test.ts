@@ -9,6 +9,7 @@ import {
   DEFAULT_REACTIONS,
   MESSAGES,
   NUDGE,
+  JULES_POLLING,
 } from '../src/config.js'
 
 // getEffectiveConfig layers: global YAML -> parent channel -> thread -> role.
@@ -98,6 +99,16 @@ test('jules_reactions defaults off and resolves from thread and role overrides',
     getEffectiveConfig({ id: 'jr-none' }, memberWithRole('JrRole')).jules_reactions.enabled,
     true,
   )
+})
+
+test('central Jules polling uses bounded active/idle defaults', () => {
+  assert.equal(JULES_POLLING.active_interval_ms, 5000)
+  assert.equal(JULES_POLLING.idle_interval_ms, 60000)
+  assert.equal(JULES_POLLING.idle_timeout_ms, 3600000)
+  assert.equal(JULES_POLLING.max_concurrency, 3)
+  assert.equal(JULES_POLLING.min_request_spacing_ms, 250)
+  assert.equal(JULES_POLLING.rate_limit_base_delay_ms, 30000)
+  assert.equal(JULES_POLLING.rate_limit_max_delay_ms, 300000)
 })
 
 test('nudge defaults off and merges thread and role settings', () => {

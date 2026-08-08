@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger.js'
 import { jules } from '@google/jules-sdk'
 import { JULES_API_KEY, getBootstrapContext, getEffectiveConfig } from '../../config.js'
+import { scheduleJulesRequest } from './JulesRequestCoordinator.js'
 
 // Shared Jules SDK client. Exported so PreWarmedManager reuses this single
 // instance instead of constructing a second one.
@@ -61,18 +62,22 @@ export class JulesClient {
       return this.reposCache.repos
     }
 
-    const repos: ConnectedRepo[] = []
+    let repos: ConnectedRepo[] = []
     try {
-      for await (const source of client.sources()) {
-        if (source.type === 'githubRepo') {
-          repos.push({
-            name: `${source.githubRepo.owner}/${source.githubRepo.repo}`,
-            id: source.id,
-            defaultBranch: source.githubRepo.defaultBranch,
-            branches: source.githubRepo.branches || [],
-          })
+      repos = await scheduleJulesRequest(async () => {
+        const listed: ConnectedRepo[] = []
+        for await (const source of client.sources()) {
+          if (source.type === 'githubRepo') {
+            listed.push({
+              name: `${source.githubRepo.owner}/${source.githubRepo.repo}`,
+              id: source.id,
+              defaultBranch: source.githubRepo.defaultBranch,
+              branches: source.githubRepo.branches || [],
+            })
+          }
         }
-      }
+        return listed
+      })
       this.reposCache = { repos, expiresAt: now + this.REPOS_CACHE_TTL_MS }
     } catch (err) {
       logger.error('[JulesClient] Failed to list connected sources:', err)

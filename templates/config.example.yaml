@@ -56,6 +56,20 @@ nudge:
   # message: "Please respond directly to the most recent Discord message now."
   # discord_message: "🔔 **No reply after {delay}, so I reminded Jules.**"
 
+# Centralized Jules activity polling. Active work polls quickly. Once Jules has
+# replied, is waiting for input/approval, or has completed, polling slows down
+# and stops entirely after one idle hour. A new Discord message or approval wakes
+# the session immediately. All sessions share the same concurrency/rate-limit
+# coordinator so a 429 backs off the whole bot instead of causing a retry herd.
+jules_polling:
+  active_interval_ms: 5000
+  idle_interval_ms: 60000
+  idle_timeout_ms: 3600000
+  max_concurrency: 3
+  min_request_spacing_ms: 250
+  rate_limit_base_delay_ms: 30000
+  rate_limit_max_delay_ms: 300000
+
 # Force interactive repository and branch selection on thread creation.
 # If true, shows an embed with select menus allowing developers to pick a connected repo and branch.
 # If false, automatically proceeds with default repository and branch.

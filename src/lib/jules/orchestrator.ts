@@ -12,7 +12,7 @@ import {
 } from 'discord.js'
 import { JulesClient } from './JulesClient.js'
 import { StreamManager } from '../streams/StreamManager.js'
-import { prisma, getEffectiveConfig, yamlConfig, YAML_GUILDS } from '../../config.js'
+import { prisma, getEffectiveConfig, yamlConfig, YAML_GUILDS, JULES_POLLING } from '../../config.js'
 import { t } from '../../strings.js'
 import { replenishPool } from './PreWarmedManager.js'
 import { resolveMessageEmojis } from '../utils/emojis.js'
@@ -37,12 +37,31 @@ import {
   isDiscordUserMessageActivity,
   type TurnResponseState,
 } from '../utils/sessionOutcome.js'
+import { isJulesRateLimitError } from './ActivityPollScheduler.js'
+import {
+  julesRequestCoordinator as activityPollScheduler,
+  scheduleJulesRequest,
+} from './JulesRequestCoordinator.js'
 
 export type JulesDiscordChannel = ThreadChannel | TextChannel
 
 export const activeStreams = new Set<string>()
 export const autoRejectedSessions = new Set<string>()
 export const processedActivityIdsMap = new Map<string, Set<string>>()
+export { scheduleJulesRequest }
+
+export function wakeJulesStream(channelId: string): void {
+  activityPollScheduler.wake(channelId)
+}
+
+function isIdleSessionState(state?: string): boolean {
+  return (
+    state === 'awaitingPlanApproval' ||
+    state === 'awaitingUserFeedback' ||
+    state === 'paused' ||
+    state === 'completed'
+  )
+}
 // Tracks the last reaction stage applied to a given message id so updateReaction
 // can skip redundant remove/re-add API calls when the stage hasn't changed.
 const messageReactionStage = new Map<string, string>()
@@ -54,9 +73,11 @@ const MAX_REACTION_STAGE_ENTRIES = 5000
 // Release all per-thread module state for a stream handler that is exiting for
 // good (failed / archived / deleted / retries exhausted). Centralized so every
 // exit path cleans up the same sets — previously some paths leaked
-// autoRejectedSessions or processedActivityIdsMap. NOTE: a *completed* session
-// deliberately does NOT tear down — its stream stays alive to handle follow-ups.
+// autoRejectedSessions or processedActivityIdsMap. Completed/idle sessions now
+// stay warm only for a bounded grace period; after that, the next Discord action
+// rehydrates them on demand instead of keeping an eternal Jules poller alive.
 function teardownStreamState(threadId: string, sessionId?: string) {
+  activityPollScheduler.remove(threadId)
   activeStreams.delete(threadId)
   processedActivityIdsMap.delete(threadId)
   if (sessionId) autoRejectedSessions.delete(sessionId)
@@ -140,20 +161,21 @@ async function hydrateSessionHistory(
 }> {
   let hydrated = false
   try {
-    const synced = await session.activities.hydrate()
+    const synced = await activityPollScheduler.request(() => session.activities.hydrate())
     hydrated = true
     logger.debug(`[runJulesStream] Hydrated ${synced} activities for session ${sessionId}.`)
   } catch (err) {
     logger.warn(`[runJulesStream] Failed to hydrate history for session ${sessionId}:`, err)
   }
 
-  const activities: any[] = []
+  let activities: any[] = []
   try {
-    for await (const activity of session.history()) {
-      activities.push(activity)
-    }
+    // hydrate() above already performed the network sync. Read the SDK cache
+    // directly so initialization does not immediately issue a second activities
+    // request through session.history().
+    activities = await session.activities.select({ order: 'asc' })
   } catch (err) {
-    logger.error(`[runJulesStream] Failed to read history for session ${sessionId}:`, err)
+    logger.error(`[runJulesStream] Failed to read cached history for session ${sessionId}:`, err)
   }
 
   return { activities, hydrated }
@@ -275,7 +297,7 @@ async function persistDeliveredActivity(threadId: string, activity: any) {
 
 async function getCompletedSessionResult(session: any, sessionId: string): Promise<Outcome | null> {
   try {
-    return await session.result({ timeoutMs: 15_000 })
+    return await scheduleJulesRequest(() => session.result({ timeoutMs: 15_000 }))
   } catch (err) {
     logger.warn(
       `[runJulesStream] Session ${sessionId} completed, but its result could not be retrieved:`,
@@ -402,7 +424,8 @@ export function scheduleNudgeForConversationTurn(
       logger.info(
         `[Nudge] Sending response reminder for Discord message ${turn.message.id} to Jules session ${session.id}`,
       )
-      await session.send(nudgePrompt)
+      await scheduleJulesRequest(() => session.send(nudgePrompt))
+      wakeJulesStream(channel.id)
 
       if (!channelConfig.nudge.notify_discord) return
 
@@ -464,6 +487,7 @@ export async function runJulesStream(
     return
   }
   activeStreams.add(thread.id)
+  activityPollScheduler.register(thread.id)
   logger.debug(
     `[runJulesStream] Starting stream handler for thread ${thread.id}, sessionId: ${sessionId}`,
   )
@@ -594,7 +618,7 @@ export async function runJulesStream(
 
       logger.debug(`[runJulesStream] Fetching session info for ${sessionId}...`)
       const session = JulesClient.getSession(sessionId)
-      let info = await getFreshSessionInfo(session)
+      let info = await activityPollScheduler.request(() => getFreshSessionInfo(session))
       logger.debug(`[runJulesStream] Session ${sessionId} info: state=${info?.state}`)
 
       if (!info) {
@@ -613,6 +637,15 @@ export async function runJulesStream(
         releaseActiveQueuedTurn('session_failed')
         teardownStreamState(thread.id, sessionId)
         return
+      }
+
+      if (
+        isIdleSessionState(info?.state) &&
+        !getActiveConversationTurn(thread.id)?.dispatchedAt
+      ) {
+        activityPollScheduler.markIdle(thread.id, false)
+      } else {
+        activityPollScheduler.markActive(thread.id)
       }
 
       if (
@@ -639,10 +672,20 @@ export async function runJulesStream(
           stopTyping()
           return
         }
-        logger.debug(`[runJulesStream] is queued. Waiting 5s...`)
-        await new Promise((resolve) => setTimeout(resolve, 5000))
-        queuedWaitMs += 5000
-        info = await getFreshSessionInfo(session)
+        logger.debug(
+          `[runJulesStream] is queued. Waiting ${JULES_POLLING.active_interval_ms}ms...`,
+        )
+        await new Promise((resolve) => setTimeout(resolve, JULES_POLLING.active_interval_ms))
+        queuedWaitMs += JULES_POLLING.active_interval_ms
+        info = await activityPollScheduler.request(() => getFreshSessionInfo(session))
+      }
+      if (
+        isIdleSessionState(info?.state) &&
+        !getActiveConversationTurn(thread.id)?.dispatchedAt
+      ) {
+        activityPollScheduler.markIdle(thread.id, false)
+      } else {
+        activityPollScheduler.markActive(thread.id)
       }
 
       const targetMessage = await getTarget()
@@ -666,20 +709,44 @@ export async function runJulesStream(
       // so resolve it once per connect instead of re-resolving for every activity.
       const typingMode = getEffectiveConfig(thread).typing_indicator_mode || 'until_response'
 
-      // stream() replays the SDK's local cache and then switches to future
-      // updates. Force a network sync first so replies produced during a bot
-      // restart or transient disconnect are present in that replay.
-      if (historyHydratedForNextStream) {
-        historyHydratedForNextStream = false
-      } else {
-        const synced = await session.activities.hydrate()
-        logger.debug(
-          `[runJulesStream] Hydrated ${synced} activities before subscribing to session ${sessionId}.`,
-        )
-      }
+      // The Jules SDK's session.stream() is an infinite 5-second poller and its
+      // raw network stream starts listing activities again on every pass. Use the
+      // SDK's incremental hydrate() cursor instead, and send every sync through a
+      // shared scheduler so all sessions obey one concurrency/rate-limit budget.
+      let skipHydrateOnce = historyHydratedForNextStream
+      historyHydratedForNextStream = false
+      logger.debug(`[runJulesStream] Entering scheduled activity polling for ${sessionId}...`)
+      while (true) {
+        const scheduledPoll = await activityPollScheduler.poll(thread.id, async () => {
+          let synced = 0
+          if (skipHydrateOnce) {
+            skipHydrateOnce = false
+          } else {
+            synced = await session.activities.hydrate()
+          }
+          const activities = await session.activities.select({ order: 'asc' })
+          return { synced, activities }
+        })
 
-      logger.debug(`[runJulesStream] Subscribing to session stream for ${sessionId}...`)
-      for await (const activity of session.stream()) {
+        if (scheduledPoll.expired) {
+          logger.info(
+            `[runJulesStream] Session ${sessionId} has been idle for ${Math.round(JULES_POLLING.idle_timeout_ms / 60000)} minutes. Suspending activity polling for thread ${thread.id} until the next Discord action.`,
+          )
+          stopTyping()
+          releaseActiveQueuedTurn('stream_ended')
+          teardownStreamState(thread.id, sessionId)
+          return
+        }
+
+        consecutiveFailures = 0
+        retryDelay = 5000
+        if (scheduledPoll.value.synced > 0) {
+          logger.debug(
+            `[runJulesStream] Incrementally hydrated ${scheduledPoll.value.synced} new activities for session ${sessionId}.`,
+          )
+        }
+
+        for (const activity of scheduledPoll.value.activities) {
         const id = activity.id
         logger.debug(
           `[runJulesStream] Received activity from stream: ${id} type=${activity.type} originator=${activity.originator}`,
@@ -700,6 +767,7 @@ export async function runJulesStream(
         switch (type) {
           case 'planGenerated': {
             logger.debug(`[runJulesStream] planGenerated for ${sessionId}`)
+            activityPollScheduler.markIdle(thread.id)
             const plan = activity.plan || (activity as any).planGenerated?.plan
             if (!plan || !plan.steps) break
 
@@ -721,7 +789,8 @@ export async function runJulesStream(
                   }),
                 )
               }
-              await session.send(feedback)
+              await scheduleJulesRequest(() => session.send(feedback))
+              activityPollScheduler.markActive(thread.id)
               const target = await getTarget()
               await updateReaction(target, 'in_progress')
               break
@@ -787,6 +856,7 @@ export async function runJulesStream(
 
           case 'progressUpdated': {
             logger.debug(`[runJulesStream] progressUpdated for ${sessionId}`)
+            activityPollScheduler.markActive(thread.id)
             // If we were awaiting approval, go back to in_progress on updates
             const target = await getTarget()
             await updateReaction(target, 'in_progress')
@@ -808,6 +878,7 @@ export async function runJulesStream(
 
           case 'agentMessaged': {
             logger.debug(`[runJulesStream] agentMessaged for ${sessionId}`)
+            activityPollScheduler.markIdle(thread.id)
             const rawMessage = activity.message || (activity as any).agentMessaged?.message || ''
             if (rawMessage) {
               const target = await getTarget()
@@ -861,6 +932,7 @@ export async function runJulesStream(
 
           case 'sessionCompleted': {
             logger.debug(`[runJulesStream] sessionCompleted for ${sessionId}`)
+            activityPollScheduler.markIdle(thread.id)
             const target = await getTarget()
             const outcome = await getCompletedSessionResult(session, sessionId)
             const pullRequestUrl = outcome?.pullRequest?.url
@@ -927,6 +999,7 @@ export async function runJulesStream(
 
           case 'userMessaged': {
             logger.debug(`[runJulesStream] userMessaged for ${sessionId}`)
+            activityPollScheduler.markActive(thread.id)
             if (isDiscordUserMessageActivity(activity)) {
               const activeTurn = getActiveConversationTurn(thread.id)
               currentQueuedTurnId = activeTurn?.id
@@ -986,9 +1059,7 @@ export async function runJulesStream(
         }
         operationPhase = 'jules'
       }
-
-      logger.debug(`[runJulesStream] Stream loop finished for ${sessionId}.`)
-      stopTyping()
+      }
     } catch (err: any) {
       // Only treat 403/404 errors as permanent while talking to Jules itself.
       // Discord can also return those statuses for a particular message/reply;
@@ -1008,9 +1079,16 @@ export async function runJulesStream(
         )
         stopTyping()
         releaseActiveQueuedTurn('stream_ended')
-        activeStreams.delete(thread.id)
-        processedActivityIdsMap.delete(thread.id)
+        teardownStreamState(thread.id, sessionId)
         return
+      }
+
+      if (operationPhase === 'jules' && isJulesRateLimitError(err)) {
+        const cooldownMs = Math.max(0, activityPollScheduler.getGlobalRateLimitUntil() - Date.now())
+        logger.warn(
+          `[runJulesStream] Jules API rate-limited thread ${thread.id}; shared polling cooldown is active for about ${Math.ceil(cooldownMs / 1000)}s. The session will stay attached and retry after the global cooldown.`,
+        )
+        continue
       }
 
       consecutiveFailures++
@@ -1227,7 +1305,7 @@ async function initializeJulesSessionCore(
       try {
         session = JulesClient.getSession(preWarmed.id)
 
-        const info = await getFreshSessionInfo(session)
+        const info = await activityPollScheduler.request(() => getFreshSessionInfo(session))
         logger.debug(
           `[initializeJulesSession] Session ${session.id} state at consumption: ${info.state}`,
         )
@@ -1240,12 +1318,12 @@ async function initializeJulesSessionCore(
           throw new Error(`Pre-warmed session ${session.id} is in ${info.state} state`)
         }
 
-        // Load history activities for the pre-warmed session to get greeting/plans
-        const activities: any[] = []
+        // Load history activities for the pre-warmed session to get greeting/plans.
+        // Sync once through the shared Jules request budget, then read locally.
+        let activities: any[] = []
         try {
-          for await (const act of session.history()) {
-            activities.push(act)
-          }
+          await activityPollScheduler.request(() => session.activities.hydrate())
+          activities = await session.activities.select({ order: 'asc' })
         } catch (histErr) {
           logger.error(
             `[initializeJulesSession] Failed to fetch history for pre-warmed session ${session.id}:`,
@@ -1362,14 +1440,16 @@ async function initializeJulesSessionCore(
 
   if (!session) {
     markConversationTurnDispatched(thread.id, queueTurnId)
-    session = await JulesClient.createSession({
-      prompt: promptWithMetadata,
-      repo: repoName,
-      branch: branchName,
-      title: thread.name,
-      thread: thread,
-      member: starterMessage.member,
-    })
+    session = await scheduleJulesRequest(() =>
+      JulesClient.createSession({
+        prompt: promptWithMetadata,
+        repo: repoName,
+        branch: branchName,
+        title: thread.name,
+        thread: thread,
+        member: starterMessage.member,
+      }),
+    )
   }
 
   await prisma.debugSession.create({
@@ -1405,14 +1485,14 @@ async function initializeJulesSessionCore(
       logger.debug(
         `[initializeJulesSession] Sending auto-rejection directive for session ${session.id}`,
       )
-      await session.send(rejectionDirective)
+      await scheduleJulesRequest(() => session.send(rejectionDirective))
 
       // Wait for it to process the rejection so it's ready for the prompt
       logger.debug(
         `[initializeJulesSession] Waiting for session ${session.id} to process rejection...`,
       )
       for (let i = 0; i < 20; i++) {
-        const info = await getFreshSessionInfo(session)
+        const info = await scheduleJulesRequest(() => getFreshSessionInfo(session))
         if (info.state !== 'queued') {
           logger.debug(
             `[initializeJulesSession] Session ${session.id} finished processing rejection (State: ${info.state})`,
@@ -1432,7 +1512,7 @@ async function initializeJulesSessionCore(
 
     logger.debug(`[initializeJulesSession] Sending user prompt to session ${session.id}`)
     markConversationTurnDispatched(thread.id, queueTurnId)
-    await session.send(promptWithMetadata)
+    await scheduleJulesRequest(() => session.send(promptWithMetadata))
 
     // Start processing events in the background for prewarmed session after sending the prompt
     runJulesStream(session.id, thread, streamManager, initialSkipIds)
@@ -1478,14 +1558,16 @@ export async function initializeChatSession(
     content: messageContent,
   })
 
-  const session = await JulesClient.createSession({
-    prompt: promptWithMetadata,
-    repo: repoName,
-    branch: branchName,
-    title: channel.name,
-    thread: channel,
-    member: message.member,
-  })
+  const session = await scheduleJulesRequest(() =>
+    JulesClient.createSession({
+      prompt: promptWithMetadata,
+      repo: repoName,
+      branch: branchName,
+      title: channel.name,
+      thread: channel,
+      member: message.member,
+    }),
+  )
 
   await prisma.debugSession.create({
     data: {
@@ -1531,6 +1613,7 @@ export async function rehydrateActiveStreams(client: any, streamManager: StreamM
       select: { guildId: true, chatChannelId: true },
     })
     const guildConfigById = new Map(guildConfigs.map((config) => [config.guildId, config]))
+    const idleCutoffMs = Date.now() - JULES_POLLING.idle_timeout_ms
 
     for (const session of sessions) {
       try {
@@ -1555,22 +1638,40 @@ export async function rehydrateActiveStreams(client: any, streamManager: StreamM
           continue
         }
 
+        // Do not grant every old completed session a fresh one-hour polling window
+        // just because the bot restarted. For records older than the idle grace
+        // period, spend one paced info request to keep only genuinely active work.
+        if (session.updatedAt.getTime() < idleCutoffMs) {
+          const remoteSession = JulesClient.getSession(session.julesSessionId)
+          const info = await scheduleJulesRequest(() => getFreshSessionInfo(remoteSession))
+          if (!info || info.state === 'failed' || isIdleSessionState(info.state)) {
+            logger.debug(
+              `[rehydrateActiveStreams] Session ${session.julesSessionId} is stale and ${info?.state || 'unavailable'}; leaving it dormant until the next Discord action.`,
+            )
+            continue
+          }
+        }
+
         const chatbotMode = !sessionChannel.isThread()
         logger.debug(
           `[rehydrateActiveStreams] Rehydrating stream for ${chatbotMode ? 'chatbot channel' : 'thread'} ${sessionChannel.id}, sessionId: ${session.julesSessionId}`,
         )
-        // runJulesStream checks if it's already active, so this is safe
-        runJulesStream(
+        // runJulesStream checks if it's already active. Its initialization and all
+        // Jules network calls are paced by the shared scheduler, so startup no
+        // longer needs a separate fixed inter-session sleep.
+        void runJulesStream(
           session.julesSessionId,
           sessionChannel,
           streamManager,
           undefined,
           undefined,
           { chatbotMode },
-        )
-
-        // Wait 1.5 seconds between rehydrations to avoid hitting Jules API rate limits
-        await new Promise((resolve) => setTimeout(resolve, 1500))
+        ).catch((err) => {
+          logger.error(
+            `[rehydrateActiveStreams] Stream failed for session ${session.julesSessionId} in ${sessionChannel.id}:`,
+            err,
+          )
+        })
       } catch (err) {
         logger.error(
           `[rehydrateActiveStreams] Failed to rehydrate session ${session.julesSessionId} for thread ${session.threadId}:`,

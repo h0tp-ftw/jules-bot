@@ -8,6 +8,8 @@ import {
   updateReaction,
   initializeChatSession,
   scheduleNudgeForConversationTurn,
+  scheduleJulesRequest,
+  wakeJulesStream,
   type JulesDiscordChannel,
 } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
@@ -122,7 +124,8 @@ async function sendToExistingSession(
       `[MessageCreate] Sending message to Jules session ${sessionRecord.julesSessionId}...`,
     )
     markConversationTurnDispatched(channel.id, turnId)
-    await session.send(promptWithMetadata)
+    await scheduleJulesRequest(() => session.send(promptWithMetadata))
+    wakeJulesStream(channel.id)
     scheduleNudgeForConversationTurn(channel, turnId, session, message.member, dbDefaultRepo)
     logger.debug(
       `[MessageCreate] Message sent successfully to Jules session ${sessionRecord.julesSessionId}`,

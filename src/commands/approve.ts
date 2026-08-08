@@ -3,7 +3,12 @@ import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js'
 import { prisma, getEffectiveConfig, MESSAGES } from '../config.js'
 import { t } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { runJulesStream, activeStreams } from '../lib/jules/orchestrator.js'
+import {
+  runJulesStream,
+  activeStreams,
+  scheduleJulesRequest,
+  wakeJulesStream,
+} from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 
 export default {
@@ -44,7 +49,7 @@ export default {
 
     try {
       const session = JulesClient.getSession(sessionRecord.julesSessionId)
-      const info = await session.info()
+      const info = await scheduleJulesRequest(() => session.info())
 
       if (info.state !== 'awaitingPlanApproval') {
         await interaction.editReply({
@@ -54,7 +59,8 @@ export default {
       }
 
       // Approve the plan
-      await session.approve()
+      await scheduleJulesRequest(() => session.approve())
+      wakeJulesStream(thread.id)
 
       // Rehydrate stream listener if not already active
       if (!activeStreams.has(thread.id)) {

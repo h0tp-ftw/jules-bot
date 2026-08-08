@@ -108,6 +108,10 @@ try {
       ...(defaultYaml.nudge || {}),
       ...(userYaml.nudge || {}),
     },
+    jules_polling: {
+      ...(defaultYaml.jules_polling || {}),
+      ...(userYaml.jules_polling || {}),
+    },
     pre_warmed_sessions: {
       ...(defaultYaml.pre_warmed_sessions || {}),
       ...(userYaml.pre_warmed_sessions || {}),
@@ -279,6 +283,23 @@ export const NUDGE = {
     typeof nudge.discord_message === 'string' && nudge.discord_message.trim()
       ? nudge.discord_message
       : undefined,
+}
+
+// Centralized Jules activity polling. Active work stays responsive; sessions that
+// have replied / are awaiting input / completed fall back to a slow polling lane
+// for a bounded grace period, then stop generating API traffic entirely until a
+// new Discord action wakes them.
+const julesPolling = yamlConfig.jules_polling || {}
+const positiveNumber = (value: unknown, fallback: number) =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+export const JULES_POLLING = {
+  active_interval_ms: positiveNumber(julesPolling.active_interval_ms, 5_000),
+  idle_interval_ms: positiveNumber(julesPolling.idle_interval_ms, 60_000),
+  idle_timeout_ms: positiveNumber(julesPolling.idle_timeout_ms, 60 * 60 * 1_000),
+  max_concurrency: Math.max(1, Math.floor(positiveNumber(julesPolling.max_concurrency, 3))),
+  min_request_spacing_ms: positiveNumber(julesPolling.min_request_spacing_ms, 250),
+  rate_limit_base_delay_ms: positiveNumber(julesPolling.rate_limit_base_delay_ms, 30_000),
+  rate_limit_max_delay_ms: positiveNumber(julesPolling.rate_limit_max_delay_ms, 5 * 60 * 1_000),
 }
 
 // Load Agent Personality Markdown

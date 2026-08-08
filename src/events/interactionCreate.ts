@@ -13,7 +13,13 @@ import {
 import { prisma, getEffectiveConfig, MESSAGES } from '../config.js'
 import { t, type Messages } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { runJulesStream, activeStreams, initializeJulesSession } from '../lib/jules/orchestrator.js'
+import {
+  runJulesStream,
+  activeStreams,
+  initializeJulesSession,
+  scheduleJulesRequest,
+  wakeJulesStream,
+} from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 
 import { hasPermission } from '../lib/utils/permissions.js'
@@ -129,8 +135,11 @@ export default {
         const msgs = getEffectiveConfig(thread, interaction.member).messages
 
         if (kind === 'plan-approve') {
-          // Approve the plan
-          await session.approve()
+          // A shared Jules cooldown can legitimately last longer than Discord's
+          // interaction acknowledgement window, so acknowledge first.
+          await interaction.deferUpdate()
+          await scheduleJulesRequest(() => session.approve())
+          wakeJulesStream(thread.id)
 
           thread.sendTyping().catch(() => {})
 
@@ -139,7 +148,7 @@ export default {
             runJulesStream(sessionRecord.julesSessionId, thread, streamManager)
           }
 
-          await interaction.update({
+          await interaction.editReply({
             content: msgs.plan.approved,
             components: [],
           })

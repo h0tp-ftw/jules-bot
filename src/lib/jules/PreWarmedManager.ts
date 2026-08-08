@@ -8,6 +8,7 @@ import {
 } from '../../config.js'
 import { t } from '../../strings.js'
 import { julesApiClient as client } from './JulesClient.js'
+import { scheduleJulesRequest } from './JulesRequestCoordinator.js'
 
 function getConfigForContext(contextKey: string | null) {
   if (!contextKey) return getEffectiveConfig()
@@ -56,14 +57,16 @@ export async function preWarmSession(repoName: string, contextKey: string | null
     logger.debug(
       `[Pre-warm] Creating session for ${repoName}@${baseBranch} (Context: ${contextKey || 'global'})...`,
     )
-    const session = await client.session({
-      prompt: defaultPrompt,
-      source: { github: repoName, baseBranch },
-      title: contextKey
-        ? t(config.messages.prompts.prewarm_title_context, { repo: repoName, context: contextKey })
-        : t(config.messages.prompts.prewarm_title, { repo: repoName }),
-      requireApproval: true,
-    })
+    const session = await scheduleJulesRequest(() =>
+      client.session({
+        prompt: defaultPrompt,
+        source: { github: repoName, baseBranch },
+        title: contextKey
+          ? t(config.messages.prompts.prewarm_title_context, { repo: repoName, context: contextKey })
+          : t(config.messages.prompts.prewarm_title, { repo: repoName }),
+        requireApproval: true,
+      }),
+    )
 
     // Store in DB immediately
     await prisma.preWarmedSession.create({
@@ -79,8 +82,8 @@ export async function preWarmSession(repoName: string, contextKey: string | null
     )
 
     // Helper to wait until session reaches a settled state
-    const waitForSettled = async (sess: any) => {
-      let currentInfo = await sess.info()
+    const waitForSettled = async (sess: any): Promise<any> => {
+      let currentInfo: any = await scheduleJulesRequest<any>(() => sess.info())
       while (
         currentInfo &&
         (currentInfo.state === 'queued' ||
@@ -88,7 +91,7 @@ export async function preWarmSession(repoName: string, contextKey: string | null
           currentInfo.state === 'planning')
       ) {
         await new Promise((resolve) => setTimeout(resolve, 5000))
-        currentInfo = await sess.info()
+        currentInfo = await scheduleJulesRequest<any>(() => sess.info())
       }
       return currentInfo
     }
@@ -112,7 +115,7 @@ export async function preWarmSession(repoName: string, contextKey: string | null
 
       const feedback = config.auto_reject?.message || config.messages.prompts.auto_reject_default
       const rejectionPrompt = t(config.messages.prompts.auto_reject_directive_prewarm, { feedback })
-      await session.send(rejectionPrompt)
+      await scheduleJulesRequest(() => session.send(rejectionPrompt))
 
       // Wait again for it to process the rejection
       info = await waitForSettled(session)

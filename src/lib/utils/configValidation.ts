@@ -7,6 +7,7 @@ const KNOWN_TOP_LEVEL_KEYS = new Set([
   'auto_reject',
   'jules_reactions',
   'nudge',
+  'jules_polling',
   'interactive_selection',
   'ignore_prefix',
   'presence',
