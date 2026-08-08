@@ -56,11 +56,13 @@ nudge:
   # message: "Please respond directly to the most recent Discord message now."
   # discord_message: "🔔 **No reply after {delay}, so I reminded Jules.**"
 
-# Centralized Jules activity polling. Active work polls quickly. Once Jules has
-# replied, is waiting for input/approval, or has completed, polling slows down
-# and stops entirely after one idle hour. A new Discord message or approval wakes
-# the session immediately. All sessions share the same concurrency/rate-limit
-# coordinator so a 429 backs off the whole bot instead of causing a retry herd.
+# Centralized Jules activity polling. This block is PROCESS-GLOBAL (it is not
+# resolved per channel/tag/thread/role). Active work polls quickly. Once Jules has
+# replied, is waiting for input/approval, is paused, or has completed, polling
+# slows down and stops entirely after one idle hour. A new Discord message or
+# approval wakes the session immediately. All sessions and one-off Jules calls
+# share the same concurrency/rate-limit coordinator so a 429 backs off the whole
+# bot instead of causing a retry herd.
 jules_polling:
   active_interval_ms: 5000
   idle_interval_ms: 60000
@@ -69,6 +71,18 @@ jules_polling:
   min_request_spacing_ms: 250
   rate_limit_base_delay_ms: 30000
   rate_limit_max_delay_ms: 300000
+
+# Optional global routing/delivery defaults. These settings (unlike jules_polling)
+# participate in the normal defaults -> global -> channel -> tag -> thread -> role
+# precedence chain where a more specific override exists.
+# default_repo: "owner/repo"     # Global fallback; guild/DB mappings can override it
+# default_branch: "main"         # Branch fallback when no more-specific branch is set
+# typing_indicator_mode: "until_response" # until_response | strict_state
+# bootstrap: true                # Inject files from bootstrap/ into Jules prompts
+# reply_mode: "send"             # send | reply_silent | reply_ping
+#   send         = post normally in the thread/channel
+#   reply_silent = reply to the triggering Discord message without pinging its author
+#   reply_ping   = reply to the triggering Discord message with normal reply mention behavior
 
 # Force interactive repository and branch selection on thread creation.
 # If true, shows an embed with select menus allowing developers to pick a connected repo and branch.

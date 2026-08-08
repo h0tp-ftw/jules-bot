@@ -29,7 +29,9 @@ npm test             # node:test unit suite (pure utils + strings)
 ```
 
 All four run in CI on every PR. Please make sure they pass locally first, and do
-a manual `npm run dev` smoke test for behavior changes.
+a manual `npm run dev` smoke test for behavior changes. Polling/rate-limit changes
+should also add or update `test/activityPollScheduler.test.ts` so idle expiry,
+request pacing, concurrency, and shared 429 behavior stay deterministic.
 
 ## Conventions
 
@@ -42,14 +44,20 @@ a manual `npm run dev` smoke test for behavior changes.
   `config.yaml`. Reference strings through `getEffectiveConfig(...).messages.*`
   (with thread context) or the global `MESSAGES`.
 - **Resolve per-thread settings via `getEffectiveConfig(thread?, member?)`.**
-  Don't read `yamlConfig.*` directly when behavior should vary by channel/role.
-  Precedence: defaults → global YAML → parent channel → thread → role.
-- **Keep hot paths non-blocking.** Avoid adding awaited network round-trips
-  inside the `runJulesStream` loop or `messageCreate`.
-- **Defensive `try/catch`** around every Discord/Jules API call, with
-  `console.log('[Tag] …')` tracing to match the surrounding style.
+  Don't read `yamlConfig.*` directly when behavior should vary by channel/tag/role.
+  Precedence: defaults → global YAML → parent channel → tag → thread → role.
+- **Route Jules network calls through the shared coordinator.** Use
+  `scheduleJulesRequest()` for one-off SDK requests and the `ActivityPollScheduler`
+  polling path for watcher activity. Do not reintroduce a permanent `session.stream()`
+  per Discord session or bypass the global concurrency/429 budget.
+- **Keep hot paths responsive.** Avoid duplicate network walks: prefer one
+  `session.activities.hydrate()` followed by local cache reads when possible.
+- **Defensive `try/catch`** around Discord/Jules boundaries, using the level-gated
+  `logger` (`debug`/`info`/`warn`/`error`) rather than raw `console.*` calls.
 - **Runtime config files are gitignored.** Edit the committed defaults in
-  `templates/*.example.*`, not the local runtime copies.
+  `templates/*.example.*`, not the local runtime copies. When adding a new top-level
+  YAML key, also add it to `src/lib/utils/configValidation.ts`; otherwise a config
+  containing only that new key can be rejected as unrecognized.
 
 `CLAUDE.md` has a deeper architecture tour and a list of repo-specific landmines
 worth skimming before larger changes.

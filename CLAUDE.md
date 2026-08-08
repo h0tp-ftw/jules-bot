@@ -50,10 +50,12 @@ If the SQLite file is missing, `src/config.ts` auto-provisions it on boot via `n
    thread override → role override. Don't read `yamlConfig.*` directly when behavior should vary by
    channel/tag/role.
 4. **Module-level state is process-local and lost on restart.** `activeStreams`, `autoRejectedSessions`,
-   `processedActivityIdsMap` (orchestrator), conversation queues/nudge timers, and `StreamManager`'s
-   buffers/timers do not survive a restart.
-   Persisted truth lives in SQLite (`DebugSession`); on boot `rehydrateActiveStreams()` re-attaches streams
-   for sessions touched in the last 7 days. Anything new you add to module state must tolerate restarts / serverless pauses.
+   `processedActivityIdsMap` (orchestrator), conversation queues/nudge timers, scheduler watcher state, and
+   `StreamManager`'s buffers/timers do not survive a restart. Persisted truth lives in SQLite (`DebugSession`).
+   On boot `rehydrateActiveStreams()` considers at most 10 sessions updated in the last 24 hours; sessions
+   older than the configured idle grace period are checked and left dormant when already idle/terminal.
+   Any mapped thread/channel can still reattach on its next Discord action. Anything new you add to module
+   state must tolerate restarts / serverless pauses.
 5. **Discord 2000-char limit.** Use `splitMessage()` (`src/lib/utils/messageSplitter.ts`) for agent output.
    `StreamManager` keeps the primary status message editable and synchronizes overflow into reusable silent
    replies instead of truncating long progress or final-status content.
@@ -70,7 +72,14 @@ Configured text-channel message → shared Jules session → direct conversation
 ThreadCreate ─▶ (optional repo/branch select) ─▶ initializeJulesSession ─▶ JulesClient.createSession
                                                         │                          │
 MessageCreate ─▶ session.send(prompt + metadata)        ▼                          ▼
-InteractionCreate (buttons/menus/modals) ───────▶ runJulesStream  ◀── jules-sdk session.stream()
+InteractionCreate (buttons/menus/modals) ───────▶ JulesRequestCoordinator
+                                                        │
+                                                        ▼
+                                                ActivityPollScheduler
+                                                active 5s / idle 60s
+                                                        │
+                                                        ▼
+                                                runJulesStream
                                                         │
                           StreamManager (status msg) · reactions · Approve/Reject plan embeds
 ```
@@ -87,11 +96,16 @@ Key modules:
   inactive streams, pins replies to the active Discord message, and honors `ignore_prefix`.
 - `src/events/interactionCreate.ts` — buttons (`plan-approve` / `plan-reject`), select menus
   (`select-repo` / `select-branch`), and branch search/custom modals. Note the Discord **25-option** menu cap handled here.
-- `src/lib/jules/orchestrator.ts` — **core.** `runJulesStream` (persisted delivery cursor, reconnect
-  up to 20×, typing indicators, reactions, plan embeds, response-nudge scheduling, plan-feedback flow,
-  completion-result fallback),
-  `initializeJulesSession` (creation + pre-warmed consumption + welcome-plan handling),
-  `rehydrateActiveStreams`.
+- `src/lib/jules/orchestrator.ts` — **core.** `runJulesStream` (persisted delivery cursor, bounded activity
+  polling, typing indicators, reactions, plan embeds, response-nudge scheduling, plan-feedback flow,
+  completion-result fallback), `initializeJulesSession` (creation + pre-warmed consumption + welcome-plan
+  handling), and `rehydrateActiveStreams`. Non-rate-limit failures still use the legacy bounded retry path;
+  Jules 429s are handled centrally and do **not** consume that retry budget.
+- `src/lib/jules/ActivityPollScheduler.ts` — process-wide scheduler for active/idle watcher timing,
+  concurrency, minimum request spacing, idle expiry, and shared exponential+jittered 429 cooldown.
+- `src/lib/jules/JulesRequestCoordinator.ts` — singleton scheduler/request budget. Route Jules network work
+  through `scheduleJulesRequest()` (or the scheduler's `poll()` path) rather than calling SDK network methods
+  directly from unrelated modules.
 - `src/lib/jules/ConversationQueue.ts` — process-local per-channel turn queue. Tracks enqueue, dispatch,
   first-response, one-shot nudge, and completion timestamps. Any non-empty `agentMessaged` response releases
   the active turn so the next queued message can be sent. Nudge timers cancel on an agent reply, visible plan,
@@ -107,10 +121,21 @@ Key modules:
 
 ## How Jules is driven (SDK facts)
 
-Interactive sessions (`requireApproval: true`). States: `queued → planning → inProgress →
-awaitingPlanApproval → completed / failed` (via `session.info()`). Activities from `session.stream()`:
-`planGenerated`, `progressUpdated`, `agentMessaged`, `userMessaged`, `sessionCompleted`, `sessionFailed`.
-Control: `session.approve()`, `session.send()`; replay with `session.history()`; list repos with `jules.sources()`.
+Interactive sessions (`requireApproval: true`). States include `queued`, `planning`, `inProgress`,
+`awaitingPlanApproval`, `awaitingUserFeedback`, `paused`, `completed`, and `failed` (via `session.info()`).
+Relevant activity types include `planGenerated`, `progressUpdated`, `agentMessaged`, `userMessaged`,
+`sessionCompleted`, and `sessionFailed`.
+
+JulesBot intentionally **does not** use the SDK's long-lived `session.stream()` watcher. The SDK implements
+that abstraction with repeated activity polling, so keeping one stream per old Discord session creates
+unbounded background traffic. Instead, `runJulesStream` calls `session.activities.hydrate()` on a schedule,
+then reads `session.activities.select({ order: 'asc' })` from the SDK cache. Active work polls quickly; an
+agent reply / approval wait / feedback wait / pause / completion moves the watcher to the idle lane, and the
+watcher is removed after `jules_polling.idle_timeout_ms` until Discord wakes it again.
+
+Control calls (`session.approve()`, `session.send()`, `session.result()`, session creation, repo listing, and
+pre-warming) also share the same request coordinator. `session.stream()` / `session.history()` remain SDK
+capabilities but should not be reintroduced into perpetual hot paths without a quota analysis.
 
 **Available but currently unused:** `progressUpdated.artifacts` (code `changeSet` diffs + `media` screenshots),
 `session.waitFor(state)`, `session.ask()`. `session.result()` is used on completion to report authoritative
@@ -134,6 +159,15 @@ from `AGENTS.md` / `SOUL.md` (fallback to the templates). `bootstrap/` files (gi
 every prompt via `getBootstrapContext()`. **Profiles:** `--profile <name>` / `BOT_PROFILE` isolate `.env`,
 `config.yaml`, persona, `bootstrap/`, and `dev.db` under `profiles/<name>/` for running multiple instances.
 
+`config.yaml` is validated before merge. A malformed root, known foreign config keys (for example a LiteLLM
+config accidentally written into this path), or a non-empty file with no recognized JulesBot top-level keys
+causes startup to fail loudly rather than silently merging template defaults. When adding a new top-level
+config key, update `KNOWN_TOP_LEVEL_KEYS` in `src/lib/utils/configValidation.ts` and document it in
+`templates/config.example.yaml`.
+
+`jules_polling` is process-global and resolved at boot, not through `getEffectiveConfig()`. Defaults: 5s active
+polls, 60s idle polls, 1h idle timeout, concurrency 3, 250ms request spacing, 30s base 429 cooldown, 5m cap.
+
 ## User-facing strings (`src/strings.ts`)
 
 **All** user-facing Discord text and the substantive Jules-prompt fragments live in `src/strings.ts` as
@@ -153,5 +187,9 @@ everything else (defaults → global → parent channel → tag → thread → r
   `console.*`); defensive `try/catch` around every Discord/Jules call.
 - User-facing strings use the configured `bot_emoji` (default 🐙) and bolded status lines. **Never hardcode
   user-facing text** — it belongs in `src/strings.ts` (see the section above), referenced via `…messages.*` / `t()`.
-- Recent work (see git log) focused on **removing blocking network calls from hot paths** — avoid adding
-  awaited network round-trips inside the `runJulesStream` loop or `messageCreate`.
+- Do not bypass the Jules request coordinator. New Jules network calls should go through
+  `scheduleJulesRequest()` or the scheduler's `poll()` method so concurrency, pacing, and global 429 backoff
+  remain process-wide. Keep Discord hot paths responsive and avoid duplicate SDK network walks (hydrate once,
+  then read the local activity cache where possible).
+- `ecosystem.config.cjs` intentionally sets PM2 `autorestart: false`. Fatal process errors should remain
+  stopped with logs preserved for inspection; deployments/recovery restart the process explicitly.

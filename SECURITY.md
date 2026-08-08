@@ -14,13 +14,19 @@ coordinate a fix and disclosure.
   `config.yaml`, `AGENTS.md`, and `SOUL.md`.
 - If a token is ever exposed, **rotate it immediately** (Discord Developer Portal / Jules)
   and scrub it from git history.
-- Back up `prisma/dev.db` (the thread⇄session map) somewhere private — it can reveal repo
-  and channel identifiers.
+- Back up `prisma/dev.db` (the thread⇄session map) and your gitignored `config.yaml`
+  somewhere private — both can reveal repo/channel identifiers and are required to restore
+  the exact runtime mapping/behavior after a host failure.
+- JulesBot validates `config.yaml` at startup and refuses to silently fall back when the file
+  is malformed or appears to belong to another application. Treat a config-validation failure
+  as a deployment/configuration incident; restore a known-good copy rather than deleting the
+  file just to make the process start.
 
 ## Access control
 
 Bot actions are gated by the `access_control` allowlist (`allow_all`, `allowed_users`,
-`allowed_roles`), enforced on commands, thread messages, and component interactions. See
+`allowed_roles`), enforced on commands, forum-thread messages, configured text-channel messages,
+and component interactions. See
 the README's **Security & Access Control** section. Run the bot as a **single instance per
 token** and keep its host patched.
 

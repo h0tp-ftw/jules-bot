@@ -45,20 +45,21 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 
 * 📁 **Forum-to-Session Mapping**: Each forum post automatically initializes a unique interactive Google Jules session.
 * 💬 **Shared Text-Channel Chatbot**: Optionally designate one normal text channel per server; the first human message starts a shared Jules conversation and every later human message continues it.
-* ⚡ **Live Log Streaming**: Stream terminal executions and tools into a single status message without hitting Discord rate limits.
+* ⚡ **Live Activity Updates**: Surface Jules progress in a single editable status message without flooding Discord.
 * 🛡️ **Access Control allowlists**: Allowlist commands and debug thread usage by User IDs, Role IDs, or toggle globally.
-* 🔌 **Seamless Recovery**: Database-backed rehydration re-establishes streaming listeners on bot restarts or serverless pauses.
-* ⚙️ **YAML Configuration**: Keep access control, guild overrides, and behavior in `config.yaml` (gitignored, copy from `config.example.yaml`).
-* 🎭 **Custom Personality (AGENTS.md)**: Shape the agent's behavior and tone using a custom `AGENTS.md` file (gitignored, copy from `AGENTS.example.md`).
+* 🔌 **Bounded Recovery & Wake-on-Demand**: Recent work is rehydrated after restarts, idle sessions slow down, then suspend after a configurable grace period and wake on the next Discord action.
+* 🚦 **Central Jules Request Coordinator**: Activity polls, sends, approvals, session creation, pre-warming, results, and repo listing share one concurrency/rate-limit budget with global 429 backoff.
+* ⚙️ **YAML Configuration**: Keep access control, guild overrides, polling behavior, and other runtime settings in `config.yaml` (gitignored; copy from `templates/config.example.yaml` or run `npm run setup`).
+* 🎭 **Custom Personality (`AGENTS.md` / `SOUL.md`)**: Shape the agent's behavior and principles with gitignored runtime files copied from `templates/AGENTS.example.md` and `templates/SOUL.example.md` (or created by `npm run setup`).
 * 🏷️ **Dynamic Status Reactions**: Automatically react to thread starter messages with configurable emojis (unicode or custom Discord emojis like `<:name:id>`).
-* 💬 **Context & Conversational Replies**: Injects nickname, message time, and thread title metadata into prompt headers. Replies directly to the user's message.
+* 💬 **Context & Conversational Replies**: Injects nickname, message time, and channel/thread metadata into prompt headers. Delivery is configurable with `reply_mode` (`send`, `reply_silent`, or `reply_ping`).
 * 🤖 **Plan Auto-Rejection Mode**: Configure the bot to automatically reject proposed plans once with customizable feedback to trigger plan revisions.
 * ✍️ **Typing Indicator**: Shows the bot is active/thinking in Discord while streaming operations.
 * 🌡️ **Pre-warmed Session Pools**: Opt-in background session pre-warming to bypass cloning/queueing delays on new thread creations.
 * 👥 **Role-Based Overrides**: Define role-specific configuration overrides (e.g. customized prompts, auto-reject flags, reactions) applied dynamically.
 * 🔒 **Creator-Context Permissions**: Dynamic thread permissions evaluated relative to the thread creator. If a Developer starts a thread, it automatically inherits Developer role overrides and restrictions.
 * 📋 **Interactive Selection**: Supports interactive dropdown select menus to choose the GitHub repository and branch on thread creation (toggled via `interactive_selection`).
-* 🌍 **Fully Customizable Copy**: Every user-facing string lives in `src/strings.ts` and is overridable per global/channel/thread/role via the `messages:` block.
+* 🌍 **Fully Customizable Copy**: Every user-facing string lives in `src/strings.ts` and is overridable globally or by channel, forum tag, thread, and role via the `messages:` block.
 
 ---
 
@@ -66,28 +67,52 @@ Unlike standard AI coding agents that immediately modify code and rush to open P
 
 A forum thread becomes an isolated Jules session with plan controls. A configured normal text channel instead keeps one shared conversational session and automatically redirects plans into direct replies.
 
+The Jules SDK's `session.stream()` abstraction is polling-backed, so JulesBot uses **bounded centralized polling** rather than one permanent SDK stream per Discord conversation:
+
 ```
-ThreadCreate ─▶ (optional repo/branch pick) ─▶ initializeJulesSession ─▶ JulesClient.createSession
-Text Message ─▶ initializeChatSession (first message) ───────────────┘
-                                                      │
-MessageCreate ─▶ session.send(prompt + metadata)      ▼
-InteractionCreate (forum controls) ──────────▶ runJulesStream  ◀── jules-sdk session.stream()
-                                                      │
-          forum: status msg + plan embeds · text channel: direct conversational replies
+Discord message / plan action
+            │
+            ▼
+   JulesRequestCoordinator
+   ├─ shared concurrency cap
+   ├─ minimum request spacing
+   └─ global 429 cooldown + jitter
+            │
+            ▼
+       Jules REST/SDK
+            │
+            ▼
+   ActivityPollScheduler
+   ├─ active: poll every 5s
+   ├─ idle:   poll every 60s
+   └─ after 1h idle: suspend
+            │
+            ▼
+ runJulesStream processes new cached activities
+            │
+            ├─ forum: status + reactions + plan controls
+            └─ text channel: conversational replies
+
+Next Discord action ───────────────▶ wakes a suspended watcher immediately
 ```
+
+The scheduler uses incremental `session.activities.hydrate()` calls and reads the SDK's local activity cache; it intentionally does **not** keep `session.stream()` running forever.
 
 | Layer | Module | Responsibility |
 | :--- | :--- | :--- |
 | Bootstrap | `src/index.ts` | Client/intents, event wiring, slash-command registration, presence, lifecycle |
 | Events | `src/events/*` | `threadCreate`, `messageCreate`, `interactionCreate` (buttons/menus/modals) |
-| Orchestration | `src/lib/jules/orchestrator.ts` | `runJulesStream`, forum/chat initialization, rehydration |
+| Turn queue | `src/lib/jules/ConversationQueue.ts` | Serializes Discord turns, tracks first response/completion, schedules one-shot nudges |
+| Orchestration | `src/lib/jules/orchestrator.ts` | Session lifecycle, activity handling, wake/suspend behavior, rehydration |
+| Request coordinator | `src/lib/jules/JulesRequestCoordinator.ts` | One shared Jules request budget for polling and non-polling API calls |
+| Poll scheduler | `src/lib/jules/ActivityPollScheduler.ts` | Active/idle timing, concurrency, request pacing, shared 429 backoff |
 | SDK wrapper | `src/lib/jules/JulesClient.ts` | Prompt assembly + `@google/jules-sdk` calls |
-| Warm pools | `src/lib/jules/PreWarmedManager.ts` | Background session pre-warming |
-| Streaming | `src/lib/streams/StreamManager.ts` | One editable status message per forum thread |
+| Warm pools | `src/lib/jules/PreWarmedManager.ts` | Background session pre-warming through the same request coordinator |
+| Discord status | `src/lib/streams/StreamManager.ts` | One editable status message per forum thread |
 | Config | `src/config.ts` | Layered YAML + persona resolution via `getEffectiveConfig()` |
 | Strings | `src/strings.ts` | Single source of truth for all user-facing copy |
 
-**State of record** lives in SQLite (via Prisma); in-memory stream state is **rehydrated on boot** for both forum threads and configured text channels. See [`CLAUDE.md`](./CLAUDE.md) for the full tour and repo-specific landmines.
+**State of record** lives in SQLite (via Prisma). Process-local watcher/queue state is disposable: startup rehydrates a bounded set of recent sessions, stale idle sessions remain dormant, and any mapped conversation can be reattached on its next Discord message or interaction. See [`CLAUDE.md`](./CLAUDE.md) for the full tour and repo-specific landmines.
 
 ---
 
@@ -162,12 +187,12 @@ Once the bot is **running and invited** to your server, link a repo with `/link-
 
 **Forum mode**
 1. Create a Discord Forum channel for debug/support threads.
-2. Run `/setup-forum #your-forum` (requires *Manage Server*).
+2. Run `/setup-forum #your-forum` (requires *Manage Server* **and** authorization under the bot's `access_control`).
 3. Create a post describing an issue. Each post gets its own Jules session, live status message, and **Approve** / **Reject** plan controls.
 
 **Shared chatbot mode**
 1. Create or choose a normal Discord text channel.
-2. Run `/setup-chat #your-channel` (requires *Manage Server*).
+2. Run `/setup-chat #your-channel` (requires *Manage Server* **and** authorization under the bot's `access_control`).
 3. Talk normally in that channel. The first human message creates one shared Jules session; every later human message continues the same conversation. Plans and progress UI are suppressed so Jules responds like a regular chatbot.
 
 On startup the bot logs each server's readiness, so a missed step is visible — e.g.
@@ -222,13 +247,38 @@ nudge:
 ```
 Both text fields are optional. Without them, the defaults come from `messages.prompts.response_nudge` and `messages.session.nudge_sent`. All nudge settings can also be overridden per channel, tag, thread, or role.
 
-### 5. Interactive Selection
+### 5. Jules Polling & Rate-Limit Control
+The polling coordinator is **process-global** (not per-channel). Active work stays responsive, idle sessions slow down, and a session that has been idle for the configured timeout is detached until the next Discord action wakes it:
+```yaml
+jules_polling:
+  active_interval_ms: 5000
+  idle_interval_ms: 60000
+  idle_timeout_ms: 3600000
+  max_concurrency: 3
+  min_request_spacing_ms: 250
+  rate_limit_base_delay_ms: 30000
+  rate_limit_max_delay_ms: 300000
+```
+A Jules `429 Too Many Requests` pauses **all** coordinated Jules traffic rather than making every session retry independently. The cooldown grows with repeated throttling (with jitter) up to `rate_limit_max_delay_ms`; 429s do not consume the normal stream retry budget.
+
+### 6. Delivery, Typing & Prompt Context
+Several supported global settings are useful enough to call out explicitly (and can also participate in the normal channel/tag/thread/role override chain where applicable):
+```yaml
+default_repo: "owner/repo"       # Optional global fallback; guild/DB mappings can override it
+default_branch: "main"            # Optional branch fallback
+typing_indicator_mode: "until_response" # or "strict_state"
+bootstrap: true                    # Inject files from bootstrap/ into Jules prompts
+reply_mode: "send"                # send | reply_silent | reply_ping
+```
+`reply_mode: send` posts normally in the channel/thread. `reply_silent` replies to the triggering message without pinging its author; `reply_ping` replies and allows the normal Discord reply mention.
+
+### 7. Interactive Selection
 Toggle interactive repository and branch selection on thread creation:
 ```yaml
 interactive_selection: true # Ask developers to select target repo and branch on thread creation
 ```
 
-### 6. Role-Based Overrides
+### 8. Role-Based Overrides
 Merge specific overrides based on the thread creator's role (supports restricting access per role):
 ```yaml
 roles:
@@ -241,7 +291,7 @@ roles:
     diagnostic_prompt: "Provide deep technical diagnostic details."
 ```
 
-### 7. Tag-Based Overrides
+### 9. Tag-Based Overrides
 Merge overrides when a forum post carries a matching tag (keyed by tag **name or ID**). A post can have several tags; matches merge in config order. Useful for routing posts by category — e.g. give `urgent` posts a different repo or a more concise prompt:
 ```yaml
 tags:
@@ -252,7 +302,9 @@ tags:
       enabled: false
 ```
 
-> Configuration is resolved with the precedence **defaults → global YAML → parent channel → tag → thread → role**. The full annotated reference lives in [`templates/config.example.yaml`](./templates/config.example.yaml).
+> Configuration is resolved with the precedence **defaults → global YAML → parent channel → tag → thread → role**. The full annotated reference lives in [`templates/config.example.yaml`](./templates/config.example.yaml). `jules_polling` is intentionally process-global rather than part of this per-thread override chain.
+>
+> **Config safety:** if `config.yaml` is malformed, looks like another application's config, or contains no recognized JulesBot top-level keys, JulesBot refuses to start instead of silently falling back to permissive/incorrect defaults. Keep a backup of your runtime config before deployment changes.
 
 ---
 
@@ -280,6 +332,8 @@ Ensure the following settings are enabled on your bot application page:
 
 ## 📦 Production Deployment
 
+For deployment verification, backups, fail-stopped PM2 recovery, config incidents, Node ABI issues, and 429 troubleshooting, see the [`docs/OPERATIONS.md`](./docs/OPERATIONS.md) runbook.
+
 The repo ships with `pm2` as a dependency for process supervision:
 
 ```bash
@@ -292,14 +346,30 @@ pm2 save
 
 Operational notes:
 
-- **Graceful shutdown** — `SIGINT`/`SIGTERM` flush pending status edits, destroy the Discord client, and disconnect Prisma, so `pm2 reload jules-bot` deploys cleanly. An uncaught exception shuts down and exits non-zero so pm2 restarts a fresh process.
+- **Graceful shutdown** — `SIGINT`/`SIGTERM` flush pending status edits, destroy the Discord client, and disconnect Prisma, so an explicit `pm2 restart jules-bot` deploys cleanly.
+- **Crash behavior is intentionally fail-stopped** — `ecosystem.config.cjs` sets `autorestart: false`. An uncaught exception is logged and the process exits non-zero, then stays stopped for inspection instead of entering a restart loop. After investigating/fixing the cause, restart it explicitly with `pm2 restart jules-bot` and `pm2 save`.
 - **Single instance per token** — coordination state (active streams, dedup sets) is in-process, so run exactly **one** instance per bot token. `ecosystem.config.cjs` pins fork mode + one instance; Discord.js sharding is not supported.
+- **Keep one Node major across install/build/runtime** — `better-sqlite3` is a native module. If a host has multiple Node installations, use the same Node major for `npm ci`, `npm run build`, and PM2's interpreter; otherwise you can hit a `NODE_MODULE_VERSION`/ABI load error even though TypeScript built successfully.
 - **Durable SQLite** — on boot the bot enables WAL mode (`synchronous=NORMAL`, `busy_timeout=5000ms`) so the database survives abrupt power loss far better — worth knowing on SD-card hosts like a Raspberry Pi.
-- **Back up `prisma/dev.db`** — it is the source of truth for the thread⇄session mapping used to rehydrate streams after a restart. (In WAL mode you'll also see transient `dev.db-wal` / `dev.db-shm` sidecar files.)
+- **Back up runtime state** — `prisma/dev.db` is the source of truth for the thread⇄session mapping, while gitignored `config.yaml` holds routing/access behavior that Git cannot restore. Back up both before deployment changes. (In WAL mode you'll also see transient `dev.db-wal` / `dev.db-shm` sidecar files.)
 - **Log verbosity** — set `LOG_LEVEL` (`debug`/`info`/`warn`/`error`, default `info`). `info` keeps production to lifecycle + warnings + errors; `debug` shows the full per-activity trace (`npm run dev` enables it automatically). Every line is prefixed with an ISO timestamp + level.
 - **Health endpoint** — set `HEALTHCHECK_PORT` (e.g. `3000`) to expose `GET /health`, returning JSON and a `200` only when the Discord gateway is connected **and** SQLite is reachable (`503` otherwise). Wire it into Docker/k8s/uptime probes to catch a "process alive but gateway dropped" zombie. Unset = disabled.
 - **Instant slash commands** — global command registration can take up to ~1 hour to propagate. Set `DEV_GUILD_ID` to register commands to a single guild instantly (ideal for first-run setup and testing).
 - **Multiple bots** — use `--profile <name>` (or `BOT_PROFILE`) to isolate `.env`, `config.yaml`, persona files, `bootstrap/`, and the database under `profiles/<name>/`.
+
+### Troubleshooting production
+
+If the bot appears online but does not answer a new forum post, first check the startup readiness lines and confirm the forum/channel mapping still exists. If an existing thread suddenly says you do not have permission, inspect `config.yaml` and the effective `access_control` overrides before touching the database—the thread⇄Jules mapping may still be intact.
+
+For Jules API throttling, look for `[JulesPollScheduler]` warnings. A 429 should now produce one shared cooldown rather than many independent `Stream Retry …/20` failures. Old pre-deployment 429 stack traces can remain in the PM2 log files, so compare their timestamps to the current process start time.
+
+Useful commands:
+
+```bash
+pm2 show jules-bot
+pm2 logs jules-bot --lines 200 --nostream
+npm run doctor
+```
 
 ---
 
@@ -307,9 +377,9 @@ Operational notes:
 
 | Command | Arguments | Permissions | Description |
 | :--- | :--- | :--- | :--- |
-| `/setup-forum` | `channel` (Forum) | `Manage Server` | Assigns the forum where each new post receives its own Jules session. |
-| `/setup-chat` | `channel` (Text) | `Manage Server` | Assigns a normal text channel that shares one conversational Jules session. |
-| `/link-repo` | `repository` (owner/repo) | `Manage Server` | Links a target GitHub repository to the server as the default codebase. |
+| `/setup-forum` | `channel` (Forum) | `Manage Server` + bot allowlist | Assigns the forum where each new post receives its own Jules session. |
+| `/setup-chat` | `channel` (Text) | `Manage Server` + bot allowlist | Assigns a normal text channel that shares one conversational Jules session. |
+| `/link-repo` | `repository` (owner/repo) | `Manage Server` + bot allowlist | Links a target GitHub repository to the server as the default codebase. |
 | `/approve` | — | Allowlisted users | Approves the pending Jules plan in the current thread (a slash-command alternative to the **Approve** button). |
 
 ---
@@ -319,7 +389,7 @@ Operational notes:
 Contributions are welcome! See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local setup,
 the build/test workflow, and the codebase conventions (ESM `.js` imports, the
 `src/strings.ts` copy catalog, and `getEffectiveConfig` precedence). CI runs
-`npm run build` + `npm test` on every PR.
+`npm run build`, `npm run lint`, `npm run format:check`, and `npm test` on every PR.
 
 ## 📄 License
 
