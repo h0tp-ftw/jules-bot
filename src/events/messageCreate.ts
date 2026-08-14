@@ -1,6 +1,6 @@
 import { logger } from '../lib/utils/logger.js'
 import { Message, Events, ThreadChannel, TextChannel, ChannelType } from 'discord.js'
-import { prisma, getEffectiveConfig, YAML_GUILDS, yamlConfig } from '../config.js'
+import { prisma, getEffectiveConfig, YAML_GUILDS } from '../config.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
 import {
   runJulesStream,
@@ -21,7 +21,6 @@ import {
   markConversationTurnDispatched,
   type ConversationTurn,
 } from '../lib/jules/ConversationQueue.js'
-import { isConfiguredThreadParent } from '../lib/utils/channelRouting.js'
 
 function shouldIgnoreMessage(
   message: Message,
@@ -57,6 +56,7 @@ async function sendToExistingSession(
   }
 
   let messageContent = message.content || ''
+
   if (message.attachments.size > 0) {
     const attachmentList = Array.from(message.attachments.values()).map((att) => ({
       name: att.name,
@@ -145,7 +145,7 @@ type SessionRoutingRecord = {
 
 type ThreadRoutingContext = {
   dbDefaultRepo?: string
-  sessionRecord?: SessionRoutingRecord
+  sessionRecord: SessionRoutingRecord
 }
 
 async function resolveThreadRoutingContext(
@@ -157,24 +157,15 @@ async function resolveThreadRoutingContext(
   const sessionRecord = await prisma.debugSession.findUnique({
     where: { threadId: thread.id },
   })
-  const yamlGuild = YAML_GUILDS[message.guildId]
+  if (!sessionRecord) return null
+
   const dbConfig = await prisma.guildConfig.findUnique({
     where: { guildId: message.guildId },
   })
   const dbDefaultRepo = dbConfig?.defaultRepo || undefined
 
-  if (sessionRecord) {
-    if (shouldIgnoreMessage(message, thread, dbDefaultRepo)) return null
-    return { dbDefaultRepo, sessionRecord }
-  }
-
-  const forumChannelId = yamlGuild?.forum_channel_id || dbConfig?.forumChannelId
-  const channelsConfig = yamlConfig.channels || {}
-  if (!isConfiguredThreadParent(thread.parentId, forumChannelId, channelsConfig)) return null
   if (shouldIgnoreMessage(message, thread, dbDefaultRepo)) return null
-  if (!message.content && message.attachments.size === 0) return null
-
-  return { dbDefaultRepo }
+  return { dbDefaultRepo, sessionRecord }
 }
 
 async function processThreadMessage(
@@ -184,20 +175,10 @@ async function processThreadMessage(
   turn: ConversationTurn,
   routing: ThreadRoutingContext,
 ): Promise<boolean> {
-  const sessionRecord =
-    routing.sessionRecord ||
-    (await prisma.debugSession.findUnique({
-      where: { threadId: thread.id },
-    }))
-  if (!sessionRecord) {
-    await updateReaction(message, 'failed')
-    return false
-  }
-
   return await sendToExistingSession(
     message,
     thread,
-    sessionRecord,
+    routing.sessionRecord,
     streamManager,
     false,
     turn.id,
