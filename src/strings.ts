@@ -1,5 +1,6 @@
-// Central catalog of every user-facing string and substantive Jules-prompt
-// fragment in the bot. THESE ARE THE DEFAULTS — the single source of truth.
+// Central catalog of runtime Discord message templates and substantive Jules-prompt
+// fragments. THESE ARE THE DEFAULTS — the single source of truth for those templates.
+// Small computed/structural fragments and setup/doctor CLI text may live outside this file.
 //
 // Any of them can be overridden globally or per-channel / per-tag / per-thread /
 // per-role via a `messages:` block in config.yaml, resolved through
@@ -159,11 +160,15 @@ export const DEFAULT_MESSAGES = {
   // glue such as "User Issue:" lives inline in JulesClient/PreWarmedManager.)
   prompts: {
     metadata_header:
-      '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message Time: {time}]\n\n{content}',
+      '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message ID: {message_id}, Message Time: {time}{reply_info}]\n\n{content}',
     metadata_header_with_title:
-      '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message Time: {time}, Issue/Thread Title: {title}]\n\n{content}',
+      '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message ID: {message_id}, Message Time: {time}, Issue/Thread Title: {title}{reply_info}]\n\n{content}',
     metadata_header_with_channel:
-      '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message Time: {time}, Shared Discord Channel: #{channel}]\n\n{content}',
+      '[Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message ID: {message_id}, Message Time: {time}, Shared Discord Channel: #{channel}{reply_info}]\n\n{content}',
+    reply_info: ', In reply to Message ID: {reply_message_id}',
+    reply_quote: '[In reply to {author} (Message ID: {reply_message_id}): "{snippet}"]\n\n',
+    reply_quote_unavailable:
+      '[In reply to Message ID: {reply_message_id} (original message unavailable)]\n\n',
     chatbot_mode_plan_feedback:
       'This session is operating as a shared Discord chatbot. Do not create or refine an implementation plan and do not wait for plan approval. Reply directly and conversationally to the users in the channel.',
     response_nudge:

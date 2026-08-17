@@ -77,3 +77,33 @@ test('deepMergeMessages ignores undefined overrides and does not mutate the base
   assert.equal(merged.errors.guild_only, before)
   assert.equal(DEFAULT_MESSAGES.errors.guild_only, before) // base untouched
 })
+
+test('metadata_header formats message_id and optional reply_info', () => {
+  const standard = t(DEFAULT_MESSAGES.prompts.metadata_header, {
+    nickname: 'Alice',
+    username: 'alice',
+    id: '1001',
+    message_id: '9999',
+    time: '2026-08-17T10:00:00.000Z',
+    reply_info: '',
+    content: 'Hello world',
+  })
+  assert.equal(
+    standard,
+    '[Message details - Author Nickname: Alice, Author Username: alice, Author Discord ID: 1001, Message ID: 9999, Message Time: 2026-08-17T10:00:00.000Z]\n\nHello world',
+  )
+
+  const withReply = t(DEFAULT_MESSAGES.prompts.metadata_header, {
+    nickname: 'Bob',
+    username: 'bob',
+    id: '1002',
+    message_id: '10000',
+    time: '2026-08-17T10:01:00.000Z',
+    reply_info: t(DEFAULT_MESSAGES.prompts.reply_info, { reply_message_id: '9999' }),
+    content: 'I agree',
+  })
+  assert.equal(
+    withReply,
+    '[Message details - Author Nickname: Bob, Author Username: bob, Author Discord ID: 1002, Message ID: 10000, Message Time: 2026-08-17T10:01:00.000Z, In reply to Message ID: 9999]\n\nI agree',
+  )
+})
