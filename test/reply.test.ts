@@ -8,8 +8,8 @@ function createMockMessage(opts: {
   referenceId?: string
   referencedMessage?: any
   fetchError?: boolean
-  isBot?: boolean
   botUserId?: string
+  onFetchReference?: () => void
 }) {
   const botUserId = opts.botUserId || 'BOT_123'
   return {
@@ -20,6 +20,7 @@ function createMockMessage(opts: {
       user: { id: botUserId },
     },
     fetchReference: async () => {
+      opts.onFetchReference?.()
       if (opts.fetchError) {
         throw new Error('Message deleted or not found')
       }
@@ -42,12 +43,14 @@ test('resolveReplyContext: returns empty when mode is none', async () => {
   assert.equal(result.quotePrefix, '')
 })
 
-test('resolveReplyContext: message_id mode returns replyInfo without quotePrefix', async () => {
-  const msg = createMockMessage({ referenceId: 'REF_999' })
+test('resolveReplyContext: message_id mode does not fetch the referenced message', async () => {
+  let fetches = 0
+  const msg = createMockMessage({ referenceId: 'REF_999', onFetchReference: () => fetches++ })
   const result = await resolveReplyContext(msg, 'message_id')
   assert.equal(result.replyInfo, ', In reply to Message ID: REF_999')
   assert.equal(result.quotePrefix, '')
   assert.equal(result.replyMessageId, 'REF_999')
+  assert.equal(fetches, 0)
 })
 
 test('resolveReplyContext: full_message mode formats quote from referenced message', async () => {
@@ -107,6 +110,24 @@ test('resolveReplyContext: full_message truncates long snippets', async () => {
 
   const result = await resolveReplyContext(msg, 'full_message')
   assert.ok(result.quotePrefix.includes('A'.repeat(300) + '...'))
+})
+
+test('resolveReplyContext: full_message fetches the referenced message once', async () => {
+  let fetches = 0
+  const refMsg = {
+    id: 'REF_123',
+    author: { id: 'USER_3', username: 'carol' },
+    content: 'Original message',
+    attachments: new Map(),
+  }
+  const msg = createMockMessage({
+    referenceId: 'REF_123',
+    referencedMessage: refMsg,
+    onFetchReference: () => fetches++,
+  })
+
+  await resolveReplyContext(msg, 'full_message')
+  assert.equal(fetches, 1)
 })
 
 test('resolveReplyContext: full_message handles fetch failure gracefully', async () => {

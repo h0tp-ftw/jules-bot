@@ -8,6 +8,21 @@ export interface ResolvedReplyContext {
   replyMessageId?: string
 }
 
+export async function buildReplyAwarePrompt(
+  message: Message,
+  mode: ReplyContextMode,
+  template: string,
+  vars: Record<string, string>,
+  messages: Messages['prompts'] = DEFAULT_MESSAGES.prompts,
+): Promise<string> {
+  const { replyInfo, quotePrefix } = await resolveReplyContext(message, mode, messages)
+  return t(template, {
+    ...vars,
+    reply_info: replyInfo,
+    content: quotePrefix ? `${quotePrefix}${vars.content || ''}` : vars.content || '',
+  })
+}
+
 /**
  * Resolves reply context based on the configured mode:
  * - 'message_id' (default): Synchronously extracts message.reference.messageId,
@@ -36,7 +51,9 @@ export async function resolveReplyContext(
     }
   }
 
-  // mode === 'full_message'
+  // `full_message` intentionally performs one Discord fetch for the referenced
+  // message. Keep it opt-in because this adds an API request to every replied-to
+  // message processed under this mode.
   try {
     const referencedMsg = await message.fetchReference()
     if (referencedMsg) {
