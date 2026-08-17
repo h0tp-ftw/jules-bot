@@ -24,6 +24,7 @@ import linkRepoCmd from './commands/link-repo.js'
 import setupForumCmd from './commands/setup-forum.js'
 import setupChatCmd from './commands/setup-chat.js'
 import approveCmd from './commands/approve.js'
+import newCmd from './commands/new.js'
 import threadCreateEvt from './events/threadCreate.js'
 import messageCreateEvt from './events/messageCreate.js'
 import interactionCreateEvt from './events/interactionCreate.js'
@@ -63,6 +64,7 @@ commands.set(linkRepoCmd.data.name, linkRepoCmd)
 commands.set(setupForumCmd.data.name, setupForumCmd)
 commands.set(setupChatCmd.data.name, setupChatCmd)
 commands.set(approveCmd.data.name, approveCmd)
+commands.set(newCmd.data.name, newCmd)
 
 import { hasPermission } from './lib/utils/permissions.js'
 
