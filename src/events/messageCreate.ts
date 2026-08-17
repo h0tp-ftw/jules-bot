@@ -14,6 +14,7 @@ import {
 } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 import { formatAttachmentMetadata } from '../lib/utils/attachments.js'
+import { resolveReplyContext } from '../lib/utils/reply.js'
 import { t } from '../strings.js'
 import { hasPermission } from '../lib/utils/permissions.js'
 import {
@@ -112,12 +113,21 @@ async function sendToExistingSession(
     channel.sendTyping().catch(() => {})
     await updateReaction(message, 'in_progress')
 
+    const { replyInfo, quotePrefix } = await resolveReplyContext(
+      message,
+      channelConfig.reply_context_mode,
+      channelConfig.messages.prompts,
+    )
+    const fullContent = quotePrefix ? `${quotePrefix}${messageContent}` : messageContent
+
     const promptWithMetadata = t(channelConfig.messages.prompts.metadata_header, {
       nickname: message.member?.displayName || message.author.username,
       username: message.author.username,
       id: message.author.id,
+      message_id: message.id,
       time: message.createdAt.toISOString(),
-      content: messageContent,
+      reply_info: replyInfo,
+      content: fullContent,
     })
 
     logger.debug(

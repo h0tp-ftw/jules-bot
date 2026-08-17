@@ -19,6 +19,7 @@ import { resolveMessageEmojis } from '../utils/emojis.js'
 import { extractReactionMarkers } from '../utils/reactionMarkers.js'
 import { splitMessage } from '../utils/messageSplitter.js'
 import { formatAttachmentMetadata } from '../utils/attachments.js'
+import { resolveReplyContext } from '../utils/reply.js'
 import { reactionStageForState } from '../utils/sessionState.js'
 import { formatErrorForDiscord } from '../utils/errors.js'
 import {
@@ -1195,13 +1196,22 @@ async function initializeJulesSessionCore(
     starterContent += formatAttachmentMetadata(attachmentList, threadConfig.messages.attachments)
   }
 
+  const { replyInfo, quotePrefix } = await resolveReplyContext(
+    starterMessage,
+    threadConfig.reply_context_mode,
+    threadConfig.messages.prompts,
+  )
+  const fullContent = quotePrefix ? `${quotePrefix}${starterContent}` : starterContent
+
   const promptWithMetadata = t(threadConfig.messages.prompts.metadata_header_with_title, {
     nickname: authorNickname,
     username: authorUsername,
     id: authorId,
+    message_id: starterMessage.id,
     time: messageTime,
     title: threadTitle,
-    content: starterContent,
+    reply_info: replyInfo,
+    content: fullContent,
   })
 
   let session: any = null
@@ -1549,13 +1559,22 @@ export async function initializeChatSession(
     messageContent += formatAttachmentMetadata(attachmentList, channelConfig.messages.attachments)
   }
 
+  const { replyInfo, quotePrefix } = await resolveReplyContext(
+    message,
+    channelConfig.reply_context_mode,
+    channelConfig.messages.prompts,
+  )
+  const fullContent = quotePrefix ? `${quotePrefix}${messageContent}` : messageContent
+
   const promptWithMetadata = t(channelConfig.messages.prompts.metadata_header_with_channel, {
     nickname: message.member?.displayName || message.author.username,
     username: message.author.username,
     id: message.author.id,
+    message_id: message.id,
     time: message.createdAt.toISOString(),
     channel: channel.name,
-    content: messageContent,
+    reply_info: replyInfo,
+    content: fullContent,
   })
 
   const session = await scheduleJulesRequest(() =>
