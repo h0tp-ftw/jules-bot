@@ -467,6 +467,7 @@ export function getEffectiveConfig(
   messages: Messages
   bootstrap: boolean
   reply_mode: 'reply_ping' | 'reply_silent' | 'send'
+  reply_context_mode: ReplyContextMode
 } {
   const channelsConfig = yamlConfig.channels || {}
 
@@ -846,8 +847,25 @@ export function getEffectiveConfig(
     resolvedReplyMode = roleOverride.reply_mode
   }
 
+  // Resolve reply_context_mode
+  let rawReplyContextMode: string | undefined = yamlConfig.reply_context_mode
+
+  if (parentOverride && (parentOverride as any).reply_context_mode !== undefined) {
+    rawReplyContextMode = (parentOverride as any).reply_context_mode
+  }
+  if (tagOverride && tagOverride.reply_context_mode !== undefined) {
+    rawReplyContextMode = tagOverride.reply_context_mode
+  }
+  if (threadOverride && (threadOverride as any).reply_context_mode !== undefined) {
+    rawReplyContextMode = (threadOverride as any).reply_context_mode
+  }
+  if (roleOverride && roleOverride.reply_context_mode !== undefined) {
+    rawReplyContextMode = roleOverride.reply_context_mode
+  }
+  const resolvedReplyContextMode = normalizeReplyContextMode(rawReplyContextMode)
+
   // Resolve user-facing strings: code defaults <- global YAML <- parent channel
-  // <- thread <- role. Each layer only needs to supply the keys it changes.
+  // <- tag <- thread <- role. Each layer only needs to supply the keys it changes.
   // MESSAGES already folds DEFAULT_MESSAGES <- global YAML once at module load,
   // so only the per-context layers need merging here. When a channel/thread/role
   // supplies no `messages:` overrides (the common case) we return the shared
@@ -887,5 +905,30 @@ export function getEffectiveConfig(
     messages: resolvedMessages,
     bootstrap: resolvedBootstrap,
     reply_mode: resolvedReplyMode,
+    reply_context_mode: resolvedReplyContextMode,
   }
+}
+
+export type ReplyContextMode = 'message_id' | 'full_message' | 'none'
+
+export function normalizeReplyContextMode(mode?: unknown): ReplyContextMode {
+  if (typeof mode !== 'string') return 'message_id'
+  const normalized = mode.trim().toLowerCase()
+  if (
+    normalized === 'full_message' ||
+    normalized === 'full' ||
+    normalized === 'quote' ||
+    normalized === 'snippet'
+  ) {
+    return 'full_message'
+  }
+  if (
+    normalized === 'none' ||
+    normalized === 'off' ||
+    normalized === 'disabled' ||
+    normalized === 'false'
+  ) {
+    return 'none'
+  }
+  return 'message_id'
 }

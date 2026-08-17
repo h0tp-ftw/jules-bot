@@ -21,6 +21,7 @@ const KNOWN_TOP_LEVEL_KEYS = new Set([
   'typing_indicator_mode',
   'bootstrap',
   'reply_mode',
+  'reply_context_mode',
 ])
 
 const FOREIGN_CONFIG_KEYS = new Set(['model_list', 'litellm_settings'])

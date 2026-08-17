@@ -278,3 +278,27 @@ test('reply_mode resolves default and honors overrides', () => {
   role('SilentDev', { reply_mode: 'send' })
   assert.equal(getEffectiveConfig({ id: 'rep-t1' }, memberWithRole('SilentDev')).reply_mode, 'send')
 })
+
+test('reply_context_mode resolves default and honors overrides with aliases', () => {
+  // Default fallback
+  assert.equal(getEffectiveConfig({ id: 'rc-none' }).reply_context_mode, 'message_id')
+
+  // Channel/thread override with alias
+  chan('rc-t1', { reply_context_mode: 'full' })
+  assert.equal(getEffectiveConfig({ id: 'rc-t1' }).reply_context_mode, 'full_message')
+
+  // Tag override
+  tag('rc-tag', { reply_context_mode: 'none' })
+  assert.equal(getEffectiveConfig(threadWithTags('rc-t2', ['rc-tag'])).reply_context_mode, 'none')
+
+  // Role override
+  role('QuoteRole', { reply_context_mode: 'quote' })
+  assert.equal(
+    getEffectiveConfig({ id: 'rc-t1' }, memberWithRole('QuoteRole')).reply_context_mode,
+    'full_message',
+  )
+
+  // Disabled / off alias
+  chan('rc-t3', { reply_context_mode: 'off' })
+  assert.equal(getEffectiveConfig({ id: 'rc-t3' }).reply_context_mode, 'none')
+})

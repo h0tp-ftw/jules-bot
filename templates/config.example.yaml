@@ -75,14 +75,18 @@ jules_polling:
 # Optional global routing/delivery defaults. These settings (unlike jules_polling)
 # participate in the normal defaults -> global -> channel -> tag -> thread -> role
 # precedence chain where a more specific override exists.
-# default_repo: "owner/repo"     # Global fallback; guild/DB mappings can override it
+# default_repo: "owner/repo"     # Global repo setting; YAML guild/channel/tag/thread/role can override it
 # default_branch: "main"         # Branch fallback when no more-specific branch is set
 # typing_indicator_mode: "until_response" # until_response | strict_state
-# bootstrap: true                # Inject files from bootstrap/ into Jules prompts
+# bootstrap: true                # Include bootstrap/ in normal session prompts (see pre-warm caveat in docs)
 # reply_mode: "send"             # send | reply_silent | reply_ping
 #   send         = post normally in the thread/channel
 #   reply_silent = reply to the triggering Discord message without pinging its author
 #   reply_ping   = reply to the triggering Discord message with normal reply mention behavior
+# reply_context_mode: "message_id" # message_id | full_message | none
+#   message_id   = (default) lightweight, synchronous ID referencing (Message ID + In reply to Message ID)
+#   full_message = fetch and quote the referenced message text + author
+#   none         = ignore reply references completely
 
 # Force interactive repository and branch selection on thread creation.
 # If true, shows an embed with select menus allowing developers to pick a connected repo and branch.
@@ -129,8 +133,11 @@ pre_warmed_sessions:
 #       in_progress: "⚙️"
 
 # Optional Role-specific Overrides
-# Overrides configuration options based on the roles of the thread creator.
-# When a thread creator has a matching role, the overrides are applied to that thread's session.
+# Forum authorization and initial session creation use the thread creator's role
+# context. Some later reply/UI paths currently resolve role overrides against the
+# current participant instead, so role-specific presentation settings are not an
+# immutable per-thread snapshot. Normal text channels use the current speaker.
+# See docs/CONFIGURATION.md for the exact current behavior.
 # For example, if a Developer starts a thread, you can restrict access to only Developers:
 # roles:
 #   "Developer": # Role Name or Role ID
@@ -159,6 +166,9 @@ pre_warmed_sessions:
 #     auto_reject:
 #       enabled: false
 #     default_branch: "develop"
+
+# Full setting/scope/reference notes: docs/CONFIGURATION.md
+# Runtime flow/recovery notes: docs/ARCHITECTURE.md
 
 # Customizable text strings
 # Every user-facing string (and the substantive Jules-prompt fragments) lives in
