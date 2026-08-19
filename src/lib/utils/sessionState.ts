@@ -15,6 +15,8 @@ export function reactionStageForState(state: string | undefined | null): string 
       return 'in_progress'
     case 'awaitingPlanApproval':
       return 'awaiting_plan_approval'
+    case 'paused':
+      return 'paused'
     case 'completed':
       return 'completed'
     case 'failed':

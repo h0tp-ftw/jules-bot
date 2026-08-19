@@ -71,6 +71,7 @@ test('access_control merges per-field across thread and role layers', () => {
 
 test('queued messages use the hourglass reaction by default', () => {
   assert.equal(DEFAULT_REACTIONS.queued, '⏳')
+  assert.equal(DEFAULT_REACTIONS.paused, '⏸️')
   assert.equal(getEffectiveConfig({ id: 'queued-default' }).reactions.queued, REACTIONS.queued)
 })
 

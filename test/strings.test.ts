@@ -35,6 +35,13 @@ test('nudge notice reports the configured delay', () => {
   )
 })
 
+test('paused notice fills the session url placeholder', () => {
+  assert.equal(
+    t(DEFAULT_MESSAGES.session.paused_notice, { url: 'https://jules.google/session/123' }),
+    '⏸️ **Jules has paused this session.**\nAn admin or repository collaborator needs to visit the [Jules UI](https://jules.google/session/123) and click **Resume session** to continue.',
+  )
+})
+
 test('shutdown queue notice includes the pending-message summary', () => {
   const pending = t(DEFAULT_MESSAGES.session.shutdown_queue_pending_many, { count: 2 })
   assert.equal(

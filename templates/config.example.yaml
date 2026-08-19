@@ -19,6 +19,7 @@ reactions:
   in_progress: "⚙️"
   responded: "💬"
   awaiting_plan_approval: "📋"
+  paused: "⏸️"
   completed: "✅"
   failed: "❌"
 

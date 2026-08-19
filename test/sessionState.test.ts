@@ -7,9 +7,10 @@ test('maps planning and inProgress to the in_progress stage', () => {
   assert.equal(reactionStageForState('inProgress'), 'in_progress')
 })
 
-test('maps queued, awaitingPlanApproval, completed and failed to their stages', () => {
+test('maps queued, awaitingPlanApproval, paused, completed and failed to their stages', () => {
   assert.equal(reactionStageForState('queued'), 'queued')
   assert.equal(reactionStageForState('awaitingPlanApproval'), 'awaiting_plan_approval')
+  assert.equal(reactionStageForState('paused'), 'paused')
   assert.equal(reactionStageForState('completed'), 'completed')
   assert.equal(reactionStageForState('failed'), 'failed')
 })

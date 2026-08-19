@@ -582,6 +582,8 @@ export async function runJulesStream(
   let currentQueuedTarget: Message | null = initialQueuedTurn?.message || null
   let cachedTarget: Message | null = currentQueuedTarget
   let targetFetched = currentQueuedTarget !== null
+  let pauseNoticeSent = false
+  let emptyPollsWithoutActivity = 0
 
   const releaseActiveQueuedTurn = (reason: ConversationTurnCompletionReason) => {
     const activeTurn = getActiveConversationTurn(thread.id)
@@ -699,6 +701,13 @@ export async function runJulesStream(
       if (reconnectStage) {
         await updateReaction(targetMessage, reconnectStage)
       }
+      if (info && info.state === 'paused' && !pauseNoticeSent) {
+        const lastHuman = await getTarget()
+        const threadConfig = getEffectiveConfig(thread, lastHuman?.member)
+        const sessionUrl = info.url || 'https://jules.google'
+        await thread.send(t(threadConfig.messages.session.paused_notice, { url: sessionUrl }))
+        pauseNoticeSent = true
+      }
       if (
         info &&
         (info.state === 'inProgress' || info.state === 'planning' || info.state === 'queued')
@@ -742,9 +751,36 @@ export async function runJulesStream(
         consecutiveFailures = 0
         retryDelay = 5000
         if (scheduledPoll.value.synced > 0) {
+          emptyPollsWithoutActivity = 0
+          pauseNoticeSent = false
           logger.debug(
             `[runJulesStream] Incrementally hydrated ${scheduledPoll.value.synced} new activities for session ${sessionId}.`,
           )
+        } else {
+          emptyPollsWithoutActivity++
+          if (emptyPollsWithoutActivity >= 3) {
+            emptyPollsWithoutActivity = 0
+            const currentInfo = await activityPollScheduler.request(() =>
+              getFreshSessionInfo(session),
+            )
+            if (currentInfo && currentInfo.state === 'paused') {
+              activityPollScheduler.markIdle(thread.id, false)
+              stopTyping()
+              const target = await getTarget()
+              await updateReaction(target, 'paused')
+              if (!pauseNoticeSent) {
+                const lastHuman = await getTarget()
+                const threadConfig = getEffectiveConfig(thread, lastHuman?.member)
+                const sessionUrl = currentInfo.url || 'https://jules.google'
+                await thread.send(
+                  t(threadConfig.messages.session.paused_notice, { url: sessionUrl }),
+                )
+                pauseNoticeSent = true
+              }
+            } else if (currentInfo && currentInfo.state !== 'paused' && pauseNoticeSent) {
+              pauseNoticeSent = false
+            }
+          }
         }
 
         for (const activity of scheduledPoll.value.activities) {

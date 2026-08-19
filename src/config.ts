@@ -177,6 +177,7 @@ export const DEFAULT_REACTIONS = {
   in_progress: '⚙️',
   responded: '💬',
   awaiting_plan_approval: '📋',
+  paused: '⏸️',
   completed: '✅',
   failed: '❌',
 }
