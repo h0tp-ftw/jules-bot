@@ -1,13 +1,28 @@
 import { logger } from '../utils/logger.js'
-import { jules } from '@google/jules-sdk'
+import {
+  connect,
+  MemoryStorage,
+  MemorySessionStorage,
+  type StorageFactory,
+} from '@google/jules-sdk'
 import { JULES_API_KEY, getBootstrapContext, getEffectiveConfig } from '../../config.js'
 import { scheduleJulesRequest } from './JulesRequestCoordinator.js'
 
+// Shared in-memory storage factory so activities and session metadata stay in memory
+// rather than writing to .jules/cache on disk (which caused ENOENT race conditions
+// when cache invalidation deleted the directory).
+export const memoryStorageFactory: StorageFactory = {
+  activity: () => new MemoryStorage(),
+  session: () => new MemorySessionStorage(),
+}
+
 // Shared Jules SDK client. Exported so PreWarmedManager reuses this single
 // instance instead of constructing a second one.
-export const julesApiClient = JULES_API_KEY
-  ? jules.with({ apiKey: JULES_API_KEY, config: { requestTimeoutMs: 180000 } })
-  : jules.with({ config: { requestTimeoutMs: 180000 } })
+export const julesApiClient = connect({
+  apiKey: JULES_API_KEY || undefined,
+  storageFactory: memoryStorageFactory,
+  config: { requestTimeoutMs: 180000 },
+})
 const client = julesApiClient
 
 export interface CreateSessionOptions {

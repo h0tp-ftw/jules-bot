@@ -758,7 +758,7 @@ export async function runJulesStream(
           )
         } else {
           emptyPollsWithoutActivity++
-          if (emptyPollsWithoutActivity >= 3) {
+          if (emptyPollsWithoutActivity >= 6) {
             emptyPollsWithoutActivity = 0
             const currentInfo = await activityPollScheduler.request(() =>
               getFreshSessionInfo(session),
