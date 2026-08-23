@@ -1,172 +1,28 @@
-import { logger } from '../utils/logger.js'
-import type { Outcome } from '@google/jules-sdk'
-import {
-  ThreadChannel,
-  TextChannel,
-  ChannelType,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  Message,
-} from 'discord.js'
-import { JulesClient } from './JulesClient.js'
-import { StreamManager } from '../streams/StreamManager.js'
-import { prisma, getEffectiveConfig, yamlConfig, YAML_GUILDS, JULES_POLLING } from '../../config.js'
-import { t } from '../../strings.js'
-import { replenishPool } from './PreWarmedManager.js'
-import { resolveMessageEmojis } from '../utils/emojis.js'
-import { extractReactionMarkers } from '../utils/reactionMarkers.js'
-import { splitMessage } from '../utils/messageSplitter.js'
-import { formatAttachmentMetadata } from '../utils/attachments.js'
-import { buildReplyAwarePrompt } from '../utils/reply.js'
-import { reactionStageForState, isIdleSessionState } from '../utils/sessionState.js'
-import { formatErrorForDiscord } from '../utils/errors.js'
-import {
-  completeConversationTurn,
-  enqueueConversationMessage,
-  getActiveConversationTurn,
-  markConversationTurnDispatched,
-  markConversationTurnResponded,
-  scheduleConversationNudge,
-  type ConversationTurnCompletionReason,
-} from './ConversationQueue.js'
-import {
-  applyActivityToTurnState,
-  deriveTurnResponseState,
-  formatCompletionFallback,
-  isDiscordUserMessageActivity,
-  type TurnResponseState,
-} from '../utils/sessionOutcome.js'
-import { isJulesRateLimitError } from './ActivityPollScheduler.js'
-import {
-  julesRequestCoordinator as activityPollScheduler,
-  scheduleJulesRequest,
-} from './JulesRequestCoordinator.js'
-
-import { updateReaction, applyJulesReactions } from './reactions.js'
-export { updateReaction, applyJulesReactions }
-import type { JulesDiscordChannel } from './channelTypes.js'
-export type { JulesDiscordChannel }
-import {
+// Historical facade for the Jules session lifecycle. Implementation was split
+// into focused modules — this barrel preserves the `orchestrator.js` import
+// path so consumers stay untouched:
+//   channelTypes.ts     shared JulesDiscordChannel type
+//   streamRegistry.ts   per-thread stream state + teardown/wake
+//   reactions.ts        Discord reaction staging (state- and Jules-driven)
+//   discordHistory.ts   thread history lookups (last human msg, bot baseline)
+//   deliveryCursor.ts   processed-activity skip set + persisted cursor
+//   sessionInfo.ts      fresh session info + completed-session results
+//   nudges.ts           unanswered-turn reminder scheduling
+//   runJulesStream.ts   the Jules activity polling loop
+//   sessionInit.ts      session creation (thread + chatbot) and pre-warm handoff
+//   rehydrate.ts        post-restart stream rehydration
+export type { JulesDiscordChannel } from './channelTypes.js'
+export { scheduleJulesRequest } from './JulesRequestCoordinator.js'
+export {
   activeStreams,
   autoRejectedSessions,
   processedActivityIdsMap,
-  teardownStreamState,
   wakeJulesStream,
 } from './streamRegistry.js'
-export { scheduleJulesRequest }
-export { activeStreams, autoRejectedSessions, processedActivityIdsMap, wakeJulesStream }
-import { getLastHumanMessage } from './discordHistory.js'
-export { getLastHumanMessage }
-import {
-  getActivityDate,
-  initializeProcessedActivityIds,
-  persistDeliveredActivity,
-} from './deliveryCursor.js'
-import { getFreshSessionInfo, getCompletedSessionResult } from './sessionInfo.js'
-export { getFreshSessionInfo }
-import { scheduleNudgeForConversationTurn } from './nudges.js'
-export { scheduleNudgeForConversationTurn }
-
-import { runJulesStream } from './runJulesStream.js'
-export { runJulesStream }
-
-import {
-  initializeJulesSession,
-  initializeChatSession,
-} from './sessionInit.js'
-export { initializeJulesSession, initializeChatSession }
-
-export async function rehydrateActiveStreams(client: any, streamManager: StreamManager) {
-  logger.debug('[rehydrateActiveStreams] Starting rehydration of active streams...')
-  try {
-    const oneDayAgo = new Date()
-    oneDayAgo.setDate(oneDayAgo.getDate() - 1)
-
-    const sessions = await prisma.debugSession.findMany({
-      where: {
-        updatedAt: { gte: oneDayAgo },
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: 10,
-    })
-
-    logger.debug(
-      `[rehydrateActiveStreams] Found ${sessions.length} sessions in DB updated in the last 24 hours.`,
-    )
-
-    const guildConfigs = await prisma.guildConfig.findMany({
-      select: { guildId: true, chatChannelId: true },
-    })
-    const guildConfigById = new Map(guildConfigs.map((config) => [config.guildId, config]))
-    const idleCutoffMs = Date.now() - JULES_POLLING.idle_timeout_ms
-
-    for (const session of sessions) {
-      try {
-        const channel = await client.channels.fetch(session.threadId)
-        if (!channel || (!channel.isThread() && channel.type !== ChannelType.GuildText)) continue
-        const sessionChannel = channel as JulesDiscordChannel
-        if (!sessionChannel.isThread()) {
-          const configuredChatChannelId =
-            YAML_GUILDS[session.guildId]?.chat_channel_id ||
-            guildConfigById.get(session.guildId)?.chatChannelId
-          if (configuredChatChannelId !== sessionChannel.id) {
-            logger.debug(
-              `[rehydrateActiveStreams] Text channel ${sessionChannel.id} is no longer the configured chatbot channel for guild ${session.guildId}. Skipping.`,
-            )
-            continue
-          }
-        }
-        if (sessionChannel.isThread() && (sessionChannel.archived || sessionChannel.locked)) {
-          logger.debug(
-            `[rehydrateActiveStreams] Thread ${sessionChannel.id} is archived or locked. Skipping.`,
-          )
-          continue
-        }
-
-        // Do not grant every old completed session a fresh one-hour polling window
-        // just because the bot restarted. For records older than the idle grace
-        // period, spend one paced info request to keep only genuinely active work.
-        if (session.updatedAt.getTime() < idleCutoffMs) {
-          const remoteSession = JulesClient.getSession(session.julesSessionId)
-          const info = await scheduleJulesRequest(() => getFreshSessionInfo(remoteSession))
-          if (!info || info.state === 'failed' || isIdleSessionState(info.state)) {
-            logger.debug(
-              `[rehydrateActiveStreams] Session ${session.julesSessionId} is stale and ${info?.state || 'unavailable'}; leaving it dormant until the next Discord action.`,
-            )
-            continue
-          }
-        }
-
-        const chatbotMode = !sessionChannel.isThread()
-        logger.debug(
-          `[rehydrateActiveStreams] Rehydrating stream for ${chatbotMode ? 'chatbot channel' : 'thread'} ${sessionChannel.id}, sessionId: ${session.julesSessionId}`,
-        )
-        // runJulesStream checks if it's already active. Its initialization and all
-        // Jules network calls are paced by the shared scheduler, so startup no
-        // longer needs a separate fixed inter-session sleep.
-        void runJulesStream(
-          session.julesSessionId,
-          sessionChannel,
-          streamManager,
-          undefined,
-          undefined,
-          { chatbotMode },
-        ).catch((err) => {
-          logger.error(
-            `[rehydrateActiveStreams] Stream failed for session ${session.julesSessionId} in ${sessionChannel.id}:`,
-            err,
-          )
-        })
-      } catch (err) {
-        logger.error(
-          `[rehydrateActiveStreams] Failed to rehydrate session ${session.julesSessionId} for thread ${session.threadId}:`,
-          err,
-        )
-      }
-    }
-  } catch (err) {
-    logger.error('[rehydrateActiveStreams] Failed to query active sessions from database:', err)
-  }
-}
+export { getLastHumanMessage } from './discordHistory.js'
+export { updateReaction, applyJulesReactions } from './reactions.js'
+export { getFreshSessionInfo } from './sessionInfo.js'
+export { scheduleNudgeForConversationTurn } from './nudges.js'
+export { runJulesStream } from './runJulesStream.js'
+export { initializeJulesSession, initializeChatSession } from './sessionInit.js'
+export { rehydrateActiveStreams } from './rehydrate.js'
