@@ -36,6 +36,7 @@ import { updateReaction, applyJulesReactions } from './reactions.js'
 import { getLastHumanMessage } from './discordHistory.js'
 import { initializeProcessedActivityIds, persistDeliveredActivity } from './deliveryCursor.js'
 import { getFreshSessionInfo, getCompletedSessionResult } from './sessionInfo.js'
+import type { JulesActivity, JulesSession } from './julesTypes.js'
 import type { JulesDiscordChannel } from './channelTypes.js'
 
 export async function runJulesStream(
@@ -48,7 +49,7 @@ export async function runJulesStream(
   // new activities being swallowed by history pre-population. Used by
   // messageCreate to gate the send instead of racing a fixed timeout.
   onReady?: () => void,
-  options: { chatbotMode?: boolean; sessionFactory?: (sessionId: string) => any } = {},
+  options: { chatbotMode?: boolean; sessionFactory?: (sessionId: string) => JulesSession } = {},
 ) {
   const chatbotMode = options.chatbotMode === true
   // Injectable session factory so tests can drive the polling loop with fakes;
@@ -138,7 +139,7 @@ export async function runJulesStream(
   let retryDelay = 5000
   let operationPhase: 'jules' | 'activity' = 'jules'
 
-  const markActivityProcessed = async (activity: any) => {
+  const markActivityProcessed = async (activity: JulesActivity) => {
     processedActivityIds.add(activity.id)
     await persistDeliveredActivity(thread.id, activity)
     consecutiveFailures = 0
@@ -371,7 +372,7 @@ export async function runJulesStream(
             case 'planGenerated': {
               logger.debug(`[runJulesStream] planGenerated for ${sessionId}`)
               activityPollScheduler.markIdle(thread.id)
-              const plan = activity.plan || (activity as any).planGenerated?.plan
+              const plan = activity.plan || activity.planGenerated?.plan
               if (!plan || !plan.steps) break
 
               const lastHuman = await getTarget()
@@ -463,9 +464,9 @@ export async function runJulesStream(
               // If we were awaiting approval, go back to in_progress on updates
               const target = await getTarget()
               await updateReaction(target, 'in_progress')
-              const title = activity.title || (activity as any).progressUpdated?.title || ''
+              const title = activity.title || activity.progressUpdated?.title || ''
               const description =
-                activity.description || (activity as any).progressUpdated?.description || ''
+                activity.description || activity.progressUpdated?.description || ''
               // Pass title and description separately so StreamManager can render
               // the current step and its description distinctly. Fall back to using
               // the description as the title when no title is present.
@@ -482,7 +483,7 @@ export async function runJulesStream(
             case 'agentMessaged': {
               logger.debug(`[runJulesStream] agentMessaged for ${sessionId}`)
               activityPollScheduler.markIdle(thread.id)
-              const rawMessage = activity.message || (activity as any).agentMessaged?.message || ''
+              const rawMessage = activity.message || activity.agentMessaged?.message || ''
               if (rawMessage) {
                 const target = await getTarget()
                 const threadConfig = getEffectiveConfig(thread, target?.member)
@@ -589,7 +590,7 @@ export async function runJulesStream(
               logger.debug(`[runJulesStream] sessionFailed for ${sessionId}`)
               const target = await getTarget()
               await updateReaction(target, 'failed')
-              const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
+              const reason = activity.reason || activity.sessionFailed?.reason || ''
               await streamManager.finalizeSession(thread.id, false, reason)
               await markActivityProcessed(activity)
               if (currentQueuedTurnId) {

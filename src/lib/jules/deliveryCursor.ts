@@ -5,15 +5,16 @@ import { deriveTurnResponseState } from '../utils/sessionOutcome.js'
 import { julesRequestCoordinator as activityPollScheduler } from './JulesRequestCoordinator.js'
 import type { JulesDiscordChannel } from './channelTypes.js'
 import { getLatestBotMessageTimestamp } from './discordHistory.js'
+import type { JulesActivity, JulesSession } from './julesTypes.js'
 
-export function getActivityDate(activity: any): Date | null {
+export function getActivityDate(activity: { createTime?: string }): Date | null {
   if (!activity?.createTime) return null
   const date = new Date(activity.createTime)
   return Number.isNaN(date.getTime()) ? null : date
 }
 
 async function hydrateSessionHistory(
-  session: any,
+  session: JulesSession,
   sessionId: string,
 ): Promise<{
   activities: any[]
@@ -42,7 +43,7 @@ async function hydrateSessionHistory(
 }
 
 export async function initializeProcessedActivityIds(
-  session: any,
+  session: JulesSession,
   sessionId: string,
   thread: JulesDiscordChannel,
   initialProcessedIds?: Set<string>,
@@ -135,7 +136,7 @@ export async function initializeProcessedActivityIds(
   return result()
 }
 
-export async function persistDeliveredActivity(threadId: string, activity: any) {
+export async function persistDeliveredActivity(threadId: string, activity: JulesActivity) {
   try {
     await prisma.debugSession.update({
       where: { threadId },

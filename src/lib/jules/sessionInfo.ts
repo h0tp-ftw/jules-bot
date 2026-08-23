@@ -1,12 +1,13 @@
 import { logger } from '../utils/logger.js'
 import type { Outcome } from '@google/jules-sdk'
 import { scheduleJulesRequest } from './JulesRequestCoordinator.js'
+import type { JulesSession, JulesSessionInfo } from './julesTypes.js'
 
 // Force a fresh session.info() by bypassing the SDK's local cache. Every call
 // goes through the shared scheduler so it obeys the global rate-limit budget.
-export async function getFreshSessionInfo(session: any): Promise<any> {
+export async function getFreshSessionInfo(session: JulesSession): Promise<JulesSessionInfo> {
   try {
-    if (session && session.sessionStorage && typeof session.sessionStorage.delete === 'function') {
+    if (session?.sessionStorage && typeof session.sessionStorage.delete === 'function') {
       await session.sessionStorage.delete(session.id)
     }
   } catch (err) {
@@ -19,7 +20,7 @@ export async function getFreshSessionInfo(session: any): Promise<any> {
 // A missing result must not fail the stream — completion handling proceeds
 // without it.
 export async function getCompletedSessionResult(
-  session: any,
+  session: JulesSession,
   sessionId: string,
 ): Promise<Outcome | null> {
   try {

@@ -7,6 +7,7 @@ import {
 } from '@google/jules-sdk'
 import { JULES_API_KEY, getBootstrapContext, getEffectiveConfig } from '../../config.js'
 import { scheduleJulesRequest } from './JulesRequestCoordinator.js'
+import type { JulesSession } from './julesTypes.js'
 
 // Shared in-memory storage factory so activities and session metadata stay in memory
 // rather than writing to .jules/cache on disk (which caused ENOENT race conditions
@@ -59,7 +60,7 @@ export class JulesClient {
     })
   }
 
-  static getSession(sessionId: string) {
+  static getSession(sessionId: string): JulesSession {
     return client.session(sessionId)
   }
 
