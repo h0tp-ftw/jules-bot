@@ -25,3 +25,13 @@ export function reactionStageForState(state: string | undefined | null): string 
       return null
   }
 }
+
+// True when the session is parked in a state that needs no active polling lane.
+export function isIdleSessionState(state?: string): boolean {
+  return (
+    state === 'awaitingPlanApproval' ||
+    state === 'awaitingUserFeedback' ||
+    state === 'paused' ||
+    state === 'completed'
+  )
+}

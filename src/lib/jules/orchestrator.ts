@@ -20,7 +20,7 @@ import { extractReactionMarkers } from '../utils/reactionMarkers.js'
 import { splitMessage } from '../utils/messageSplitter.js'
 import { formatAttachmentMetadata } from '../utils/attachments.js'
 import { buildReplyAwarePrompt } from '../utils/reply.js'
-import { reactionStageForState } from '../utils/sessionState.js'
+import { reactionStageForState, isIdleSessionState } from '../utils/sessionState.js'
 import { formatErrorForDiscord } from '../utils/errors.js'
 import {
   completeConversationTurn,
@@ -57,14 +57,6 @@ import {
 export { scheduleJulesRequest }
 export { activeStreams, autoRejectedSessions, processedActivityIdsMap, wakeJulesStream }
 
-function isIdleSessionState(state?: string): boolean {
-  return (
-    state === 'awaitingPlanApproval' ||
-    state === 'awaitingUserFeedback' ||
-    state === 'paused' ||
-    state === 'completed'
-  )
-}
 // Tracks the last reaction stage applied to a given message id so updateReaction
 // can skip redundant remove/re-add API calls when the stage hasn't changed.
 const messageReactionStage = new Map<string, string>()
