@@ -18,6 +18,29 @@ import {
 } from './constants.js'
 import { AGENT_PERSONALITY, SOUL_PERSONALITY } from './personalities.js'
 
+// Merge one override layer into an accumulator. Sub-objects (access_control,
+// reactions, auto_reject, jules_reactions, nudge, pre_warmed_sessions) are
+// shallow-merged so later layers win per key, while `messages` is deep-merged.
+// Every layer in the resolution ladder (parent/tag/thread/role) funnels through
+// this so the merge semantics stay uniform instead of being copy-pasted.
+function mergeOverrideLayer(acc: any, layer: any): any {
+  if (!layer || typeof layer !== 'object') return acc
+  return {
+    ...acc,
+    ...layer,
+    access_control: { ...(acc.access_control || {}), ...(layer.access_control || {}) },
+    reactions: { ...(acc.reactions || {}), ...(layer.reactions || {}) },
+    auto_reject: { ...(acc.auto_reject || {}), ...(layer.auto_reject || {}) },
+    jules_reactions: { ...(acc.jules_reactions || {}), ...(layer.jules_reactions || {}) },
+    nudge: { ...(acc.nudge || {}), ...(layer.nudge || {}) },
+    pre_warmed_sessions: {
+      ...(acc.pre_warmed_sessions || {}),
+      ...(layer.pre_warmed_sessions || {}),
+    },
+    messages: deepMergeMessages(acc.messages || {}, layer.messages || {}),
+  }
+}
+
 // Resolve dynamic effective configuration for a given thread or channel
 export function getEffectiveConfig(
   thread?: any,
@@ -101,35 +124,7 @@ export function getEffectiveConfig(
       for (const [tagKey, tagVal] of Object.entries(tagsConfig)) {
         const matches = appliedIds.has(tagKey) || appliedNames.has(tagKey)
         if (matches && tagVal && typeof tagVal === 'object') {
-          tagOverride = {
-            ...tagOverride,
-            ...tagVal,
-            access_control: {
-              ...(tagOverride.access_control || {}),
-              ...((tagVal as any).access_control || {}),
-            },
-            reactions: {
-              ...(tagOverride.reactions || {}),
-              ...((tagVal as any).reactions || {}),
-            },
-            auto_reject: {
-              ...(tagOverride.auto_reject || {}),
-              ...((tagVal as any).auto_reject || {}),
-            },
-            jules_reactions: {
-              ...(tagOverride.jules_reactions || {}),
-              ...((tagVal as any).jules_reactions || {}),
-            },
-            nudge: {
-              ...(tagOverride.nudge || {}),
-              ...((tagVal as any).nudge || {}),
-            },
-            pre_warmed_sessions: {
-              ...(tagOverride.pre_warmed_sessions || {}),
-              ...((tagVal as any).pre_warmed_sessions || {}),
-            },
-            messages: deepMergeMessages(tagOverride.messages || {}, (tagVal as any).messages || {}),
-          }
+          tagOverride = mergeOverrideLayer(tagOverride, tagVal)
         }
       }
     }
@@ -149,35 +144,7 @@ export function getEffectiveConfig(
       }
 
       if (hasRole && roleVal && typeof roleVal === 'object') {
-        roleOverride = {
-          ...roleOverride,
-          ...roleVal,
-          access_control: {
-            ...(roleOverride.access_control || {}),
-            ...((roleVal as any).access_control || {}),
-          },
-          reactions: {
-            ...(roleOverride.reactions || {}),
-            ...((roleVal as any).reactions || {}),
-          },
-          auto_reject: {
-            ...(roleOverride.auto_reject || {}),
-            ...((roleVal as any).auto_reject || {}),
-          },
-          jules_reactions: {
-            ...(roleOverride.jules_reactions || {}),
-            ...((roleVal as any).jules_reactions || {}),
-          },
-          nudge: {
-            ...(roleOverride.nudge || {}),
-            ...((roleVal as any).nudge || {}),
-          },
-          pre_warmed_sessions: {
-            ...(roleOverride.pre_warmed_sessions || {}),
-            ...((roleVal as any).pre_warmed_sessions || {}),
-          },
-          messages: deepMergeMessages(roleOverride.messages || {}, (roleVal as any).messages || {}),
-        }
+        roleOverride = mergeOverrideLayer(roleOverride, roleVal)
       }
     }
   }
