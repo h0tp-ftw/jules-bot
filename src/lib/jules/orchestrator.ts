@@ -44,8 +44,10 @@ import {
   scheduleJulesRequest,
 } from './JulesRequestCoordinator.js'
 
-export type JulesDiscordChannel = ThreadChannel | TextChannel
-
+import { updateReaction, applyJulesReactions } from './reactions.js'
+export { updateReaction, applyJulesReactions }
+import type { JulesDiscordChannel } from './channelTypes.js'
+export type { JulesDiscordChannel }
 import {
   activeStreams,
   autoRejectedSessions,
@@ -53,25 +55,10 @@ import {
   teardownStreamState,
   wakeJulesStream,
 } from './streamRegistry.js'
-
 export { scheduleJulesRequest }
 export { activeStreams, autoRejectedSessions, processedActivityIdsMap, wakeJulesStream }
-import { updateReaction, applyJulesReactions } from './reactions.js'
-export { updateReaction, applyJulesReactions }
-
-export async function getLastHumanMessage(thread: JulesDiscordChannel): Promise<Message | null> {
-  try {
-    const messages = await thread.messages.fetch({ limit: 20 })
-    const sorted = Array.from(messages.values()).sort(
-      (a, b) => b.createdTimestamp - a.createdTimestamp,
-    )
-    const lastHuman = sorted.find((m) => !m.author.bot)
-    return lastHuman || null
-  } catch (err) {
-    logger.error('Failed to fetch last human message for reply:', err)
-    return null
-  }
-}
+import { getLastHumanMessage } from './discordHistory.js'
+export { getLastHumanMessage }
 
 function getActivityDate(activity: any): Date | null {
   if (!activity?.createTime) return null
