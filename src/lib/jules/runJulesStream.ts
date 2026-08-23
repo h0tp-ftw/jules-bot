@@ -48,9 +48,12 @@ export async function runJulesStream(
   // new activities being swallowed by history pre-population. Used by
   // messageCreate to gate the send instead of racing a fixed timeout.
   onReady?: () => void,
-  options: { chatbotMode?: boolean } = {},
+  options: { chatbotMode?: boolean; sessionFactory?: (sessionId: string) => any } = {},
 ) {
   const chatbotMode = options.chatbotMode === true
+  // Injectable session factory so tests can drive the polling loop with fakes;
+  // production always resolves through the shared SDK client.
+  const getSession = options.sessionFactory ?? ((id: string) => JulesClient.getSession(id))
 
   if (activeStreams.has(thread.id)) {
     logger.debug(
@@ -101,7 +104,7 @@ export async function runJulesStream(
   let processedActivityIds = processedActivityIdsMap.get(thread.id)
   if (!processedActivityIds) {
     try {
-      const session = JulesClient.getSession(sessionId)
+      const session = getSession(sessionId)
       const initialized = await initializeProcessedActivityIds(
         session,
         sessionId,
@@ -191,7 +194,7 @@ export async function runJulesStream(
       }
 
       logger.debug(`[runJulesStream] Fetching session info for ${sessionId}...`)
-      const session = JulesClient.getSession(sessionId)
+      const session = getSession(sessionId)
       let info = await activityPollScheduler.request(() => getFreshSessionInfo(session))
       logger.debug(`[runJulesStream] Session ${sessionId} info: state=${info?.state}`)
 
