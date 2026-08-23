@@ -46,14 +46,16 @@ import {
 
 export type JulesDiscordChannel = ThreadChannel | TextChannel
 
-export const activeStreams = new Set<string>()
-export const autoRejectedSessions = new Set<string>()
-export const processedActivityIdsMap = new Map<string, Set<string>>()
-export { scheduleJulesRequest }
+import {
+  activeStreams,
+  autoRejectedSessions,
+  processedActivityIdsMap,
+  teardownStreamState,
+  wakeJulesStream,
+} from './streamRegistry.js'
 
-export function wakeJulesStream(channelId: string): void {
-  activityPollScheduler.wake(channelId)
-}
+export { scheduleJulesRequest }
+export { activeStreams, autoRejectedSessions, processedActivityIdsMap, wakeJulesStream }
 
 function isIdleSessionState(state?: string): boolean {
   return (
@@ -70,19 +72,6 @@ const messageReactionStage = new Map<string, string>()
 // per message that ever received a reaction. Map preserves insertion order, so we
 // evict the oldest key once over the cap.
 const MAX_REACTION_STAGE_ENTRIES = 5000
-
-// Release all per-thread module state for a stream handler that is exiting for
-// good (failed / archived / deleted / retries exhausted). Centralized so every
-// exit path cleans up the same sets — previously some paths leaked
-// autoRejectedSessions or processedActivityIdsMap. Completed/idle sessions now
-// stay warm only for a bounded grace period; after that, the next Discord action
-// rehydrates them on demand instead of keeping an eternal Jules poller alive.
-function teardownStreamState(threadId: string, sessionId?: string) {
-  activityPollScheduler.remove(threadId)
-  activeStreams.delete(threadId)
-  processedActivityIdsMap.delete(threadId)
-  if (sessionId) autoRejectedSessions.delete(sessionId)
-}
 
 function parseEmojiForReaction(client: any, emojiStr: string): string {
   const trimmed = emojiStr.trim()
@@ -642,10 +631,7 @@ export async function runJulesStream(
         return
       }
 
-      if (
-        isIdleSessionState(info?.state) &&
-        !getActiveConversationTurn(thread.id)?.dispatchedAt
-      ) {
+      if (isIdleSessionState(info?.state) && !getActiveConversationTurn(thread.id)?.dispatchedAt) {
         activityPollScheduler.markIdle(thread.id, false)
       } else {
         activityPollScheduler.markActive(thread.id)
@@ -675,17 +661,12 @@ export async function runJulesStream(
           stopTyping()
           return
         }
-        logger.debug(
-          `[runJulesStream] is queued. Waiting ${JULES_POLLING.active_interval_ms}ms...`,
-        )
+        logger.debug(`[runJulesStream] is queued. Waiting ${JULES_POLLING.active_interval_ms}ms...`)
         await new Promise((resolve) => setTimeout(resolve, JULES_POLLING.active_interval_ms))
         queuedWaitMs += JULES_POLLING.active_interval_ms
         info = await activityPollScheduler.request(() => getFreshSessionInfo(session))
       }
-      if (
-        isIdleSessionState(info?.state) &&
-        !getActiveConversationTurn(thread.id)?.dispatchedAt
-      ) {
+      if (isIdleSessionState(info?.state) && !getActiveConversationTurn(thread.id)?.dispatchedAt) {
         activityPollScheduler.markIdle(thread.id, false)
       } else {
         activityPollScheduler.markActive(thread.id)
@@ -784,155 +765,211 @@ export async function runJulesStream(
         }
 
         for (const activity of scheduledPoll.value.activities) {
-        const id = activity.id
-        logger.debug(
-          `[runJulesStream] Received activity from stream: ${id} type=${activity.type} originator=${activity.originator}`,
-        )
-        if (processedActivityIds.has(id)) {
-          logger.debug(`[runJulesStream] Activity ${id} already processed. Skipping.`)
-          continue
-        }
-        operationPhase = 'activity'
+          const id = activity.id
+          logger.debug(
+            `[runJulesStream] Received activity from stream: ${id} type=${activity.type} originator=${activity.originator}`,
+          )
+          if (processedActivityIds.has(id)) {
+            logger.debug(`[runJulesStream] Activity ${id} already processed. Skipping.`)
+            continue
+          }
+          operationPhase = 'activity'
 
-        const type = activity.type
-        const typeStr = type as string
-        let queuedTurnRespondedId: string | undefined
-        let queuedTurnCompletion:
-          | { reason: ConversationTurnCompletionReason; turnId: string }
-          | undefined
+          const type = activity.type
+          const typeStr = type as string
+          let queuedTurnRespondedId: string | undefined
+          let queuedTurnCompletion:
+            | { reason: ConversationTurnCompletionReason; turnId: string }
+            | undefined
 
-        switch (type) {
-          case 'planGenerated': {
-            logger.debug(`[runJulesStream] planGenerated for ${sessionId}`)
-            activityPollScheduler.markIdle(thread.id)
-            const plan = activity.plan || (activity as any).planGenerated?.plan
-            if (!plan || !plan.steps) break
+          switch (type) {
+            case 'planGenerated': {
+              logger.debug(`[runJulesStream] planGenerated for ${sessionId}`)
+              activityPollScheduler.markIdle(thread.id)
+              const plan = activity.plan || (activity as any).planGenerated?.plan
+              if (!plan || !plan.steps) break
 
-            const lastHuman = await getTarget()
-            const threadConfig = getEffectiveConfig(thread, lastHuman?.member)
-            const autoReject = threadConfig.auto_reject || {}
-            const shouldAutoReject =
-              chatbotMode || (autoReject.enabled && !autoRejectedSessions.has(sessionId))
-            if (shouldAutoReject) {
-              if (!chatbotMode) autoRejectedSessions.add(sessionId)
-              const feedback = chatbotMode
-                ? threadConfig.messages.prompts.chatbot_mode_plan_feedback
-                : autoReject.message || threadConfig.messages.prompts.auto_reject_default
-              if (!chatbotMode) {
-                await thread.send(
-                  t(threadConfig.messages.plan.auto_rejected_notice, {
-                    emoji: '🤖',
-                    feedback,
+              const lastHuman = await getTarget()
+              const threadConfig = getEffectiveConfig(thread, lastHuman?.member)
+              const autoReject = threadConfig.auto_reject || {}
+              const shouldAutoReject =
+                chatbotMode || (autoReject.enabled && !autoRejectedSessions.has(sessionId))
+              if (shouldAutoReject) {
+                if (!chatbotMode) autoRejectedSessions.add(sessionId)
+                const feedback = chatbotMode
+                  ? threadConfig.messages.prompts.chatbot_mode_plan_feedback
+                  : autoReject.message || threadConfig.messages.prompts.auto_reject_default
+                if (!chatbotMode) {
+                  await thread.send(
+                    t(threadConfig.messages.plan.auto_rejected_notice, {
+                      emoji: '🤖',
+                      feedback,
+                    }),
+                  )
+                }
+                await scheduleJulesRequest(() => session.send(feedback))
+                activityPollScheduler.markActive(thread.id)
+                const target = await getTarget()
+                await updateReaction(target, 'in_progress')
+                break
+              }
+
+              const target = await getTarget()
+              await updateReaction(target, 'awaiting_plan_approval')
+
+              const stepsText = plan.steps
+                .map((step: any, i: number) =>
+                  t(threadConfig.messages.plan.step_line, {
+                    number: i + 1,
+                    title: step.title,
                   }),
                 )
+                .join('\n')
+
+              const embed = new EmbedBuilder()
+                .setTitle(
+                  t(threadConfig.messages.plan.embed_title, {
+                    emoji: threadConfig.bot_emoji || '🐙',
+                  }),
+                )
+                .setDescription(
+                  stepsText.slice(0, 4000) || threadConfig.messages.plan.embed_no_details,
+                )
+                .setColor(0x00ae86)
+
+              const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`plan-approve:${thread.id}`)
+                  .setLabel(threadConfig.messages.plan.approve_button)
+                  .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                  .setCustomId(`plan-reject:${thread.id}`)
+                  .setLabel(threadConfig.messages.plan.reject_button)
+                  .setStyle(ButtonStyle.Danger),
+              )
+
+              let msg
+              if (target && threadConfig.reply_mode !== 'send') {
+                const allowedMentions =
+                  threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
+                msg = await target.reply({
+                  embeds: [embed],
+                  components: [row],
+                  allowedMentions,
+                })
+              } else {
+                msg = await thread.send({
+                  embeds: [embed],
+                  components: [row],
+                })
               }
-              await scheduleJulesRequest(() => session.send(feedback))
-              activityPollScheduler.markActive(thread.id)
-              const target = await getTarget()
-              await updateReaction(target, 'in_progress')
+
+              await prisma.debugSession.update({
+                where: { threadId: thread.id },
+                data: { planMessageId: msg.id },
+              })
+              if (currentQueuedTurnId) queuedTurnRespondedId = currentQueuedTurnId
               break
             }
 
-            const target = await getTarget()
-            await updateReaction(target, 'awaiting_plan_approval')
-
-            const stepsText = plan.steps
-              .map((step: any, i: number) =>
-                t(threadConfig.messages.plan.step_line, {
-                  number: i + 1,
-                  title: step.title,
-                }),
-              )
-              .join('\n')
-
-            const embed = new EmbedBuilder()
-              .setTitle(
-                t(threadConfig.messages.plan.embed_title, {
-                  emoji: threadConfig.bot_emoji || '🐙',
-                }),
-              )
-              .setDescription(
-                stepsText.slice(0, 4000) || threadConfig.messages.plan.embed_no_details,
-              )
-              .setColor(0x00ae86)
-
-            const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-              new ButtonBuilder()
-                .setCustomId(`plan-approve:${thread.id}`)
-                .setLabel(threadConfig.messages.plan.approve_button)
-                .setStyle(ButtonStyle.Success),
-              new ButtonBuilder()
-                .setCustomId(`plan-reject:${thread.id}`)
-                .setLabel(threadConfig.messages.plan.reject_button)
-                .setStyle(ButtonStyle.Danger),
-            )
-
-            let msg
-            if (target && threadConfig.reply_mode !== 'send') {
-              const allowedMentions =
-                threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
-              msg = await target.reply({
-                embeds: [embed],
-                components: [row],
-                allowedMentions,
-              })
-            } else {
-              msg = await thread.send({
-                embeds: [embed],
-                components: [row],
-              })
-            }
-
-            await prisma.debugSession.update({
-              where: { threadId: thread.id },
-              data: { planMessageId: msg.id },
-            })
-            if (currentQueuedTurnId) queuedTurnRespondedId = currentQueuedTurnId
-            break
-          }
-
-          case 'progressUpdated': {
-            logger.debug(`[runJulesStream] progressUpdated for ${sessionId}`)
-            activityPollScheduler.markActive(thread.id)
-            // If we were awaiting approval, go back to in_progress on updates
-            const target = await getTarget()
-            await updateReaction(target, 'in_progress')
-            const title = activity.title || (activity as any).progressUpdated?.title || ''
-            const description =
-              activity.description || (activity as any).progressUpdated?.description || ''
-            // Pass title and description separately so StreamManager can render
-            // the current step and its description distinctly. Fall back to using
-            // the description as the title when no title is present.
-            if (!chatbotMode && (title || description)) {
-              await streamManager.handleProgress(
-                thread.id,
-                title || description,
-                title ? description || undefined : undefined,
-              )
-            }
-            break
-          }
-
-          case 'agentMessaged': {
-            logger.debug(`[runJulesStream] agentMessaged for ${sessionId}`)
-            activityPollScheduler.markIdle(thread.id)
-            const rawMessage = activity.message || (activity as any).agentMessaged?.message || ''
-            if (rawMessage) {
+            case 'progressUpdated': {
+              logger.debug(`[runJulesStream] progressUpdated for ${sessionId}`)
+              activityPollScheduler.markActive(thread.id)
+              // If we were awaiting approval, go back to in_progress on updates
               const target = await getTarget()
-              const threadConfig = getEffectiveConfig(thread, target?.member)
-              // Resolve the toggle with the same (thread + creator-role) context the
-              // session prompt was built with, so the parse/strip behavior matches
-              // whether Jules was actually told about the marker protocol.
-              const reactionsEnabled = threadConfig.jules_reactions?.enabled === true
-              const { text: bodyText, emojis } = reactionsEnabled
-                ? extractReactionMarkers(rawMessage)
-                : { text: rawMessage, emojis: [] as string[] }
+              await updateReaction(target, 'in_progress')
+              const title = activity.title || (activity as any).progressUpdated?.title || ''
+              const description =
+                activity.description || (activity as any).progressUpdated?.description || ''
+              // Pass title and description separately so StreamManager can render
+              // the current step and its description distinctly. Fall back to using
+              // the description as the title when no title is present.
+              if (!chatbotMode && (title || description)) {
+                await streamManager.handleProgress(
+                  thread.id,
+                  title || description,
+                  title ? description || undefined : undefined,
+                )
+              }
+              break
+            }
 
-              // bodyText can be empty when Jules sends only a reaction marker — in
-              // that case react without posting an empty message.
-              if (bodyText) {
-                const resolved = resolveMessageEmojis(thread.client, bodyText)
-                const splits = splitMessage(resolved, 2000)
+            case 'agentMessaged': {
+              logger.debug(`[runJulesStream] agentMessaged for ${sessionId}`)
+              activityPollScheduler.markIdle(thread.id)
+              const rawMessage = activity.message || (activity as any).agentMessaged?.message || ''
+              if (rawMessage) {
+                const target = await getTarget()
+                const threadConfig = getEffectiveConfig(thread, target?.member)
+                // Resolve the toggle with the same (thread + creator-role) context the
+                // session prompt was built with, so the parse/strip behavior matches
+                // whether Jules was actually told about the marker protocol.
+                const reactionsEnabled = threadConfig.jules_reactions?.enabled === true
+                const { text: bodyText, emojis } = reactionsEnabled
+                  ? extractReactionMarkers(rawMessage)
+                  : { text: rawMessage, emojis: [] as string[] }
+
+                // bodyText can be empty when Jules sends only a reaction marker — in
+                // that case react without posting an empty message.
+                if (bodyText) {
+                  const resolved = resolveMessageEmojis(thread.client, bodyText)
+                  const splits = splitMessage(resolved, 2000)
+                  if (target && threadConfig.reply_mode !== 'send') {
+                    const allowedMentions =
+                      threadConfig.reply_mode === 'reply_silent'
+                        ? { repliedUser: false }
+                        : undefined
+                    for (let i = 0; i < splits.length; i++) {
+                      if (i === 0) {
+                        await target.reply({ content: splits[i], allowedMentions })
+                      } else {
+                        await thread.send(splits[i])
+                      }
+                    }
+                  } else {
+                    for (const chunk of splits) {
+                      await thread.send(chunk)
+                    }
+                  }
+                }
+
+                // A Jules-authored reaction overrides the state stamp; fall back to
+                // the normal "responded" reaction when none was supplied (or none
+                // could be applied).
+                if (!(emojis.length > 0 && (await applyJulesReactions(target, emojis)))) {
+                  await updateReaction(target, 'responded')
+                }
+              }
+              if (currentQueuedTurnId && rawMessage) {
+                queuedTurnRespondedId = currentQueuedTurnId
+                queuedTurnCompletion = {
+                  reason: 'agent_responded',
+                  turnId: currentQueuedTurnId,
+                }
+              }
+              break
+            }
+
+            case 'sessionCompleted': {
+              logger.debug(`[runJulesStream] sessionCompleted for ${sessionId}`)
+              activityPollScheduler.markIdle(thread.id)
+              const target = await getTarget()
+              const outcome = await getCompletedSessionResult(session, sessionId)
+              const pullRequestUrl = outcome?.pullRequest?.url
+
+              await updateReaction(target, 'completed')
+              await streamManager.finalizeSession(thread.id, true, undefined, { pullRequestUrl })
+
+              if (turnState.awaitingAgentReply) {
+                logger.warn(
+                  `[runJulesStream] Session ${sessionId} completed without an agent reply for the latest Discord turn; posting a result fallback.`,
+                )
+                const threadConfig = getEffectiveConfig(thread, target?.member)
+                const fallback = formatCompletionFallback(threadConfig.messages, {
+                  pullRequestUrl,
+                  latestProgress: turnState.latestProgress,
+                })
+                const splits = splitMessage(fallback, 2000)
                 if (target && threadConfig.reply_mode !== 'send') {
                   const allowedMentions =
                     threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
@@ -948,154 +985,100 @@ export async function runJulesStream(
                     await thread.send(chunk)
                   }
                 }
+                turnState = { awaitingAgentReply: false }
               }
 
-              // A Jules-authored reaction overrides the state stamp; fall back to
-              // the normal "responded" reaction when none was supplied (or none
-              // could be applied).
-              if (!(emojis.length > 0 && (await applyJulesReactions(target, emojis)))) {
-                await updateReaction(target, 'responded')
-              }
-            }
-            if (currentQueuedTurnId && rawMessage) {
-              queuedTurnRespondedId = currentQueuedTurnId
-              queuedTurnCompletion = {
-                reason: 'agent_responded',
-                turnId: currentQueuedTurnId,
-              }
-            }
-            break
-          }
-
-          case 'sessionCompleted': {
-            logger.debug(`[runJulesStream] sessionCompleted for ${sessionId}`)
-            activityPollScheduler.markIdle(thread.id)
-            const target = await getTarget()
-            const outcome = await getCompletedSessionResult(session, sessionId)
-            const pullRequestUrl = outcome?.pullRequest?.url
-
-            await updateReaction(target, 'completed')
-            await streamManager.finalizeSession(thread.id, true, undefined, { pullRequestUrl })
-
-            if (turnState.awaitingAgentReply) {
-              logger.warn(
-                `[runJulesStream] Session ${sessionId} completed without an agent reply for the latest Discord turn; posting a result fallback.`,
-              )
-              const threadConfig = getEffectiveConfig(thread, target?.member)
-              const fallback = formatCompletionFallback(threadConfig.messages, {
-                pullRequestUrl,
-                latestProgress: turnState.latestProgress,
-              })
-              const splits = splitMessage(fallback, 2000)
-              if (target && threadConfig.reply_mode !== 'send') {
-                const allowedMentions =
-                  threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
-                for (let i = 0; i < splits.length; i++) {
-                  if (i === 0) {
-                    await target.reply({ content: splits[i], allowedMentions })
-                  } else {
-                    await thread.send(splits[i])
-                  }
+              if (currentQueuedTurnId) {
+                queuedTurnCompletion = {
+                  reason: 'session_completed',
+                  turnId: currentQueuedTurnId,
                 }
+              }
+
+              autoRejectedSessions.delete(sessionId)
+              stopTyping()
+              break
+            }
+
+            case 'sessionFailed': {
+              logger.debug(`[runJulesStream] sessionFailed for ${sessionId}`)
+              const target = await getTarget()
+              await updateReaction(target, 'failed')
+              const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
+              await streamManager.finalizeSession(thread.id, false, reason)
+              await markActivityProcessed(activity)
+              if (currentQueuedTurnId) {
+                completeConversationTurn(thread.id, 'session_failed', currentQueuedTurnId)
               } else {
-                for (const chunk of splits) {
-                  await thread.send(chunk)
-                }
+                releaseActiveQueuedTurn('session_failed')
               }
-              turnState = { awaitingAgentReply: false }
+              teardownStreamState(thread.id, sessionId)
+              stopTyping()
+              return
             }
 
-            if (currentQueuedTurnId) {
-              queuedTurnCompletion = {
-                reason: 'session_completed',
-                turnId: currentQueuedTurnId,
+            case 'userMessaged': {
+              logger.debug(`[runJulesStream] userMessaged for ${sessionId}`)
+              activityPollScheduler.markActive(thread.id)
+              if (isDiscordUserMessageActivity(activity)) {
+                const activeTurn = getActiveConversationTurn(thread.id)
+                currentQueuedTurnId = activeTurn?.id
+                currentQueuedTarget = activeTurn?.message || null
+                cachedTarget = currentQueuedTarget
+                targetFetched = currentQueuedTarget !== null
               }
+              // A new human message arrived — refresh the cached reaction/reply target.
+              await getTarget(true)
+              // Typing indicators handled below.
+              break
             }
-
-            autoRejectedSessions.delete(sessionId)
-            stopTyping()
-            break
           }
 
-          case 'sessionFailed': {
-            logger.debug(`[runJulesStream] sessionFailed for ${sessionId}`)
-            const target = await getTarget()
-            await updateReaction(target, 'failed')
-            const reason = activity.reason || (activity as any).sessionFailed?.reason || ''
-            await streamManager.finalizeSession(thread.id, false, reason)
-            await markActivityProcessed(activity)
-            if (currentQueuedTurnId) {
-              completeConversationTurn(thread.id, 'session_failed', currentQueuedTurnId)
-            } else {
-              releaseActiveQueuedTurn('session_failed')
+          // Update typing status based on the (pre-resolved) typing mode.
+          if (typingMode === 'strict_state') {
+            // Strict state mode: keep typing active during progress updates,
+            // and only stop typing when the session is completed or failed.
+            if (typeStr === 'userMessaged' || typeStr === 'progressUpdated') {
+              startTyping()
+            } else if (typeStr === 'sessionCompleted' || typeStr === 'sessionFailed') {
+              stopTyping()
             }
-            teardownStreamState(thread.id, sessionId)
-            stopTyping()
-            return
-          }
-
-          case 'userMessaged': {
-            logger.debug(`[runJulesStream] userMessaged for ${sessionId}`)
-            activityPollScheduler.markActive(thread.id)
-            if (isDiscordUserMessageActivity(activity)) {
-              const activeTurn = getActiveConversationTurn(thread.id)
-              currentQueuedTurnId = activeTurn?.id
-              currentQueuedTarget = activeTurn?.message || null
-              cachedTarget = currentQueuedTarget
-              targetFetched = currentQueuedTarget !== null
+          } else {
+            // Default mode: until_response
+            // Start typing when a user message is sent, stop when agent responds or session ends.
+            if (typeStr === 'userMessaged') {
+              startTyping()
+            } else if (
+              typeStr === 'agentMessaged' ||
+              typeStr === 'planGenerated' ||
+              typeStr === 'sessionCompleted' ||
+              typeStr === 'sessionFailed'
+            ) {
+              stopTyping()
             }
-            // A new human message arrived — refresh the cached reaction/reply target.
-            await getTarget(true)
-            // Typing indicators handled below.
-            break
           }
-        }
 
-        // Update typing status based on the (pre-resolved) typing mode.
-        if (typingMode === 'strict_state') {
-          // Strict state mode: keep typing active during progress updates,
-          // and only stop typing when the session is completed or failed.
-          if (typeStr === 'userMessaged' || typeStr === 'progressUpdated') {
-            startTyping()
-          } else if (typeStr === 'sessionCompleted' || typeStr === 'sessionFailed') {
-            stopTyping()
+          // Advance the per-turn response state only after all side effects for the
+          // activity succeeded. This state is reconstructed from persisted history
+          // after restarts, so a terminal event can detect a missing agent reply.
+          turnState = applyActivityToTurnState(turnState, activity)
+
+          // Only acknowledge an activity after every Discord/Jules side effect for
+          // it succeeds. A failed send therefore remains eligible for replay after
+          // the stream reconnects instead of being silently skipped forever.
+          await markActivityProcessed(activity)
+          if (queuedTurnRespondedId) {
+            markConversationTurnResponded(thread.id, queuedTurnRespondedId)
           }
-        } else {
-          // Default mode: until_response
-          // Start typing when a user message is sent, stop when agent responds or session ends.
-          if (typeStr === 'userMessaged') {
-            startTyping()
-          } else if (
-            typeStr === 'agentMessaged' ||
-            typeStr === 'planGenerated' ||
-            typeStr === 'sessionCompleted' ||
-            typeStr === 'sessionFailed'
-          ) {
-            stopTyping()
+          if (queuedTurnCompletion) {
+            completeConversationTurn(
+              thread.id,
+              queuedTurnCompletion.reason,
+              queuedTurnCompletion.turnId,
+            )
           }
+          operationPhase = 'jules'
         }
-
-        // Advance the per-turn response state only after all side effects for the
-        // activity succeeded. This state is reconstructed from persisted history
-        // after restarts, so a terminal event can detect a missing agent reply.
-        turnState = applyActivityToTurnState(turnState, activity)
-
-        // Only acknowledge an activity after every Discord/Jules side effect for
-        // it succeeds. A failed send therefore remains eligible for replay after
-        // the stream reconnects instead of being silently skipped forever.
-        await markActivityProcessed(activity)
-        if (queuedTurnRespondedId) {
-          markConversationTurnResponded(thread.id, queuedTurnRespondedId)
-        }
-        if (queuedTurnCompletion) {
-          completeConversationTurn(
-            thread.id,
-            queuedTurnCompletion.reason,
-            queuedTurnCompletion.turnId,
-          )
-        }
-        operationPhase = 'jules'
-      }
       }
     } catch (err: any) {
       // Only treat 403/404 errors as permanent while talking to Jules itself.
