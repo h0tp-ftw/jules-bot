@@ -16,7 +16,6 @@ import {
   yamlConfig,
   MESSAGES,
   YAML_GUILDS,
-  getEffectiveConfig,
 } from './config.js'
 import { t } from './strings.js'
 import { formatErrorForDiscord } from './lib/utils/errors.js'
@@ -31,12 +30,9 @@ import interactionCreateEvt from './events/interactionCreate.js'
 import { StreamManager } from './lib/streams/StreamManager.js'
 import { initPreWarmedPools } from './lib/jules/PreWarmedManager.js'
 import { rehydrateActiveStreams } from './lib/jules/orchestrator.js'
-import { startHealthServer, stopHealthServer } from './lib/health.js'
-import {
-  getActiveConversationQueueSnapshots,
-  type ActiveConversationQueueSnapshot,
-} from './lib/jules/ConversationQueue.js'
-import { splitMessage } from './lib/utils/messageSplitter.js'
+import { startHealthServer } from './lib/health.js'
+import { loginWithRetry } from './startup/login.js'
+import { setupProcessLifecycle } from './startup/shutdown.js'
 
 if (!DISCORD_TOKEN || DISCORD_TOKEN === 'YOUR_DISCORD_TOKEN') {
   logger.error('Error: DISCORD_TOKEN is not configured in .env file.')
@@ -213,6 +209,9 @@ client.once(Events.ClientReady, async () => {
   }
 })
 
+// Graceful shutdown + process-level resilience handlers
+setupProcessLifecycle({ client, streamManager })
+
 // Connect to SQLite and Login bot
 async function start() {
   try {
@@ -243,218 +242,11 @@ async function start() {
       startHealthServer(client, healthPort)
     }
 
-    await loginWithRetry()
+    await loginWithRetry(client, DISCORD_TOKEN)
   } catch (err) {
     logger.error('Error starting bot:', err)
     process.exit(1)
   }
 }
-
-// Gracefully tear down on shutdown signals (pm2 reload/stop, Ctrl+C) so pending
-// status-message edits are dropped cleanly and the gateway/DB connections close
-// instead of being hard-killed mid-write.
-const SHUTDOWN_NOTICE_TIMEOUT_MS = 2500
-
-function getShutdownPendingText(snapshot: ActiveConversationQueueSnapshot): string {
-  const cfg = getEffectiveConfig(snapshot.turn.message.channel, snapshot.turn.message.member)
-  if (snapshot.pendingCount === 0) return ''
-  if (snapshot.pendingCount === 1) return cfg.messages.session.shutdown_queue_pending_one
-  return t(cfg.messages.session.shutdown_queue_pending_many, { count: snapshot.pendingCount })
-}
-
-async function sendShutdownQueueNotice(snapshot: ActiveConversationQueueSnapshot): Promise<void> {
-  const { message } = snapshot.turn
-  const cfg = getEffectiveConfig(message.channel, message.member)
-  const content = t(cfg.messages.session.shutdown_queue_active, {
-    pending: getShutdownPendingText(snapshot),
-  })
-  const chunks = splitMessage(content, 2000)
-  if (chunks.length === 0) return
-
-  const sendInChannel = async (chunk: string) => {
-    if (!('send' in message.channel) || typeof message.channel.send !== 'function') {
-      throw new Error(`Channel ${message.channel.id} is not sendable`)
-    }
-    await message.channel.send(chunk)
-  }
-
-  try {
-    await message.reply({ content: chunks[0], allowedMentions: { repliedUser: false } })
-  } catch (err) {
-    logger.warn(
-      `[Shutdown] Could not reply to active queue message ${message.id}; sending in channel instead:`,
-      err,
-    )
-    await sendInChannel(chunks[0])
-  }
-
-  for (const chunk of chunks.slice(1)) {
-    await sendInChannel(chunk)
-  }
-}
-
-async function notifyActiveConversationQueues(): Promise<void> {
-  if (!client.isReady()) return
-  const snapshots = getActiveConversationQueueSnapshots()
-  if (snapshots.length === 0) return
-
-  logger.info(`[Shutdown] Notifying ${snapshots.length} active conversation queue(s)...`)
-  let timeout: NodeJS.Timeout | undefined
-  let timedOut = false
-  await Promise.race([
-    Promise.allSettled(snapshots.map(sendShutdownQueueNotice)),
-    new Promise<void>((resolve) => {
-      timeout = setTimeout(() => {
-        timedOut = true
-        resolve()
-      }, SHUTDOWN_NOTICE_TIMEOUT_MS)
-    }),
-  ])
-  if (timeout) clearTimeout(timeout)
-  if (timedOut) {
-    logger.warn('[Shutdown] Queue notices exceeded the shutdown time budget; continuing cleanup.')
-  }
-}
-
-let shuttingDown = false
-async function shutdown(signal: string, exitCode = 0) {
-  if (shuttingDown) return
-  shuttingDown = true
-  logger.info(`[Shutdown] ${signal} received — cleaning up...`)
-  try {
-    await notifyActiveConversationQueues()
-  } catch (err) {
-    logger.error('[Shutdown] active queue notification failed:', err)
-  }
-  try {
-    stopHealthServer()
-  } catch (err) {
-    logger.error('[Shutdown] health server stop failed:', err)
-  }
-  try {
-    streamManager.dispose()
-  } catch (err) {
-    logger.error('[Shutdown] streamManager dispose failed:', err)
-  }
-  try {
-    await client.destroy()
-  } catch (err) {
-    logger.error('[Shutdown] client destroy failed:', err)
-  }
-  try {
-    await prisma.$disconnect()
-  } catch (err) {
-    logger.error('[Shutdown] prisma disconnect failed:', err)
-  }
-  process.exit(exitCode)
-}
-
-process.on('SIGINT', () => {
-  shutdown('SIGINT')
-})
-process.on('SIGTERM', () => {
-  shutdown('SIGTERM')
-})
-
-// Network blips surface as unhandled rejections from awaited Discord/Jules calls;
-// log and keep running so a transient dropout doesn't take the bot down.
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason)
-})
-
-// ---------------------------------------------------------------------------
-// Network-resilient login
-// ---------------------------------------------------------------------------
-
-/** Error codes that indicate a transient network condition worth retrying. */
-const NETWORK_ERROR_CODES = new Set([
-  'UND_ERR_CONNECT_TIMEOUT',
-  'ECONNREFUSED',
-  'ENOTFOUND',
-  'ETIMEDOUT',
-  'ECONNRESET',
-  'ECONNABORTED',
-  'ENETUNREACH',
-])
-
-function isNetworkError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false
-  const code = (err as any).code as string | undefined
-  if (code && NETWORK_ERROR_CODES.has(code)) return true
-  const msg: string = (err as any).message ?? ''
-  return /connect timeout|econnrefused|enotfound|etimedout|econnreset/i.test(msg)
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function getSessionWaitTime(msg: string): number {
-  const match = msg.match(/resets at ([\d\-:TZ.]+)/i)
-  if (match) {
-    const resetTime = new Date(match[1])
-    const diff = resetTime.getTime() - Date.now()
-    if (diff > 0) {
-      return diff + 5_000 // 5s safety margin
-    }
-  }
-  return 30 * 60 * 1_000 // Fallback to 30 minutes
-}
-
-/**
- * Attempts client.login() with exponential backoff on transient network errors.
- * Delay schedule: 5 s → 10 s → 20 s → … capped at 120 s.
- * Non-network errors are rethrown immediately so start() can exit cleanly.
- */
-async function loginWithRetry(attempt = 0): Promise<void> {
-  try {
-    await client.login(DISCORD_TOKEN)
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-
-    // Discord daily session identification limit exhausted (often 1000 per 24 hours).
-    // Sleep through the reset period instead of crashing the process to avoid PM2 infinite restart loops.
-    if (msg.includes('sessions remaining') || msg.includes('Not enough sessions')) {
-      const waitMs = getSessionWaitTime(msg)
-      const waitMins = Math.ceil(waitMs / 60_000)
-      logger.error(
-        `[Startup] Discord daily session limit exhausted. Resets in ${waitMins} minutes. Sleeping through cooldown...`,
-      )
-
-      const checkInterval = 5 * 60 * 1_000 // log status every 5 minutes
-      let elapsed = 0
-      while (elapsed < waitMs) {
-        const remainingMins = Math.ceil((waitMs - elapsed) / 60_000)
-        logger.info(`[Startup] Session limit cooldown status: ${remainingMins} minutes remaining.`)
-        const chunk = Math.min(checkInterval, waitMs - elapsed)
-        await sleep(chunk)
-        elapsed += chunk
-      }
-
-      logger.info('[Startup] Cooldown finished, retrying Discord login...')
-      return loginWithRetry(0)
-    }
-
-    if (isNetworkError(err)) {
-      const delaySec = Math.min(5 * 2 ** attempt, 120)
-      logger.warn(
-        `[Startup] Discord login failed (network error, attempt ${attempt + 1}) — retrying in ${delaySec}s`,
-      )
-      logger.debug('[Startup] Login failure detail:', err)
-      await sleep(delaySec * 1_000)
-      return loginWithRetry(attempt + 1)
-    }
-    // Non-network error (bad token, auth rejected, etc.) — propagate immediately.
-    throw err
-  }
-}
-
-// An uncaught exception leaves the process in an undefined state — continuing
-// risks operating on corrupted in-memory state (active streams, buffers). Shut
-// down cleanly and let the process manager (pm2) restart us fresh.
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error)
-  shutdown('uncaughtException', 1)
-})
 
 start()

@@ -1,13 +1,6 @@
 import { logger } from '../../lib/utils/logger.js'
 import type { StringSelectMenuInteraction, ThreadChannel } from 'discord.js'
-import {
-  ActionRowBuilder,
-  ModalBuilder,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-} from 'discord.js'
+import { ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js'
 import { getEffectiveConfig, MESSAGES } from '../../config.js'
 import { t } from '../../strings.js'
 import { JulesClient } from '../../lib/jules/JulesClient.js'
