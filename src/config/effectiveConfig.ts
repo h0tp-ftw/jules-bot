@@ -17,27 +17,81 @@ import {
   MESSAGES,
 } from './constants.js'
 import { AGENT_PERSONALITY, SOUL_PERSONALITY } from './personalities.js'
+import { resolveOverrideLayers, type ConfigLayer } from './layerHierarchy.js'
 
-// Merge one override layer into an accumulator. Sub-objects (access_control,
-// reactions, auto_reject, jules_reactions, nudge, pre_warmed_sessions) are
-// shallow-merged so later layers win per key, while `messages` is deep-merged.
-// Every layer in the resolution ladder (parent/tag/thread/role) funnels through
-// this so the merge semantics stay uniform instead of being copy-pasted.
-function mergeOverrideLayer(acc: any, layer: any): any {
-  if (!layer || typeof layer !== 'object') return acc
+export type ReplyContextMode = 'message_id' | 'full_message' | 'none'
+
+export function normalizeReplyContextMode(mode?: unknown): ReplyContextMode {
+  if (typeof mode !== 'string') return 'message_id'
+  const normalized = mode.trim().toLowerCase()
+  if (
+    normalized === 'full_message' ||
+    normalized === 'full' ||
+    normalized === 'quote' ||
+    normalized === 'snippet'
+  ) {
+    return 'full_message'
+  }
+  if (
+    normalized === 'none' ||
+    normalized === 'off' ||
+    normalized === 'disabled' ||
+    normalized === 'false'
+  ) {
+    return 'none'
+  }
+  return 'message_id'
+}
+
+function resolveScalar<T>(layers: ConfigLayer[], key: string, fallback: T): T {
+  for (let i = layers.length - 1; i >= 0; i--) {
+    const val = layers[i]?.[key]
+    if (val !== undefined) return val as T
+  }
+  return fallback
+}
+
+function resolveBoolean(layers: ConfigLayer[], key: string, fallback: boolean): boolean {
+  for (let i = layers.length - 1; i >= 0; i--) {
+    const val = layers[i]?.[key]
+    if (typeof val === 'boolean') return val
+  }
+  return fallback
+}
+
+function resolveAccessControl(layers: ConfigLayer[]) {
+  const result = {
+    allow_all: ALLOW_ALL,
+    allowed_users: ALLOWED_USERS,
+    allowed_roles: ALLOWED_ROLES,
+    silent: ALLOW_SILENT,
+  }
+  for (const layer of layers) {
+    const ac = layer.access_control
+    if (!ac || typeof ac !== 'object') continue
+    if (typeof ac.allow_all === 'boolean') result.allow_all = ac.allow_all
+    if (typeof ac.silent === 'boolean') result.silent = ac.silent
+    if (Array.isArray(ac.allowed_users)) result.allowed_users = ac.allowed_users.map(String)
+    if (Array.isArray(ac.allowed_roles)) result.allowed_roles = ac.allowed_roles.map(String)
+  }
+  return result
+}
+
+function resolveNudge(layers: ConfigLayer[]) {
+  const raw = layers.reduce((acc, layer) => ({ ...acc, ...(layer.nudge || {}) }), { ...NUDGE })
   return {
-    ...acc,
-    ...layer,
-    access_control: { ...(acc.access_control || {}), ...(layer.access_control || {}) },
-    reactions: { ...(acc.reactions || {}), ...(layer.reactions || {}) },
-    auto_reject: { ...(acc.auto_reject || {}), ...(layer.auto_reject || {}) },
-    jules_reactions: { ...(acc.jules_reactions || {}), ...(layer.jules_reactions || {}) },
-    nudge: { ...(acc.nudge || {}), ...(layer.nudge || {}) },
-    pre_warmed_sessions: {
-      ...(acc.pre_warmed_sessions || {}),
-      ...(layer.pre_warmed_sessions || {}),
-    },
-    messages: deepMergeMessages(acc.messages || {}, layer.messages || {}),
+    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : NUDGE.enabled,
+    after_minutes:
+      typeof raw.after_minutes === 'number' && raw.after_minutes > 0
+        ? raw.after_minutes
+        : NUDGE.after_minutes,
+    notify_discord:
+      typeof raw.notify_discord === 'boolean' ? raw.notify_discord : NUDGE.notify_discord,
+    message: typeof raw.message === 'string' && raw.message.trim() ? raw.message : undefined,
+    discord_message:
+      typeof raw.discord_message === 'string' && raw.discord_message.trim()
+        ? raw.discord_message
+        : undefined,
   }
 }
 
@@ -87,410 +141,90 @@ export function getEffectiveConfig(
   reply_mode: 'reply_ping' | 'reply_silent' | 'send'
   reply_context_mode: ReplyContextMode
 } {
-  const channelsConfig = yamlConfig.channels || {}
+  const { parentOverride, tagOverride, threadOverride, roleOverride, layers } =
+    resolveOverrideLayers(thread, member)
 
-  let threadOverride = {}
-  let parentOverride = {}
+  // Merge sub-objects: defaults -> parent channel -> tags -> thread -> roles
+  const resolvedAutoReject = layers.reduce<typeof AUTO_REJECT>(
+    (acc, l) => ({ ...acc, ...(l.auto_reject || {}) }),
+    { ...AUTO_REJECT },
+  )
+  const resolvedReactions = layers.reduce<Record<string, string>>(
+    (acc, l) => ({ ...acc, ...(l.reactions || {}) }),
+    { ...REACTIONS },
+  )
+  const resolvedJulesReactions = layers.reduce<typeof JULES_REACTIONS>(
+    (acc, l) => ({ ...acc, ...(l.jules_reactions || {}) }),
+    { ...JULES_REACTIONS },
+  )
+  const resolvedPreWarmed = layers.reduce<typeof PRE_WARMED_SESSIONS>(
+    (acc, l) => ({ ...acc, ...(l.pre_warmed_sessions || {}) }),
+    { ...PRE_WARMED_SESSIONS },
+  )
+  const resolvedAccessControl = resolveAccessControl(layers)
+  const resolvedNudge = resolveNudge(layers)
 
-  if (thread) {
-    if (thread.id && channelsConfig[thread.id]) {
-      threadOverride = channelsConfig[thread.id]
-    }
-    if (thread.parentId && channelsConfig[thread.parentId]) {
-      parentOverride = channelsConfig[thread.parentId]
-    }
-  }
-
-  // Resolve tag-based overrides from the forum post's applied tags. A post can
-  // carry several tags; each `tags:` config key is matched against the thread's
-  // applied tag IDs or — when the parent forum is cached — their names, and
-  // matches are merged in config-definition order (later keys win), the same
-  // way multiple roles accumulate below. All reads are synchronous cache lookups
-  // (no network), so this stays safe on the hot stream path.
-  let tagOverride: any = {}
-  if (thread && Array.isArray(thread.appliedTags) && thread.appliedTags.length > 0) {
-    const tagsConfig = yamlConfig.tags || {}
-    if (Object.keys(tagsConfig).length > 0) {
-      const appliedIds = new Set<string>(thread.appliedTags.map(String))
-      const appliedNames = new Set<string>()
-      const availableTags = thread.parent?.availableTags
-      if (Array.isArray(availableTags)) {
-        for (const at of availableTags) {
-          if (at && appliedIds.has(String(at.id)) && typeof at.name === 'string') {
-            appliedNames.add(at.name)
-          }
-        }
-      }
-      for (const [tagKey, tagVal] of Object.entries(tagsConfig)) {
-        const matches = appliedIds.has(tagKey) || appliedNames.has(tagKey)
-        if (matches && tagVal && typeof tagVal === 'object') {
-          tagOverride = mergeOverrideLayer(tagOverride, tagVal)
-        }
-      }
-    }
-  }
-
-  // Resolve role-based overrides if member is provided
-  let roleOverride: any = {}
-  if (member && member.roles) {
-    const rolesConfig = yamlConfig.roles || {}
-    for (const [roleKey, roleVal] of Object.entries(rolesConfig)) {
-      let hasRole = false
-      if ('cache' in member.roles) {
-        hasRole =
-          member.roles.cache.has(roleKey) || member.roles.cache.some((r: any) => r.name === roleKey)
-      } else if (Array.isArray(member.roles)) {
-        hasRole = member.roles.includes(roleKey)
-      }
-
-      if (hasRole && roleVal && typeof roleVal === 'object') {
-        roleOverride = mergeOverrideLayer(roleOverride, roleVal)
-      }
-    }
-  }
-
-  // Deep merge: global values -> parent channel overrides -> tag overrides -> thread-specific overrides -> role overrides
-  const resolvedAutoReject = {
-    ...AUTO_REJECT,
-    ...(parentOverride as any).auto_reject,
-    ...(tagOverride as any).auto_reject,
-    ...(threadOverride as any).auto_reject,
-    ...(roleOverride as any).auto_reject,
-  }
-
-  const resolvedReactions = {
-    ...REACTIONS,
-    ...(parentOverride as any).reactions,
-    ...(tagOverride as any).reactions,
-    ...(threadOverride as any).reactions,
-    ...(roleOverride as any).reactions,
-  }
-
-  const resolvedJulesReactions = {
-    ...JULES_REACTIONS,
-    ...(parentOverride as any).jules_reactions,
-    ...(tagOverride as any).jules_reactions,
-    ...(threadOverride as any).jules_reactions,
-    ...(roleOverride as any).jules_reactions,
-  }
-
-  const rawResolvedNudge = {
-    ...NUDGE,
-    ...(parentOverride as any).nudge,
-    ...(tagOverride as any).nudge,
-    ...(threadOverride as any).nudge,
-    ...(roleOverride as any).nudge,
-  }
-  const resolvedNudge = {
-    enabled:
-      typeof rawResolvedNudge.enabled === 'boolean' ? rawResolvedNudge.enabled : NUDGE.enabled,
-    after_minutes:
-      typeof rawResolvedNudge.after_minutes === 'number' && rawResolvedNudge.after_minutes > 0
-        ? rawResolvedNudge.after_minutes
-        : NUDGE.after_minutes,
-    notify_discord:
-      typeof rawResolvedNudge.notify_discord === 'boolean'
-        ? rawResolvedNudge.notify_discord
-        : NUDGE.notify_discord,
-    message:
-      typeof rawResolvedNudge.message === 'string' && rawResolvedNudge.message.trim()
-        ? rawResolvedNudge.message
-        : undefined,
-    discord_message:
-      typeof rawResolvedNudge.discord_message === 'string' &&
-      rawResolvedNudge.discord_message.trim()
-        ? rawResolvedNudge.discord_message
-        : undefined,
-  }
-
-  const resolvedPreWarmed = {
-    ...PRE_WARMED_SESSIONS,
-    ...(parentOverride as any).pre_warmed_sessions,
-    ...(tagOverride as any).pre_warmed_sessions,
-    ...(threadOverride as any).pre_warmed_sessions,
-    ...(roleOverride as any).pre_warmed_sessions,
-  }
-
-  const resolvedAccessControl = {
-    allow_all: ALLOW_ALL,
-    allowed_users: ALLOWED_USERS,
-    allowed_roles: ALLOWED_ROLES,
-    silent: ALLOW_SILENT,
-  }
-
-  const parentAC = (parentOverride as any).access_control || {}
-  const tagAC = (tagOverride as any).access_control || {}
-  const threadAC = (threadOverride as any).access_control || {}
-  const roleAC = (roleOverride as any).access_control || {}
-
-  if (typeof parentAC.allow_all === 'boolean') resolvedAccessControl.allow_all = parentAC.allow_all
-  if (typeof tagAC.allow_all === 'boolean') resolvedAccessControl.allow_all = tagAC.allow_all
-  if (typeof threadAC.allow_all === 'boolean') resolvedAccessControl.allow_all = threadAC.allow_all
-  if (typeof roleAC.allow_all === 'boolean') resolvedAccessControl.allow_all = roleAC.allow_all
-
-  if (Array.isArray(parentAC.allowed_users))
-    resolvedAccessControl.allowed_users = parentAC.allowed_users.map(String)
-  if (Array.isArray(tagAC.allowed_users))
-    resolvedAccessControl.allowed_users = tagAC.allowed_users.map(String)
-  if (Array.isArray(threadAC.allowed_users))
-    resolvedAccessControl.allowed_users = threadAC.allowed_users.map(String)
-  if (Array.isArray(roleAC.allowed_users))
-    resolvedAccessControl.allowed_users = roleAC.allowed_users.map(String)
-
-  if (Array.isArray(parentAC.allowed_roles))
-    resolvedAccessControl.allowed_roles = parentAC.allowed_roles.map(String)
-  if (Array.isArray(tagAC.allowed_roles))
-    resolvedAccessControl.allowed_roles = tagAC.allowed_roles.map(String)
-  if (Array.isArray(threadAC.allowed_roles))
-    resolvedAccessControl.allowed_roles = threadAC.allowed_roles.map(String)
-  if (Array.isArray(roleAC.allowed_roles))
-    resolvedAccessControl.allowed_roles = roleAC.allowed_roles.map(String)
-
-  if (typeof parentAC.silent === 'boolean') resolvedAccessControl.silent = parentAC.silent
-  if (typeof tagAC.silent === 'boolean') resolvedAccessControl.silent = tagAC.silent
-  if (typeof threadAC.silent === 'boolean') resolvedAccessControl.silent = threadAC.silent
-  if (typeof roleAC.silent === 'boolean') resolvedAccessControl.silent = roleAC.silent
-
-  const resolvedPrompt =
-    (roleOverride as any).diagnostic_prompt ||
-    (threadOverride as any).diagnostic_prompt ||
-    (tagOverride as any).diagnostic_prompt ||
-    (parentOverride as any).diagnostic_prompt ||
-    DIAGNOSTIC_PROMPT
-
-  const resolvedAgents =
-    (roleOverride as any).agents_personality ||
-    (threadOverride as any).agents_personality ||
-    (tagOverride as any).agents_personality ||
-    (parentOverride as any).agents_personality ||
-    AGENT_PERSONALITY
-
-  const resolvedSoul =
-    (roleOverride as any).soul_personality ||
-    (threadOverride as any).soul_personality ||
-    (tagOverride as any).soul_personality ||
-    (parentOverride as any).soul_personality ||
-    SOUL_PERSONALITY
-
-  const resolvedInteractive =
-    typeof (roleOverride as any).interactive_selection === 'boolean'
-      ? (roleOverride as any).interactive_selection
-      : typeof (threadOverride as any).interactive_selection === 'boolean'
-        ? (threadOverride as any).interactive_selection
-        : typeof (tagOverride as any).interactive_selection === 'boolean'
-          ? (tagOverride as any).interactive_selection
-          : typeof (parentOverride as any).interactive_selection === 'boolean'
-            ? (parentOverride as any).interactive_selection
-            : INTERACTIVE_SELECTION
-
-  // Resolve default_repo and default_branch
-  let resolvedDefaultRepo = yamlConfig.default_repo || dbDefaultRepo
-  let resolvedDefaultBranch = yamlConfig.default_branch
+  // Resolve base repo and branch
+  let baseDefaultRepo = yamlConfig.default_repo || dbDefaultRepo
+  let baseDefaultBranch = yamlConfig.default_branch
 
   if (thread && thread.guildId) {
     const yamlGuild = YAML_GUILDS[thread.guildId]
     if (yamlGuild?.default_repo) {
-      resolvedDefaultRepo = yamlGuild.default_repo
+      baseDefaultRepo = yamlGuild.default_repo
     }
     if ((yamlGuild as any)?.default_branch) {
-      resolvedDefaultBranch = (yamlGuild as any).default_branch
+      baseDefaultBranch = (yamlGuild as any).default_branch
     }
   }
 
-  // Parent channel override
-  if (parentOverride && (parentOverride as any).default_repo) {
-    resolvedDefaultRepo = (parentOverride as any).default_repo
-  }
-  if (parentOverride && (parentOverride as any).default_branch) {
-    resolvedDefaultBranch = (parentOverride as any).default_branch
-  }
+  // Resolve user-facing strings
+  const hasCustomMessages = Boolean(
+    parentOverride.messages ||
+      tagOverride.messages ||
+      threadOverride.messages ||
+      roleOverride.messages,
+  )
 
-  // Tag override
-  if (tagOverride && tagOverride.default_repo) {
-    resolvedDefaultRepo = tagOverride.default_repo
-  }
-  if (tagOverride && tagOverride.default_branch) {
-    resolvedDefaultBranch = tagOverride.default_branch
-  }
-
-  // Thread override
-  if (threadOverride && (threadOverride as any).default_repo) {
-    resolvedDefaultRepo = (threadOverride as any).default_repo
-  }
-  if (threadOverride && (threadOverride as any).default_branch) {
-    resolvedDefaultBranch = (threadOverride as any).default_branch
-  }
-
-  // Role override
-  if (roleOverride && roleOverride.default_repo) {
-    resolvedDefaultRepo = roleOverride.default_repo
-  }
-  if (roleOverride && roleOverride.default_branch) {
-    resolvedDefaultBranch = roleOverride.default_branch
-  }
-
-  // Resolve ignore_prefix
-  let resolvedIgnorePrefix = yamlConfig.ignore_prefix
-
-  if (parentOverride && (parentOverride as any).ignore_prefix) {
-    resolvedIgnorePrefix = (parentOverride as any).ignore_prefix
-  }
-  if (tagOverride && tagOverride.ignore_prefix) {
-    resolvedIgnorePrefix = tagOverride.ignore_prefix
-  }
-  if (threadOverride && (threadOverride as any).ignore_prefix) {
-    resolvedIgnorePrefix = (threadOverride as any).ignore_prefix
-  }
-  if (roleOverride && roleOverride.ignore_prefix) {
-    resolvedIgnorePrefix = roleOverride.ignore_prefix
-  }
-
-  // Resolve bot_emoji
-  let resolvedBotEmoji = BOT_EMOJI
-
-  if (parentOverride && (parentOverride as any).bot_emoji) {
-    resolvedBotEmoji = (parentOverride as any).bot_emoji
-  }
-  if (tagOverride && tagOverride.bot_emoji) {
-    resolvedBotEmoji = tagOverride.bot_emoji
-  }
-  if (threadOverride && (threadOverride as any).bot_emoji) {
-    resolvedBotEmoji = (threadOverride as any).bot_emoji
-  }
-  if (roleOverride && roleOverride.bot_emoji) {
-    resolvedBotEmoji = roleOverride.bot_emoji
-  }
-
-  // Resolve typing_indicator_mode
-  let resolvedTypingMode = yamlConfig.typing_indicator_mode || 'until_response'
-
-  if (parentOverride && (parentOverride as any).typing_indicator_mode) {
-    resolvedTypingMode = (parentOverride as any).typing_indicator_mode
-  }
-  if (tagOverride && tagOverride.typing_indicator_mode) {
-    resolvedTypingMode = tagOverride.typing_indicator_mode
-  }
-  if (threadOverride && (threadOverride as any).typing_indicator_mode) {
-    resolvedTypingMode = (threadOverride as any).typing_indicator_mode
-  }
-  if (roleOverride && roleOverride.typing_indicator_mode) {
-    resolvedTypingMode = roleOverride.typing_indicator_mode
-  }
-
-  // Resolve bootstrap
-  let resolvedBootstrap = typeof yamlConfig.bootstrap === 'boolean' ? yamlConfig.bootstrap : true
-
-  if (parentOverride && typeof (parentOverride as any).bootstrap === 'boolean') {
-    resolvedBootstrap = (parentOverride as any).bootstrap
-  }
-  if (tagOverride && typeof tagOverride.bootstrap === 'boolean') {
-    resolvedBootstrap = tagOverride.bootstrap
-  }
-  if (threadOverride && typeof (threadOverride as any).bootstrap === 'boolean') {
-    resolvedBootstrap = (threadOverride as any).bootstrap
-  }
-  if (roleOverride && typeof roleOverride.bootstrap === 'boolean') {
-    resolvedBootstrap = roleOverride.bootstrap
-  }
-
-  // Resolve reply_mode
-  let resolvedReplyMode: 'reply_ping' | 'reply_silent' | 'send' = yamlConfig.reply_mode || 'send'
-
-  if (parentOverride && (parentOverride as any).reply_mode) {
-    resolvedReplyMode = (parentOverride as any).reply_mode
-  }
-  if (tagOverride && tagOverride.reply_mode) {
-    resolvedReplyMode = tagOverride.reply_mode
-  }
-  if (threadOverride && (threadOverride as any).reply_mode) {
-    resolvedReplyMode = (threadOverride as any).reply_mode
-  }
-  if (roleOverride && roleOverride.reply_mode) {
-    resolvedReplyMode = roleOverride.reply_mode
-  }
-
-  // Resolve reply_context_mode
-  let rawReplyContextMode: string | undefined = yamlConfig.reply_context_mode
-
-  if (parentOverride && (parentOverride as any).reply_context_mode !== undefined) {
-    rawReplyContextMode = (parentOverride as any).reply_context_mode
-  }
-  if (tagOverride && tagOverride.reply_context_mode !== undefined) {
-    rawReplyContextMode = tagOverride.reply_context_mode
-  }
-  if (threadOverride && (threadOverride as any).reply_context_mode !== undefined) {
-    rawReplyContextMode = (threadOverride as any).reply_context_mode
-  }
-  if (roleOverride && roleOverride.reply_context_mode !== undefined) {
-    rawReplyContextMode = roleOverride.reply_context_mode
-  }
-  const resolvedReplyContextMode = normalizeReplyContextMode(rawReplyContextMode)
-
-  // Resolve user-facing strings: code defaults <- global YAML <- parent channel
-  // <- tag <- thread <- role. Each layer only needs to supply the keys it changes.
-  // MESSAGES already folds DEFAULT_MESSAGES <- global YAML once at module load,
-  // so only the per-context layers need merging here. When a channel/thread/role
-  // supplies no `messages:` overrides (the common case) we return the shared
-  // MESSAGES object directly and skip deep-cloning the whole ~140-key catalog —
-  // getEffectiveConfig runs on the hot stream path (per activity/reaction).
-  const parentMessages = (parentOverride as any).messages
-  const tagMessages = (tagOverride as any).messages
-  const threadMessages = (threadOverride as any).messages
-  const roleMessages = (roleOverride as any).messages
-  const resolvedMessages: Messages =
-    parentMessages || tagMessages || threadMessages || roleMessages
-      ? (deepMergeMessages(
-          MESSAGES,
-          parentMessages || {},
-          tagMessages || {},
-          threadMessages || {},
-          roleMessages || {},
-        ) as Messages)
-      : MESSAGES
+  const resolvedMessages: Messages = hasCustomMessages
+    ? (deepMergeMessages(
+        MESSAGES,
+        parentOverride.messages || {},
+        tagOverride.messages || {},
+        threadOverride.messages || {},
+        roleOverride.messages || {},
+      ) as Messages)
+    : MESSAGES
 
   return {
-    diagnostic_prompt: resolvedPrompt,
+    diagnostic_prompt: resolveScalar(layers, 'diagnostic_prompt', DIAGNOSTIC_PROMPT),
     access_control: resolvedAccessControl,
     reactions: resolvedReactions,
     auto_reject: resolvedAutoReject,
     jules_reactions: resolvedJulesReactions,
     nudge: resolvedNudge,
     pre_warmed_sessions: resolvedPreWarmed,
-    agents_personality: resolvedAgents,
-    soul_personality: resolvedSoul,
-    interactive_selection: resolvedInteractive,
-    default_repo: resolvedDefaultRepo,
-    default_branch: resolvedDefaultBranch,
-    ignore_prefix: resolvedIgnorePrefix,
-    bot_emoji: resolvedBotEmoji,
-    typing_indicator_mode: resolvedTypingMode,
+    agents_personality: resolveScalar(layers, 'agents_personality', AGENT_PERSONALITY),
+    soul_personality: resolveScalar(layers, 'soul_personality', SOUL_PERSONALITY),
+    interactive_selection: resolveBoolean(layers, 'interactive_selection', INTERACTIVE_SELECTION),
+    default_repo: resolveScalar(layers, 'default_repo', baseDefaultRepo),
+    default_branch: resolveScalar(layers, 'default_branch', baseDefaultBranch),
+    ignore_prefix: resolveScalar(layers, 'ignore_prefix', yamlConfig.ignore_prefix),
+    bot_emoji: resolveScalar(layers, 'bot_emoji', BOT_EMOJI),
+    typing_indicator_mode: resolveScalar(
+      layers,
+      'typing_indicator_mode',
+      yamlConfig.typing_indicator_mode || 'until_response',
+    ),
     messages: resolvedMessages,
-    bootstrap: resolvedBootstrap,
-    reply_mode: resolvedReplyMode,
-    reply_context_mode: resolvedReplyContextMode,
+    bootstrap: resolveBoolean(
+      layers,
+      'bootstrap',
+      typeof yamlConfig.bootstrap === 'boolean' ? yamlConfig.bootstrap : true,
+    ),
+    reply_mode: resolveScalar(layers, 'reply_mode', yamlConfig.reply_mode || 'send'),
+    reply_context_mode: normalizeReplyContextMode(
+      resolveScalar(layers, 'reply_context_mode', yamlConfig.reply_context_mode),
+    ),
   }
-}
-
-export type ReplyContextMode = 'message_id' | 'full_message' | 'none'
-
-export function normalizeReplyContextMode(mode?: unknown): ReplyContextMode {
-  if (typeof mode !== 'string') return 'message_id'
-  const normalized = mode.trim().toLowerCase()
-  if (
-    normalized === 'full_message' ||
-    normalized === 'full' ||
-    normalized === 'quote' ||
-    normalized === 'snippet'
-  ) {
-    return 'full_message'
-  }
-  if (
-    normalized === 'none' ||
-    normalized === 'off' ||
-    normalized === 'disabled' ||
-    normalized === 'false'
-  ) {
-    return 'none'
-  }
-  return 'message_id'
 }
