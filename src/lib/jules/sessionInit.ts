@@ -119,7 +119,7 @@ async function initializeJulesSessionCore(
     threadConfig,
   )
 
-  let consumed = usePool
+  const consumed = usePool
     ? await consumePreWarmedSession(repoName, contextKey, thread, threadConfig)
     : null
 

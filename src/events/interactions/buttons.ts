@@ -9,6 +9,7 @@ import {
   wakeJulesStream,
 } from '../../lib/jules/orchestrator.js'
 import type { StreamManager } from '../../lib/streams/StreamManager.js'
+import { startTypingLoop } from '../../lib/utils/typingManager.js'
 
 // Plan approve/reject buttons embedded in the planGenerated embed.
 export async function handleButtonInteraction(
@@ -40,7 +41,9 @@ export async function handleButtonInteraction(
       await scheduleJulesRequest(() => session.approve())
       wakeJulesStream(thread.id)
 
-      thread.sendTyping().catch(() => {})
+      // Sustained loop instead of a one-shot bubble; the stream handler
+      // stops it when the session responds or terminates.
+      startTypingLoop(thread)
 
       // Rehydrate stream listener if not already active
       if (!activeStreams.has(thread.id)) {

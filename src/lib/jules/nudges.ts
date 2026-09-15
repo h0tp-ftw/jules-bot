@@ -2,6 +2,7 @@ import { logger } from '../utils/logger.js'
 import { getEffectiveConfig } from '../../config.js'
 import { t } from '../../strings.js'
 import { splitMessage } from '../utils/messageSplitter.js'
+import { deliverWithReply } from '../utils/replyDelivery.js'
 import { scheduleConversationNudge } from './ConversationQueue.js'
 import { scheduleJulesRequest } from './JulesRequestCoordinator.js'
 import { wakeJulesStream } from './streamRegistry.js'
@@ -44,22 +45,14 @@ export function scheduleNudgeForConversationTurn(
       const chunks = splitMessage(content, 2000)
       if (chunks.length === 0) return
 
+      const replyable = turn.message.channelId === channel.id ? turn.message : null
       try {
-        await turn.message.reply({
+        await deliverWithReply(channel, replyable, channelConfig.reply_mode, {
           content: chunks[0],
-          allowedMentions: { repliedUser: false },
         })
       } catch (err) {
-        logger.warn(
-          `[Nudge] Could not reply to Discord message ${turn.message.id}; sending notice in channel instead:`,
-          err,
-        )
-        try {
-          await channel.send(chunks[0])
-        } catch (sendErr) {
-          logger.warn(`[Nudge] Could not post the Discord nudge notice in ${channel.id}:`, sendErr)
-          return
-        }
+        logger.warn(`[Nudge] Could not post the Discord nudge notice in ${channel.id}:`, err)
+        return
       }
 
       for (const chunk of chunks.slice(1)) {

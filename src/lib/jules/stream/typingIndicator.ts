@@ -1,4 +1,4 @@
-import { logger } from '../../utils/logger.js'
+import { startTypingLoop, stopTypingLoop } from '../../utils/typingManager.js'
 import type { JulesDiscordChannel } from '../channelTypes.js'
 
 export type TypingController = {
@@ -8,37 +8,8 @@ export type TypingController = {
 }
 
 export function createTypingController(thread: JulesDiscordChannel): TypingController {
-  let typingInterval: NodeJS.Timeout | null = null
-  let typingTimeout: NodeJS.Timeout | null = null
-
-  const start = () => {
-    if (typingInterval) return
-    thread.sendTyping().catch(() => {})
-    typingInterval = setInterval(() => {
-      thread.sendTyping().catch(() => {})
-    }, 8000)
-
-    typingTimeout = setTimeout(
-      () => {
-        logger.warn(
-          `[runJulesStream] Typing indicator timed out after 30 minutes for thread ${thread.id}`,
-        )
-        stop()
-      },
-      30 * 60 * 1000,
-    )
-  }
-
-  const stop = () => {
-    if (typingInterval) {
-      clearInterval(typingInterval)
-      typingInterval = null
-    }
-    if (typingTimeout) {
-      clearTimeout(typingTimeout)
-      typingTimeout = null
-    }
-  }
+  const start = () => startTypingLoop(thread)
+  const stop = () => stopTypingLoop(thread.id)
 
   const handleActivity = (typeStr: string, typingMode: string) => {
     if (typingMode === 'strict_state') {

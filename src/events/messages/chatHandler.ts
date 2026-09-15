@@ -8,8 +8,13 @@ import {
 } from '../../lib/jules/orchestrator.js'
 import type { StreamManager } from '../../lib/streams/StreamManager.js'
 import { hasPermission } from '../../lib/utils/permissions.js'
-import { markConversationTurnDispatched, type ConversationTurn } from '../../lib/jules/ConversationQueue.js'
+import {
+  markConversationTurnDispatched,
+  type ConversationTurn,
+} from '../../lib/jules/ConversationQueue.js'
 import { sendToExistingSession, shouldIgnoreMessage } from './sessionSender.js'
+import { startTypingLoop, stopTypingLoop } from '../../lib/utils/typingManager.js'
+import { deliverWithReply } from '../../lib/utils/replyDelivery.js'
 
 export type ChatRoutingContext = {
   dbDefaultRepo?: string
@@ -62,7 +67,9 @@ export async function processChatChannelMessage(
   const { authorized, silent } = await hasPermission(message.member, message.author, channel)
   if (!authorized) {
     if (!silent) {
-      await message.reply(channelConfig.messages.errors.no_permission_session)
+      await deliverWithReply(channel, message, 'reply_ping', {
+        content: channelConfig.messages.errors.no_permission_session,
+      })
     }
     await updateReaction(message, 'failed')
     return false
@@ -70,22 +77,31 @@ export async function processChatChannelMessage(
 
   const repoName = channelConfig.default_repo
   if (!repoName) {
-    await message.reply(channelConfig.messages.setup.no_default_repo)
+    await deliverWithReply(channel, message, 'reply_ping', {
+      content: channelConfig.messages.setup.no_default_repo,
+    })
     await updateReaction(message, 'failed')
     return false
   }
 
   const branchName = channelConfig.default_branch || 'main'
   try {
-    channel.sendTyping().catch(() => {})
+    if (channelConfig.typing_indicator_mode === 'strict_state') {
+      channel.sendTyping().catch(() => {})
+    } else {
+      startTypingLoop(channel)
+    }
     markConversationTurnDispatched(channel.id, turn.id)
     const session = await initializeChatSession(message, repoName, branchName, streamManager)
     scheduleNudgeForConversationTurn(channel, turn.id, session, message.member, dbDefaultRepo)
     return true
   } catch (err) {
     logger.error(`Failed to start chatbot session for channel ${channel.id}:`, err)
+    stopTypingLoop(channel.id)
     await updateReaction(message, 'failed').catch(() => {})
-    await message.reply(channelConfig.messages.session.start_failed)
+    await deliverWithReply(channel, message, 'reply_ping', {
+      content: channelConfig.messages.session.start_failed,
+    })
     return false
   }
 }

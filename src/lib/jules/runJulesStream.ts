@@ -3,25 +3,19 @@ import { JulesClient } from './JulesClient.js'
 import type { StreamManager } from '../streams/StreamManager.js'
 import { getEffectiveConfig, JULES_POLLING } from '../../config.js'
 import { t } from '../../strings.js'
-import {
-  completeConversationTurn,
-  markConversationTurnResponded,
-} from './ConversationQueue.js'
-import {
-  applyActivityToTurnState,
-  type TurnResponseState,
-} from '../utils/sessionOutcome.js'
+import { completeConversationTurn, markConversationTurnResponded } from './ConversationQueue.js'
+import { applyActivityToTurnState, type TurnResponseState } from '../utils/sessionOutcome.js'
 import { reactionStageForState, isIdleSessionState } from '../utils/sessionState.js'
 import { formatErrorForDiscord } from '../utils/errors.js'
 import { isJulesRateLimitError } from './ActivityPollScheduler.js'
 import { julesRequestCoordinator as activityPollScheduler } from './JulesRequestCoordinator.js'
-import {
-  activeStreams,
-  processedActivityIdsMap,
-  teardownStreamState,
-} from './streamRegistry.js'
+import { activeStreams, processedActivityIdsMap, teardownStreamState } from './streamRegistry.js'
 import { updateReaction } from './reactions.js'
-import { initializeProcessedActivityIds, persistDeliveredActivity } from './deliveryCursor.js'
+import {
+  getActivityDate,
+  initializeProcessedActivityIds,
+  persistDeliveredActivity,
+} from './deliveryCursor.js'
 import { getFreshSessionInfo } from './sessionInfo.js'
 import type { JulesActivity, JulesSession } from './julesTypes.js'
 import type { JulesDiscordChannel } from './channelTypes.js'
@@ -37,16 +31,23 @@ import {
   type ActivityHandlerContext,
 } from './stream/activityHandlers.js'
 
+// Minimum age for a connect-time history activity to be treated as a
+// stale pre-restart backlog item, not part of a turn racing the connect.
+const STALE_REPLAY_GRACE_MS = 60 * 1000
+
 export async function runJulesStream(
   sessionId: string,
   thread: JulesDiscordChannel,
   streamManager: StreamManager,
   initialProcessedIds?: Set<string>,
   onReady?: () => void,
-  options: { chatbotMode?: boolean; sessionFactory?: (sessionId: string) => JulesSession } = {},
+  options: {
+    chatbotMode?: boolean
+    sessionFactory?: (id: string) => JulesSession
+  } = {},
 ) {
-  const chatbotMode = options.chatbotMode === true
-  const getSession = options.sessionFactory ?? ((id: string) => JulesClient.getSession(id))
+  const chatbotMode = options.chatbotMode ?? false
+  const getSession = options.sessionFactory ?? JulesClient.getSession
 
   if (activeStreams.has(thread.id)) {
     logger.debug(
@@ -61,10 +62,13 @@ export async function runJulesStream(
   )
 
   const typingController = createTypingController(thread)
-  const turnTarget = createStreamTurnTarget(thread)
 
   let historyHydratedForNextStream = false
   let turnState: TurnResponseState = { awaitingAgentReply: false }
+  const connectedAtMs = Date.now()
+  let connectTimeHistoryIds = new Set<string>()
+  let connectTimeHistoryKnown = false
+
   let processedActivityIds = processedActivityIdsMap.get(thread.id)
   if (!processedActivityIds) {
     try {
@@ -78,6 +82,8 @@ export async function runJulesStream(
       processedActivityIds = initialized.ids
       historyHydratedForNextStream = initialized.hydrated
       turnState = initialized.turnState
+      connectTimeHistoryIds = initialized.historyIds
+      connectTimeHistoryKnown = true
     } catch (err) {
       logger.error(
         `[runJulesStream] Failed to restore delivery cursor for thread ${thread.id}; falling back to replay:`,
@@ -87,6 +93,15 @@ export async function runJulesStream(
     }
     processedActivityIdsMap.set(thread.id, processedActivityIds)
   }
+
+  const isStaleReplayActivity = (activity: JulesActivity): boolean => {
+    if (connectTimeHistoryKnown && !connectTimeHistoryIds.has(activity.id)) return false
+    const createdAt = getActivityDate(activity)
+    if (!createdAt) return connectTimeHistoryKnown
+    return createdAt.getTime() < connectedAtMs - STALE_REPLAY_GRACE_MS
+  }
+
+  const turnTarget = createStreamTurnTarget(thread, isStaleReplayActivity)
 
   try {
     onReady?.()
@@ -278,9 +293,7 @@ export async function runJulesStream(
           const type = activity.type
           const typeStr = type as string
           let queuedTurnRespondedId: string | undefined
-          let queuedTurnCompletion:
-            | { reason: any; turnId: string }
-            | undefined
+          let queuedTurnCompletion: { reason: any; turnId: string } | undefined
 
           const handlerCtx: ActivityHandlerContext = {
             sessionId,

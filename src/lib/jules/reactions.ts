@@ -82,6 +82,11 @@ export async function updateReaction(message: Message | null, newStage: string) 
     }
     rememberStage(message.id, newStage)
   } catch (err) {
+    // A failed clear/react can leave the message with no reaction at all while
+    // the dedup map still records the previous stage — a later update for that
+    // same stage would then be skipped forever. Forget the stage so the next
+    // attempt always re-applies.
+    messageReactionStage.delete(message.id)
     logger.error(`Failed to update reaction to stage ${newStage}:`, err)
   }
 }
@@ -109,9 +114,17 @@ export async function applyJulesReactions(
         logger.warn(`[applyJulesReactions] Could not react with "${raw}":`, err)
       }
     }
-    if (applied) rememberStage(message.id, `jules:${emojis.join(' ')}`)
+    if (applied) {
+      rememberStage(message.id, `jules:${emojis.join(' ')}`)
+    } else {
+      // The old reaction was cleared but nothing new stuck; forget the
+      // remembered stage so the state-driven fallback re-applies it instead of
+      // being deduped away.
+      messageReactionStage.delete(message.id)
+    }
     return applied
   } catch (err) {
+    messageReactionStage.delete(message.id)
     logger.error('[applyJulesReactions] Failed to apply Jules reactions:', err)
     return false
   }

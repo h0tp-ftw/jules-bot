@@ -7,13 +7,11 @@ import {
   completeConversationTurn,
   type ConversationTurnCompletionReason,
 } from '../ConversationQueue.js'
-import {
-  formatCompletionFallback,
-  type TurnResponseState,
-} from '../../utils/sessionOutcome.js'
+import { formatCompletionFallback, type TurnResponseState } from '../../utils/sessionOutcome.js'
 import { resolveMessageEmojis } from '../../utils/emojis.js'
 import { extractReactionMarkers } from '../../utils/reactionMarkers.js'
 import { splitMessage } from '../../utils/messageSplitter.js'
+import { deliverWithReply } from '../../utils/replyDelivery.js'
 import {
   julesRequestCoordinator as activityPollScheduler,
   scheduleJulesRequest,
@@ -103,21 +101,11 @@ export async function handlePlanGenerated(
       .setStyle(ButtonStyle.Danger),
   )
 
-  let msg
-  if (target && threadConfig.reply_mode !== 'send') {
-    const allowedMentions =
-      threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
-    msg = await target.reply({
-      embeds: [embed],
-      components: [row],
-      allowedMentions,
-    })
-  } else {
-    msg = await ctx.thread.send({
-      embeds: [embed],
-      components: [row],
-    })
-  }
+  const replyable = target?.channelId === ctx.thread.id ? target : null
+  const msg = await deliverWithReply(ctx.thread, replyable, threadConfig.reply_mode, {
+    embeds: [embed],
+    components: [row],
+  })
 
   await prisma.debugSession.update({
     where: { threadId: ctx.thread.id },
@@ -159,6 +147,8 @@ export async function handleAgentMessaged(
   activityPollScheduler.markIdle(ctx.thread.id)
   const rawMessage = activity.message || (activity as any).agentMessaged?.message || ''
 
+  ctx.turnTarget.onAgentMessagedRecovery(rawMessage)
+
   if (rawMessage) {
     const target = await ctx.turnTarget.getTarget()
     const threadConfig = getEffectiveConfig(ctx.thread, target?.member)
@@ -170,19 +160,14 @@ export async function handleAgentMessaged(
     if (bodyText) {
       const resolved = resolveMessageEmojis(ctx.thread.client, bodyText)
       const splits = splitMessage(resolved, 2000)
-      if (target && threadConfig.reply_mode !== 'send') {
-        const allowedMentions =
-          threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
-        for (let i = 0; i < splits.length; i++) {
-          if (i === 0) {
-            await target.reply({ content: splits[i], allowedMentions })
-          } else {
-            await ctx.thread.send(splits[i])
-          }
-        }
-      } else {
-        for (const chunk of splits) {
-          await ctx.thread.send(chunk)
+      const replyable = target?.channelId === ctx.thread.id ? target : null
+      for (let i = 0; i < splits.length; i++) {
+        if (i === 0) {
+          await deliverWithReply(ctx.thread, replyable, threadConfig.reply_mode, {
+            content: splits[i],
+          })
+        } else {
+          await ctx.thread.send(splits[i])
         }
       }
     }
@@ -232,19 +217,14 @@ export async function handleSessionCompleted(
       latestProgress: ctx.turnState.latestProgress,
     })
     const splits = splitMessage(fallback, 2000)
-    if (target && threadConfig.reply_mode !== 'send') {
-      const allowedMentions =
-        threadConfig.reply_mode === 'reply_silent' ? { repliedUser: false } : undefined
-      for (let i = 0; i < splits.length; i++) {
-        if (i === 0) {
-          await target.reply({ content: splits[i], allowedMentions })
-        } else {
-          await ctx.thread.send(splits[i])
-        }
-      }
-    } else {
-      for (const chunk of splits) {
-        await ctx.thread.send(chunk)
+    const replyable = target?.channelId === ctx.thread.id ? target : null
+    for (let i = 0; i < splits.length; i++) {
+      if (i === 0) {
+        await deliverWithReply(ctx.thread, replyable, threadConfig.reply_mode, {
+          content: splits[i],
+        })
+      } else {
+        await ctx.thread.send(splits[i])
       }
     }
     nextTurnState = { awaitingAgentReply: false }
@@ -254,15 +234,18 @@ export async function handleSessionCompleted(
   ctx.stopTyping()
 
   const currentQueuedTurnId = ctx.turnTarget.getCurrentQueuedTurnId()
-  return {
-    nextTurnState,
-    queuedTurnCompletion: currentQueuedTurnId
-      ? {
-          reason: 'session_completed',
-          turnId: currentQueuedTurnId,
-        }
-      : undefined,
+  if (currentQueuedTurnId) {
+    return {
+      nextTurnState,
+      queuedTurnCompletion: {
+        reason: 'session_completed',
+        turnId: currentQueuedTurnId,
+      },
+    }
   }
+
+  ctx.turnTarget.releaseActiveQueuedTurn('session_completed')
+  return { nextTurnState }
 }
 
 export async function handleSessionFailed(

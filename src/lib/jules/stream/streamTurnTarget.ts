@@ -6,6 +6,11 @@ import {
 } from '../ConversationQueue.js'
 import { getLastHumanMessage } from '../discordHistory.js'
 import { isDiscordUserMessageActivity } from '../../utils/sessionOutcome.js'
+import {
+  bindTurnTarget,
+  createTurnTargetState,
+  resolveTurnTarget,
+} from '../../utils/turnTargets.js'
 import type { JulesActivity } from '../julesTypes.js'
 import type { JulesDiscordChannel } from '../channelTypes.js'
 
@@ -13,16 +18,15 @@ export type StreamTurnTarget = {
   getTarget: (forceRefresh?: boolean) => Promise<Message | null>
   releaseActiveQueuedTurn: (reason: ConversationTurnCompletionReason) => void
   onUserMessaged: (activity: JulesActivity) => void
+  onAgentMessagedRecovery: (rawMessage: string) => void
   getCurrentQueuedTurnId: () => string | undefined
 }
 
-export function createStreamTurnTarget(thread: JulesDiscordChannel): StreamTurnTarget {
-  const initialActiveTurn = getActiveConversationTurn(thread.id)
-  const initialQueuedTurn = initialActiveTurn?.dispatchedAt ? initialActiveTurn : undefined
-  let currentQueuedTurnId: string | undefined = initialQueuedTurn?.id
-  let currentQueuedTarget: Message | null = initialQueuedTurn?.message || null
-  let cachedTarget: Message | null = currentQueuedTarget
-  let targetFetched = currentQueuedTarget !== null
+export function createStreamTurnTarget(
+  thread: JulesDiscordChannel,
+  isStaleReplay?: (activity: JulesActivity) => boolean,
+): StreamTurnTarget {
+  const targetState = createTurnTargetState<Message>(getActiveConversationTurn(thread.id))
 
   const releaseActiveQueuedTurn = (reason: ConversationTurnCompletionReason) => {
     const activeTurn = getActiveConversationTurn(thread.id)
@@ -31,38 +35,41 @@ export function createStreamTurnTarget(thread: JulesDiscordChannel): StreamTurnT
 
   const getTarget = async (forceRefresh = false): Promise<Message | null> => {
     const activeTurn = getActiveConversationTurn(thread.id)
-    if (currentQueuedTurnId && activeTurn?.id === currentQueuedTurnId) {
-      currentQueuedTarget = activeTurn.message
-    }
-    if (currentQueuedTarget) return currentQueuedTarget
-    if (!currentQueuedTurnId && activeTurn) return activeTurn.message
+    const resolved = resolveTurnTarget(targetState, activeTurn)
+    if (resolved) return resolved
 
-    if (forceRefresh || !targetFetched) {
+    if (forceRefresh || !targetState.targetFetched) {
       const fetched = await getLastHumanMessage(thread)
       if (fetched) {
-        cachedTarget = fetched
-        targetFetched = true
+        targetState.cachedTarget = fetched
+        targetState.targetFetched = true
       }
     }
-    return cachedTarget
+    return targetState.cachedTarget
   }
 
   const onUserMessaged = (activity: JulesActivity) => {
-    if (isDiscordUserMessageActivity(activity)) {
-      const activeTurn = getActiveConversationTurn(thread.id)
-      currentQueuedTurnId = activeTurn?.id
-      currentQueuedTarget = activeTurn?.message || null
-      cachedTarget = currentQueuedTarget
-      targetFetched = currentQueuedTarget !== null
+    if (isDiscordUserMessageActivity(activity) && !isStaleReplay?.(activity)) {
+      bindTurnTarget(targetState, getActiveConversationTurn(thread.id))
     }
   }
 
-  const getCurrentQueuedTurnId = () => currentQueuedTurnId
+  const onAgentMessagedRecovery = (rawMessage: string) => {
+    if (rawMessage && !targetState.boundTurnId) {
+      const activeTurn = getActiveConversationTurn(thread.id)
+      if (activeTurn?.dispatchedAt) {
+        bindTurnTarget(targetState, activeTurn)
+      }
+    }
+  }
+
+  const getCurrentQueuedTurnId = () => targetState.boundTurnId
 
   return {
     getTarget,
     releaseActiveQueuedTurn,
     onUserMessaged,
+    onAgentMessagedRecovery,
     getCurrentQueuedTurnId,
   }
 }

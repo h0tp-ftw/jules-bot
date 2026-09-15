@@ -83,6 +83,7 @@ async function makeThread() {
     const replies: any[] = []
     humanMsgs.push({
       id: `hm-${humanMsgs.length}`,
+      channelId: thread.id,
       channel: thread,
       client: thread.client,
       author: { id: `user-${seq}`, bot: false },
@@ -153,7 +154,9 @@ function makeStreamManager() {
 // Default reply_mode is `send`, so agent/progress text lands on thread.send
 // rather than a target.reply. Assert delivery on whichever channel fired.
 function assertDeliveredText(sent: any[], replies: any[], expected: string) {
-  const sentText = sent.filter((s) => typeof s === 'string').join('')
+  const sentText = sent
+    .map((s) => (typeof s === 'string' ? s : typeof s?.content === 'string' ? s.content : ''))
+    .join('')
   const replyText = replies.map((r) => r.content).join('')
   assert.ok(
     sentText.includes(expected) || replyText.includes(expected),

@@ -1,5 +1,5 @@
 import { logger } from '../../utils/logger.js'
-import { EmbedBuilder, Message, ThreadChannel } from 'discord.js'
+import { EmbedBuilder, ThreadChannel } from 'discord.js'
 import { JulesClient } from '../JulesClient.js'
 import { prisma, getEffectiveConfig, yamlConfig } from '../../../config.js'
 import { t } from '../../../strings.js'
@@ -14,6 +14,8 @@ import {
 import { autoRejectedSessions } from '../streamRegistry.js'
 import { getLastHumanMessage } from '../discordHistory.js'
 import { getFreshSessionInfo } from '../sessionInfo.js'
+import { deliverWithReply } from '../../utils/replyDelivery.js'
+import { startTypingLoop, stopTypingLoop } from '../../utils/typingManager.js'
 
 export type PreWarmedConsumptionResult = {
   session: any
@@ -155,9 +157,7 @@ async function replayHistoryActivities(session: any, thread: ThreadChannel, thre
       } else if (activity.type === 'planGenerated') {
         const plan = activity.plan || (activity as any).planGenerated?.plan
         if (plan && plan.steps) {
-          logger.debug(
-            `[preWarmedConsumer] Rendering plan from history for session ${session.id}`,
-          )
+          logger.debug(`[preWarmedConsumer] Rendering plan from history for session ${session.id}`)
           const stepsText = plan.steps
             .map((step: any, i: number) =>
               t(threadConfig.messages.plan.step_line, {
@@ -173,18 +173,15 @@ async function replayHistoryActivities(session: any, thread: ThreadChannel, thre
                 emoji: threadConfig.bot_emoji || '🐙',
               }),
             )
-            .setDescription(
-              stepsText.slice(0, 4000) || threadConfig.messages.plan.embed_no_details,
-            )
+            .setDescription(stepsText.slice(0, 4000) || threadConfig.messages.plan.embed_no_details)
             .setColor(0x00ae86)
             .setFooter({ text: threadConfig.messages.plan.welcome_footer })
 
           const histTarget = await getLastHumanMessage(thread)
-          if (histTarget) {
-            await histTarget.reply({ embeds: [embed] })
-          } else {
-            await thread.send({ embeds: [embed] })
-          }
+          const replyable = histTarget?.channelId === thread.id ? histTarget : null
+          await deliverWithReply(thread, replyable, threadConfig.reply_mode, {
+            embeds: [embed],
+          })
         }
       }
     }
@@ -199,12 +196,7 @@ export async function consumePreWarmedSession(
   thread: ThreadChannel,
   threadConfig: any,
 ): Promise<PreWarmedConsumptionResult | null> {
-  const preWarmed = await fetchOrWaitForPreWarmedSession(
-    repoName,
-    contextKey,
-    thread,
-    threadConfig,
-  )
+  const preWarmed = await fetchOrWaitForPreWarmedSession(repoName, contextKey, thread, threadConfig)
   if (!preWarmed) return null
 
   try {
@@ -256,7 +248,8 @@ export async function consumePreWarmedSession(
       where: { id: preWarmed.id },
     })
 
-    const initialSkipIds = activities.length > 0 ? new Set(activities.map((a: any) => a.id)) : undefined
+    const initialSkipIds =
+      activities.length > 0 ? new Set(activities.map((a: any) => a.id)) : undefined
     const initialCursorActivity = activities.length > 0 ? activities[activities.length - 1] : null
 
     logger.debug(
@@ -272,10 +265,7 @@ export async function consumePreWarmedSession(
       welcomeFeedback,
     }
   } catch (err) {
-    logger.error(
-      `[preWarmedConsumer] Failed to rehydrate pre-warmed session ${preWarmed.id}:`,
-      err,
-    )
+    logger.error(`[preWarmedConsumer] Failed to rehydrate pre-warmed session ${preWarmed.id}:`, err)
     return null
   }
 }
@@ -290,36 +280,42 @@ export async function dispatchPreWarmedUserTurn(
   queueTurnId: string,
 ) {
   await thread.send(threadConfig.messages.session.prewarmed_ready)
-  thread.sendTyping().catch(() => {})
-
-  if (welcomePlanRejected) {
-    const rejectionDirective = t(threadConfig.messages.prompts.auto_reject_directive_welcome, {
-      feedback: welcomeFeedback,
-    })
-    logger.debug(
-      `[preWarmedConsumer] Sending auto-rejection directive for session ${session.id}`,
-    )
-    await scheduleJulesRequest(() => session.send(rejectionDirective))
-
-    logger.debug(
-      `[preWarmedConsumer] Waiting for session ${session.id} to process rejection...`,
-    )
-    for (let i = 0; i < 20; i++) {
-      const info = await scheduleJulesRequest(() => getFreshSessionInfo(session))
-      if (info.state !== 'queued') {
-        logger.debug(
-          `[preWarmedConsumer] Session ${session.id} finished processing rejection (State: ${info.state})`,
-        )
-        break
-      }
-      await new Promise((r) => setTimeout(r, 1000))
-    }
-
-    await new Promise((r) => setTimeout(r, 2000))
-    autoRejectedSessions.delete(session.id)
+  // Sustained loop instead of a one-shot bubble: the stream handler takes
+  // ownership and stops it once Jules visibly responds. In strict_state mode
+  // typing mirrors the session state, so the stream's connect-time check drives it.
+  if (threadConfig.typing_indicator_mode !== 'strict_state') {
+    startTypingLoop(thread)
   }
 
-  logger.debug(`[preWarmedConsumer] Sending user prompt to session ${session.id}`)
-  markConversationTurnDispatched(thread.id, queueTurnId)
-  await scheduleJulesRequest(() => session.send(promptWithMetadata))
+  try {
+    if (welcomePlanRejected) {
+      const rejectionDirective = t(threadConfig.messages.prompts.auto_reject_directive_welcome, {
+        feedback: welcomeFeedback,
+      })
+      logger.debug(`[preWarmedConsumer] Sending auto-rejection directive for session ${session.id}`)
+      await scheduleJulesRequest(() => session.send(rejectionDirective))
+
+      logger.debug(`[preWarmedConsumer] Waiting for session ${session.id} to process rejection...`)
+      for (let i = 0; i < 20; i++) {
+        const info = await scheduleJulesRequest(() => getFreshSessionInfo(session))
+        if (info.state !== 'queued') {
+          logger.debug(
+            `[preWarmedConsumer] Session ${session.id} finished processing rejection (State: ${info.state})`,
+          )
+          break
+        }
+        await new Promise((r) => setTimeout(r, 1000))
+      }
+
+      await new Promise((r) => setTimeout(r, 2000))
+      autoRejectedSessions.delete(session.id)
+    }
+
+    logger.debug(`[preWarmedConsumer] Sending user prompt to session ${session.id}`)
+    markConversationTurnDispatched(thread.id, queueTurnId)
+    await scheduleJulesRequest(() => session.send(promptWithMetadata))
+  } catch (err) {
+    stopTypingLoop(thread.id)
+    throw err
+  }
 }

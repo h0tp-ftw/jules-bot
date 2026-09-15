@@ -16,6 +16,8 @@ import { formatAttachmentMetadata } from '../../lib/utils/attachments.js'
 import { buildReplyAwarePrompt } from '../../lib/utils/reply.js'
 import { hasPermission } from '../../lib/utils/permissions.js'
 import { markConversationTurnDispatched } from '../../lib/jules/ConversationQueue.js'
+import { startTypingLoop, stopTypingLoop } from '../../lib/utils/typingManager.js'
+import { deliverWithReply } from '../../lib/utils/replyDelivery.js'
 
 export function shouldIgnoreMessage(
   message: Message,
@@ -25,8 +27,8 @@ export function shouldIgnoreMessage(
   const channelConfig = getEffectiveConfig(channel, message.member, dbDefaultRepo)
   return Boolean(
     channelConfig.ignore_prefix &&
-      message.content &&
-      message.content.startsWith(channelConfig.ignore_prefix),
+    message.content &&
+    message.content.startsWith(channelConfig.ignore_prefix),
   )
 }
 
@@ -44,7 +46,9 @@ export async function sendToExistingSession(
   const { authorized, silent } = await hasPermission(message.member, message.author, channel)
   if (!authorized) {
     if (!silent) {
-      await message.reply(channelConfig.messages.errors.no_permission_session)
+      await deliverWithReply(channel, message, 'reply_ping', {
+        content: channelConfig.messages.errors.no_permission_session,
+      })
     }
     await updateReaction(message, 'failed')
     return false
@@ -101,7 +105,11 @@ export async function sendToExistingSession(
       await Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 5000))])
     }
 
-    channel.sendTyping().catch(() => {})
+    if (channelConfig.typing_indicator_mode === 'strict_state') {
+      channel.sendTyping().catch(() => {})
+    } else {
+      startTypingLoop(channel)
+    }
     await updateReaction(message, 'in_progress')
 
     const promptWithMetadata = await buildReplyAwarePrompt(
@@ -132,8 +140,11 @@ export async function sendToExistingSession(
     return true
   } catch (err) {
     logger.error(`Failed to send message to Jules for channel ${channel.id}:`, err)
+    stopTypingLoop(channel.id)
     await updateReaction(message, 'failed').catch(() => {})
-    await message.reply(channelConfig.messages.session.message_delivery_failed)
+    await deliverWithReply(channel, message, 'reply_ping', {
+      content: channelConfig.messages.session.message_delivery_failed,
+    })
     return false
   }
 }

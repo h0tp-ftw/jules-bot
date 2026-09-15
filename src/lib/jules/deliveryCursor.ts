@@ -47,13 +47,20 @@ export async function initializeProcessedActivityIds(
   sessionId: string,
   thread: JulesDiscordChannel,
   initialProcessedIds?: Set<string>,
-): Promise<{ ids: Set<string>; hydrated: boolean; turnState: TurnResponseState }> {
+): Promise<{
+  ids: Set<string>
+  hydrated: boolean
+  turnState: TurnResponseState
+  historyIds: Set<string>
+}> {
   const { activities, hydrated } = await hydrateSessionHistory(session, sessionId)
   const ids = initialProcessedIds ? new Set(initialProcessedIds) : new Set<string>()
+  const historyIds = new Set<string>(activities.map((activity: any) => activity.id))
   const result = () => ({
     ids,
     hydrated,
     turnState: deriveTurnResponseState(activities, ids),
+    historyIds,
   })
 
   if (initialProcessedIds) {
