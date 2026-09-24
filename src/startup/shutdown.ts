@@ -8,6 +8,7 @@ import {
   type ActiveConversationQueueSnapshot,
 } from '../lib/jules/ConversationQueue.js'
 import { stopHealthServer } from '../lib/health.js'
+import { stopHarnessServer } from '../harness/harnessServer.js'
 import type { StreamManager } from '../lib/streams/StreamManager.js'
 
 // Gracefully tear down on shutdown signals (pm2 reload/stop, Ctrl+C) so pending
@@ -95,6 +96,11 @@ async function shutdown(
     stopHealthServer()
   } catch (err) {
     logger.error('[Shutdown] health server stop failed:', err)
+  }
+  try {
+    stopHarnessServer()
+  } catch (err) {
+    logger.error('[Shutdown] harness server stop failed:', err)
   }
   try {
     streamManager.dispose()

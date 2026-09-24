@@ -130,9 +130,31 @@ Runs the explicit Node test list through `tsx`. The suite currently covers:
 - reaction markers;
 - session outcome/state helpers;
 - `StreamManager` overflow behavior;
-- string/template merging.
+- string/template merging;
+- virtual channel duck-typing and harness HTTP server (`test/harness.test.ts`).
 
-There is no full Discord ↔ Jules integration test harness.
+### `npm run harness`
+
+Runs the interactive testing harness (`scripts/test-harness.ts`) for terminal conversation, single-query testing, and AI pipeline benchmarking without connecting to Discord. See [`TESTING_HARNESS.md`](./TESTING_HARNESS.md) for the complete reference.
+
+```bash
+# Interactive REPL
+npm run harness
+
+# Single-query testing with structured JSON output (for AI agents/pipelines)
+npm run harness -- --query "Explain the XP calculation" --json
+
+# Connect to a remote running JulesBot (e.g. on openclaw)
+npm run harness -- --url http://100.94.190.37:3100 --query "Test query"
+```
+
+### `npm run harness:server`
+
+Starts the standalone HTTP REST / SSE harness server (default port `3100`):
+
+```bash
+npm run harness:server -- --port 3100
+```
 
 ### `npm run db:generate`
 

@@ -23,12 +23,13 @@ Stack: **TypeScript (ESM) · discord.js v14 · @google/jules-sdk · Prisma v7 + 
 - `npm run db:migrate` — `prisma migrate dev` (run after editing `prisma/schema.prisma`).
 - `npm run db:generate` — regenerate the Prisma client.
 - `npm run lint` / `npm run format` — ESLint + Prettier (CI-gated; `format:check` to verify without writing).
+- `npm run harness` — run the interactive testing harness (`scripts/test-harness.ts`) to chat with Jules, run single questions, or benchmark AI pipelines without Discord. Use `--query "..." --json` for automated pipelines, or `--url http://<host>:3100` to query a remote bot. Docs: `docs/TESTING_HARNESS.md`.
+- `npm run harness:server` — start the standalone HTTP REST/SSE testing harness server (default port `3100`).
 - `npm test` — `node:test` suite over the pure utils, conversation turn queue, `strings.ts`, the
-  `getEffectiveConfig` precedence resolver, the `hasPermission` allowlist, and the level-gated `logger`
-  (`test/*.test.ts`). The
+  `getEffectiveConfig` precedence resolver, the `hasPermission` allowlist, the level-gated `logger`, and
+  the virtual channel duck-typing harness (`test/*.test.ts`). The
   config/permissions suites import `config.ts`; `test/_ensureDb.ts` (imported *before* `config.js`) keeps them
-  DB-free by pre-creating an empty SQLite file so no provisioning runs. No integration coverage of the
-  Discord/Jules round-trip, so also verify with `npm run build` + a manual `npm run dev`.
+  DB-free by pre-creating an empty SQLite file so no provisioning runs.
 - CI (`.github/workflows/ci.yml`) runs `npm run build` + `npm run lint` + `npm run format:check` + `npm test`
   on every push/PR to `main`.
 
@@ -118,6 +119,8 @@ Key modules:
 - `src/lib/streams/StreamManager.ts` — one editable "status message" per thread; buffers progress lines,
   debounced 3s flush, `finalizeSession`.
 - `src/lib/utils/` — `permissions.ts` (allowlist + thread-creator context), `emojis.ts`, `messageSplitter.ts`.
+- `src/harness/` — Virtual Discord channel layer (`virtualChannel.ts`), harness session manager (`harnessSession.ts`),
+  and zero-dependency HTTP REST/SSE server (`harnessServer.ts`). Used by `scripts/test-harness.ts` (`npm run harness`).
 
 ## How Jules is driven (SDK facts)
 

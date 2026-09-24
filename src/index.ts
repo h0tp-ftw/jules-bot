@@ -31,6 +31,7 @@ import { StreamManager } from './lib/streams/StreamManager.js'
 import { initPreWarmedPools } from './lib/jules/PreWarmedManager.js'
 import { rehydrateActiveStreams } from './lib/jules/orchestrator.js'
 import { startHealthServer } from './lib/health.js'
+import { startHarnessServer } from './harness/harnessServer.js'
 import { loginWithRetry } from './startup/login.js'
 import { setupProcessLifecycle } from './startup/shutdown.js'
 
@@ -240,6 +241,11 @@ async function start() {
     const healthPort = Number(process.env.HEALTHCHECK_PORT)
     if (Number.isInteger(healthPort) && healthPort > 0) {
       startHealthServer(client, healthPort)
+    }
+
+    const harnessPort = Number(process.env.HARNESS_PORT)
+    if (Number.isInteger(harnessPort) && harnessPort > 0) {
+      startHarnessServer(harnessPort)
     }
 
     await loginWithRetry(client, DISCORD_TOKEN)
