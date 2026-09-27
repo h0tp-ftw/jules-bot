@@ -53,7 +53,6 @@ export async function handleSelectMenuInteraction(
       }
 
       const branches = selectedRepo.branches || []
-      const botEmoji = threadConfig.bot_emoji || '🐙'
       if (branches.length === 0) {
         const branch = selectedRepo.defaultBranch || 'main'
         await interaction.editReply({
