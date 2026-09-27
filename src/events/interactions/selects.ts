@@ -33,8 +33,8 @@ export async function handleSelectMenuInteraction(
         await interaction.editReply({
           content: t(msgs.session.initializing_repoless || msgs.session.initializing, {
             emoji: botEmoji,
-            repo: 'No codebase',
-            branch: 'sandbox',
+            repo: msgs.setup.no_codebase_repo_name,
+            branch: msgs.setup.no_codebase_branch_name,
           }),
           components: [],
         })

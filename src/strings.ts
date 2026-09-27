@@ -48,6 +48,8 @@ export const DEFAULT_MESSAGES = {
     paused_notice:
       '⏸️ **Jules has paused this session.**\nAn admin or repository collaborator needs to visit the [Jules UI]({url}) and click **Resume session** to continue.',
     nudge_sent: '🔔 **Jules had not replied after {delay}, so I sent a reminder.**',
+    nudge_delay_minute: '{minutes} minute',
+    nudge_delay_minutes: '{minutes} minutes',
     shutdown_queue_active:
       '🛑 **The bot is stopping while this message is active.**\nJules may continue working, but Discord delivery is paused until the bot returns. Please resend this message only if no reply appears after restart.{pending}',
     shutdown_queue_pending_one:
@@ -95,6 +97,8 @@ export const DEFAULT_MESSAGES = {
     custom_branch_modal_title: 'Enter Custom Branch',
     custom_branch_modal_input_label: 'Exact Branch Name',
     custom_branch_modal_input_placeholder: 'e.g. feature/cool-stuff',
+    no_codebase_repo_name: 'No codebase',
+    no_codebase_branch_name: 'sandbox',
   },
 
   // Diagnostic plan embed, buttons, and approval / rejection notices.
@@ -202,6 +206,11 @@ export const DEFAULT_MESSAGES = {
       "Reaction ability: you can add a Discord emoji reaction to the user's message you are replying to. To react, include a marker of the exact form [[react:EMOJI]] anywhere in your reply — for example [[react:👍]] or [[react:✅]]. EMOJI may be a standard Unicode emoji, or a custom server emoji written as :name: or <:name:id>. Use one marker per reaction; you may include several to add multiple reactions. The marker is removed from your message before it is shown, so it never appears as literal text — if you want to react without saying anything, reply with only the marker. React sparingly, and only when it adds value (acknowledging, agreeing, celebrating, or signalling status); most replies need no reaction.",
     delivery_status_instruction:
       'Be precise about repository delivery status. Creating or updating a branch or pull request is not the same as pushing or merging code into the main branch. Only claim that a fix is on main, merged, released, or available through an updater when you verified that exact state using repository or tool output. Otherwise say that the change is ready for review in a pull request, and provide its URL when available. Never tell a user to update from main unless main is verified to contain the fix.',
+    diagnostic_default:
+      'You are a diagnostic help agent talking to a non-technical user. Explain bugs and issues in simple, everyday terms. Avoid developer jargon, deep technical code details, and raw code blocks unless explicitly requested. Use clear analogies to explain what is wrong. Do NOT modify the codebase, write code changes, or create pull requests unless a program-level bug is identified and the user explicitly asks for a code fix. Keep conversation interactive, clear, and friendly.',
+    reply_quote_author_bot: 'Jules (Bot)',
+    reply_quote_attachments_only: '[Attachments only]',
+    reply_quote_empty: '[Empty or Embed]',
   },
 
   // Attachment metadata block appended to user messages for Jules.
@@ -217,6 +226,8 @@ export const DEFAULT_MESSAGES = {
   // Miscellaneous.
   misc: {
     custom_status_name: 'Custom Status',
+    bot_emoji: '🐙',
+    auto_reject_notice_emoji: '🤖',
   },
 }
 

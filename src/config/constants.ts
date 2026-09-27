@@ -11,10 +11,10 @@ export const MESSAGES: Messages = deepMergeMessages(
 
 // Diagnostic Prompt for Google Jules
 export const DIAGNOSTIC_PROMPT =
-  yamlConfig.diagnostic_prompt ||
-  `You are a diagnostic help agent talking to a non-technical user. Explain bugs and issues in simple, everyday terms. Avoid developer jargon, deep technical code details, and raw code blocks unless explicitly requested. Use clear analogies to explain what is wrong. Do NOT modify the codebase, write code changes, or create pull requests unless a program-level bug is identified and the user explicitly asks for a code fix. Keep conversation interactive, clear, and friendly.`
+  yamlConfig.diagnostic_prompt || MESSAGES.prompts.diagnostic_default
 
-export const BOT_EMOJI = typeof yamlConfig.bot_emoji === 'string' ? yamlConfig.bot_emoji : '🐙'
+export const BOT_EMOJI =
+  typeof yamlConfig.bot_emoji === 'string' ? yamlConfig.bot_emoji : MESSAGES.misc.bot_emoji
 
 // Access Control config
 const accessControl = yamlConfig.access_control || {}

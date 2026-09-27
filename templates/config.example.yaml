@@ -173,7 +173,7 @@ pre_warmed_sessions:
 
 # Customizable text strings
 # Every user-facing string (and the substantive Jules-prompt fragments) lives in
-# `src/strings.ts` as the default. Override any of them here — you only need to
+# `templates/messages.default.yaml` as the default. Override any of them here — you only need to
 # list the keys you want to change; everything else falls back to the defaults.
 # Templated strings use {placeholder} tokens (e.g. {emoji}, {repo}, {branch},
 # {error}, {feedback}); keep the placeholders you need in your override.
@@ -194,6 +194,6 @@ pre_warmed_sessions:
 #     reject_button: "Not quite ❌"
 #   stream:
 #     completed: "✅ All done!"
-#   # See src/strings.ts for the full list of keys you can override.
+#   # See templates/messages.default.yaml for the full list of keys you can override.
 
 

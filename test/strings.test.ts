@@ -114,3 +114,20 @@ test('metadata_header formats message_id and optional reply_info', () => {
     '[Message details - Author Nickname: Bob, Author Username: bob, Author Discord ID: 1002, Message ID: 10000, Message Time: 2026-08-17T10:01:00.000Z, In reply to Message ID: 9999]\n\nI agree',
   )
 })
+
+test('nudge delay formats singular and plural minutes', () => {
+  assert.equal(t(DEFAULT_MESSAGES.session.nudge_delay_minute, { minutes: 1 }), '1 minute')
+  assert.equal(t(DEFAULT_MESSAGES.session.nudge_delay_minutes, { minutes: 5 }), '5 minutes')
+})
+
+test('templates/messages.default.yaml matches DEFAULT_MESSAGES exactly', async () => {
+  const fs = await import('fs')
+  const path = await import('path')
+  const { parse } = await import('yaml')
+  const yamlPath = path.resolve('templates/messages.default.yaml')
+  assert.ok(fs.existsSync(yamlPath), 'templates/messages.default.yaml should exist')
+  const parsed = parse(fs.readFileSync(yamlPath, 'utf8'))
+  assert.deepEqual(parsed, DEFAULT_MESSAGES)
+})
+
+

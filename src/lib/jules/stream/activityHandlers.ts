@@ -57,7 +57,7 @@ export async function handlePlanGenerated(
     if (!ctx.chatbotMode) {
       await ctx.thread.send(
         t(threadConfig.messages.plan.auto_rejected_notice, {
-          emoji: '🤖',
+          emoji: threadConfig.messages.misc.auto_reject_notice_emoji || '🤖',
           feedback,
         }),
       )

@@ -59,16 +59,16 @@ export async function resolveReplyContext(
     if (referencedMsg) {
       const author =
         referencedMsg.author.id === message.client.user?.id
-          ? 'Jules (Bot)'
+          ? messages.reply_quote_author_bot
           : `@${referencedMsg.member?.displayName || referencedMsg.author.username}`
 
       let snippet = referencedMsg.content || ''
       if (snippet.length > 300) {
         snippet = `${snippet.slice(0, 300)}...`
       } else if (!snippet && referencedMsg.attachments.size > 0) {
-        snippet = '[Attachments only]'
+        snippet = messages.reply_quote_attachments_only
       } else if (!snippet) {
-        snippet = '[Empty or Embed]'
+        snippet = messages.reply_quote_empty
       }
 
       const quotePrefix = t(messages.reply_quote, {

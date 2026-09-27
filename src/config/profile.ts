@@ -37,6 +37,7 @@ if (isProfileActive && profileDir) {
   const templatesToCopy = [
     { src: 'templates/.env.example', dest: '.env' },
     { src: 'templates/config.example.yaml', dest: 'config.yaml' },
+    { src: 'templates/messages.default.yaml', dest: 'messages.default.yaml' },
     { src: 'templates/AGENTS.example.md', dest: path.join('prompts', 'AGENTS.md') },
     { src: 'templates/SOUL.example.md', dest: path.join('prompts', 'SOUL.md') },
   ]

@@ -8,8 +8,10 @@ import { scheduleJulesRequest } from './JulesRequestCoordinator.js'
 import { wakeJulesStream } from './streamRegistry.js'
 import type { JulesDiscordChannel } from './channelTypes.js'
 
-function formatNudgeDelay(minutes: number): string {
-  return minutes === 1 ? '1 minute' : `${minutes} minutes`
+function formatNudgeDelay(minutes: number, messages: any): string {
+  const template =
+    minutes === 1 ? messages.session.nudge_delay_minute : messages.session.nudge_delay_minutes
+  return t(template, { minutes })
 }
 
 export function scheduleNudgeForConversationTurn(
@@ -40,7 +42,7 @@ export function scheduleNudgeForConversationTurn(
       if (!channelConfig.nudge.notify_discord) return
 
       const content = t(discordNotice, {
-        delay: formatNudgeDelay(channelConfig.nudge.after_minutes),
+        delay: formatNudgeDelay(channelConfig.nudge.after_minutes, channelConfig.messages),
       })
       const chunks = splitMessage(content, 2000)
       if (chunks.length === 0) return

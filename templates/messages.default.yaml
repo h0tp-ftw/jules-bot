@@ -1,0 +1,261 @@
+errors:
+  guild_only: ❌ This command can only be used in a server.
+  no_permission_commands: ❌ **You do not have permission to run bot commands.**
+  no_permission_session: ❌ **You do not have permission to interact with this diagnostic session.**
+  no_permission_interaction: ❌ **You do not have permission to interact with this session.**
+  command_execution_error: |-
+    ❌ **There was an error executing this command:**
+    ```
+    {error}
+    ```
+  session_not_found: ❌ Session not found.
+  repo_not_found: ❌ Selected repository not found.
+  jules_communication_error: ❌ **An error occurred while communicating with Jules.**
+  session_setup_error: ❌ **An error occurred while setting up the session.**
+session:
+  initializing: |-
+    {emoji} **Initializing diagnostic Jules session...**
+    Running analysis against repository: `{repo}` on branch `{branch}`...
+  initializing_repoless: |-
+    {emoji} **Initializing diagnostic Jules session...**
+    Running analysis in a standalone cloud sandbox (No codebase)...
+  start_failed: ❌ **Failed to start Jules diagnostic session. Please verify your
+    repository configuration and permissions.**
+  starter_message_unavailable: ⚠️ **Could not retrieve the starter message for
+    this thread. Please reply with your issue details to start.**
+  queued_timeout: ⚠️ Jules session timed out waiting to start. Please open a new thread.
+  analysis_failed_retries: |-
+    ❌ **The diagnostic analysis session failed after multiple reconnection attempts:**
+    ```
+    {error}
+    ```
+  prewarming_wait: ⏳ **A session is currently pre-warming. Waiting for it to become ready...**
+  prewarmed_ready: 🚀 **Ready session found! Processing your issue...**
+  message_delivery_failed: ❌ **Failed to deliver message to Jules. Please make
+    sure the session is still active.**
+  paused_notice: |-
+    ⏸️ **Jules has paused this session.**
+    An admin or repository collaborator needs to visit the [Jules UI]({url}) and click **Resume session** to continue.
+  nudge_sent: 🔔 **Jules had not replied after {delay}, so I sent a reminder.**
+  nudge_delay_minute: "{minutes} minute"
+  nudge_delay_minutes: "{minutes} minutes"
+  shutdown_queue_active: |-
+    🛑 **The bot is stopping while this message is active.**
+    Jules may continue working, but Discord delivery is paused until the bot returns. Please resend this message only if no reply appears after restart.{pending}
+  shutdown_queue_pending_one: |-
+
+    ⚠️ **1 later queued message is held only in memory and may need to be resent.**
+  shutdown_queue_pending_many: |-
+
+    ⚠️ **{count} later queued messages are held only in memory and may need to be resent.**
+  completion_fallback: |-
+    ✅ **Jules finished the run but did not send a final conversational reply.**
+    No pull request or merge was confirmed by the Jules result.
+  completion_fallback_progress: |-
+    ✅ **Jules finished the run but did not send a final conversational reply.**
+    Latest recorded update: `{progress}`
+    No pull request or merge was confirmed by the Jules result.
+  completion_fallback_pr: |-
+    ✅ **Jules finished the run but did not send a final conversational reply.**
+    A pull request was reported by Jules: {url}
+    **Merge status was not verified.**
+  default_title: Diagnostic Session
+setup:
+  configure_select_repo: |-
+    📋 **Configure Jules Diagnostic Session**
+    Please select the repository you want to run diagnostics against:
+  configure_select_branch: |-
+    📋 **Configure Jules Diagnostic Session**
+    Selected Repository: `{repo}`
+    Please select the branch to work on:
+  configure_select_branch_search: |-
+    📋 **Configure Jules Diagnostic Session**
+    Selected Repository: `{repo}` (Search results for: `{query}`)
+    Please select the branch to work on:
+  no_connected_repos: ⚠️ **No connected repositories found in your Jules
+    account.** Please connect a repository first.
+  load_repos_failed: ❌ **Failed to load connected repositories for selection.**
+    Please verify your connection to Google Jules and try again.
+  no_default_repo: ⚠️ **No default repository has been set for this server.**
+    Please use the `/link-repo` command to set a default repository.
+  no_branches_matched: ❌ **No branches matched your search query "{query}".** Please try again.
+  repo_select_placeholder: Choose a repository...
+  branch_select_placeholder: Choose a branch...
+  branch_search_results_placeholder: Search results for "{query}"...
+  default_repo_option: "⭐ Default: {repo}"
+  no_codebase_option: ✨ No Codebase (Standalone sandbox)
+  default_branch_option: "⭐ Default: {branch}"
+  search_branches_option: 🔍 Search Branches...
+  custom_branch_option: ✍️ Enter Custom Branch...
+  search_again_option: 🔍 Search Again...
+  clear_search_option: ❌ Clear Search / Reset
+  search_modal_title: Search Branches
+  search_modal_input_label: Branch Name or Search Keyword
+  search_modal_input_placeholder: e.g. feature/auth, main, develop
+  custom_branch_modal_title: Enter Custom Branch
+  custom_branch_modal_input_label: Exact Branch Name
+  custom_branch_modal_input_placeholder: e.g. feature/cool-stuff
+  no_codebase_repo_name: No codebase
+  no_codebase_branch_name: sandbox
+plan:
+  embed_title: "{emoji} Jules Proposed Diagnostic Plan"
+  embed_no_details: No details provided.
+  step_line: "**{number}.** {title}"
+  welcome_footer: Welcome plan detected.
+  approve_button: Approve Plan
+  reject_button: Reject Plan
+  approved: ✅ **Plan approved. Jules is continuing the diagnostic steps...**
+  approved_via_command: ✅ **Plan approved via slash command! Jules is continuing
+    the diagnostic steps...**
+  rejected: ❌ **Plan rejected. Please describe the changes or alternative approach
+    you want Jules to take.**
+  auto_rejected_notice: |-
+    {emoji} **Plan feedback sent:**
+    Feedback: "{feedback}"
+    Jules was asked to revise or continue without a plan...
+stream:
+  initial_status: |-
+    {emoji} **Jules is analyzing the workspace...**
+
+    *Logs will stream below:*
+  analyzing_header: "{emoji} **Jules is analyzing the workspace...**"
+  current_step: |-
+    ⚡ **Current Step:**
+    > **{title}**
+  current_step_description: "> *{description}*"
+  execution_logs_header: "**Execution Logs:**"
+  completed: ✅ **Jules run reached a completed state.**
+  pull_request_reported: |-
+    🔎 **Pull request reported by Jules:** {url}
+    *Merge status was not verified.*
+  failed: ❌ **Jules analysis failed.**
+  failed_reason_suffix: " Reason: {reason}"
+  final_logs_header: "**Final execution logs:**"
+commands:
+  approve_description: Approve the proposed plan for this diagnostic session
+  approve_thread_only: ❌ This command can only be used inside a Jules diagnostic thread.
+  approve_no_active_session: ❌ No active Jules session found for this thread.
+  approve_cannot_approve_state: ❌ **Cannot approve plan.** Current session state
+    is `{state}` (needs to be `awaitingPlanApproval`).
+  approve_failed: ❌ **Failed to approve plan. An error occurred while
+    communicating with Jules.**
+  link_repo_description: Link a GitHub repository to this server as the default
+    for Jules diagnostic sessions
+  link_repo_option_description: GitHub repository in owner/repo format (e.g. facebook/react)
+  link_repo_invalid_format: ❌ Invalid repository format. Please use `owner/repo`
+    format (e.g., `facebook/react`).
+  link_repo_success: ✅ **Successfully linked repository `{repo}` to this server!**
+    Jules will now analyze this repository for new debug threads.
+  link_repo_failed: ❌ Failed to link repository in the database.
+  setup_forum_description: Set the designated Forum channel where Jules will monitor debug threads
+  setup_forum_option_description: The Forum channel to monitor
+  setup_forum_success: ✅ **Successfully set debug forum channel to <#{channel}>!**
+    Any new threads created here will initialize a Jules session.
+  setup_forum_failed: ❌ Failed to save forum channel configuration in the database.
+  setup_chat_description: Set a normal text channel where Jules will act as a
+    shared conversational chatbot
+  setup_chat_option_description: The text channel to monitor for every human message
+  setup_chat_success: ✅ **Successfully set chatbot channel to <#{channel}>!**
+    Jules will share one conversation across messages in this channel.
+  setup_chat_failed: ❌ Failed to save chatbot channel configuration in the database.
+  new_description: Start a fresh conversation session in this channel
+  new_prompt_option_description: Optional prompt to immediately begin the new conversation with
+  new_invalid_channel: ❌ This command can only be used in a text channel or thread.
+  new_no_repo: ❌ **No repository configured for this channel.** Please link a
+    repository first.
+  new_session_reset_ready: 🔄 **Previous conversation ended.** Ready for a new
+    conversation—send a message to begin!
+  new_session_initializing: "{emoji} **Starting a new session** for `{repo}` on `{branch}`..."
+  new_session_failed: ❌ **Failed to start new conversation session.**
+prompts:
+  metadata_header: |-
+    [Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message ID: {message_id}, Message Time: {time}{reply_info}]
+
+    {content}
+  metadata_header_with_title: |-
+    [Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message ID: {message_id}, Message Time: {time}, Issue/Thread Title: {title}{reply_info}]
+
+    {content}
+  metadata_header_with_channel: |-
+    [Message details - Author Nickname: {nickname}, Author Username: {username}, Author Discord ID: {id}, Message ID: {message_id}, Message Time: {time}, Shared Discord Channel: #{channel}{reply_info}]
+
+    {content}
+  reply_info: ", In reply to Message ID: {reply_message_id}"
+  reply_quote: |+
+    [In reply to {author} (Message ID: {reply_message_id}): "{snippet}"]
+
+  reply_quote_unavailable: |+
+    [In reply to Message ID: {reply_message_id} (original message unavailable)]
+
+  chatbot_mode_plan_feedback: This session is operating as a shared Discord
+    chatbot. Do not create or refine an implementation plan and do not wait for
+    plan approval. Reply directly and conversationally to the users in the
+    channel.
+  response_nudge: |-
+    [System Directive: Response Nudge]
+    You have not yet sent a user-facing response to the most recent Discord message delivered to this session. Please respond directly to that message now. Do not repeat internal progress or create a new plan unless the user explicitly requested one.
+  auto_reject_default: Please do not create or refine an implementation plan.
+    Instead, just talk directly with me to understand the goals and discuss the
+    issue.
+  auto_reject_directive_welcome: |-
+    [System Directive: Auto-Reject Plan]
+    Feedback: "{feedback}"
+
+    Please do not create or refine an implementation plan. Respond directly to the user's prompt.
+  auto_reject_directive_prewarm: |-
+    [System Directive: Auto-Reject Plan]
+    Feedback: "{feedback}"
+
+    Please do not create or refine an implementation plan. Respond directly to the previous prompt and do not try to refine the implementation plan.
+  prewarm_default: You are a diagnostic assistant. The user is connecting and has
+    just sent their initial response. Acknowledge that you are showing this
+    message now that they have replied. Share an extremely obscure, niche, or
+    lesser-known Pokémon trivia fact (avoiding common, generic facts), and let
+    them know you are actively analyzing the codebase and working on their query
+    right now. Even though you don't see their query yet, respond as if you have
+    received a query from the user and are working on it. Do NOT propose code
+    changes yet; generate the initial plan to welcome them and begin
+    investigation.
+  prewarm_title: Pre-warmed Session ({repo})
+  prewarm_title_context: "Pre-warmed Session ({repo} - Context: {context})"
+  jules_reactions_instruction: "Reaction ability: you can add a Discord emoji
+    reaction to the user's message you are replying to. To react, include a
+    marker of the exact form [[react:EMOJI]] anywhere in your reply — for
+    example [[react:👍]] or [[react:✅]]. EMOJI may be a standard Unicode emoji,
+    or a custom server emoji written as :name: or <:name:id>. Use one marker per
+    reaction; you may include several to add multiple reactions. The marker is
+    removed from your message before it is shown, so it never appears as literal
+    text — if you want to react without saying anything, reply with only the
+    marker. React sparingly, and only when it adds value (acknowledging,
+    agreeing, celebrating, or signalling status); most replies need no
+    reaction."
+  delivery_status_instruction: Be precise about repository delivery status.
+    Creating or updating a branch or pull request is not the same as pushing or
+    merging code into the main branch. Only claim that a fix is on main, merged,
+    released, or available through an updater when you verified that exact state
+    using repository or tool output. Otherwise say that the change is ready for
+    review in a pull request, and provide its URL when available. Never tell a
+    user to update from main unless main is verified to contain the fix.
+  diagnostic_default: You are a diagnostic help agent talking to a non-technical
+    user. Explain bugs and issues in simple, everyday terms. Avoid developer
+    jargon, deep technical code details, and raw code blocks unless explicitly
+    requested. Use clear analogies to explain what is wrong. Do NOT modify the
+    codebase, write code changes, or create pull requests unless a program-level
+    bug is identified and the user explicitly asks for a code fix. Keep
+    conversation interactive, clear, and friendly.
+  reply_quote_author_bot: Jules (Bot)
+  reply_quote_attachments_only: "[Attachments only]"
+  reply_quote_empty: "[Empty or Embed]"
+attachments:
+  header: "\n\n📎 **Attachments Attached:**\n"
+  item: "- **Name:** `{name}`\n  **URL:** {url}\n"
+  type: "  **Type:** `{type}`\n"
+  size: "  **Size:** `{size} KB`\n"
+  instructions: |
+
+    *(Note to Jules: If you need to inspect or analyze the attachments listed above, you should download them inside your workspace. For example, you can run `curl -o "filename" "URL"` or use a download script to save the file. Once downloaded locally in your workspace, you can use your native read/view tools on the downloaded file. If it is an image or PDF, your native read tool can handle it multimodally.)*
+
+misc:
+  custom_status_name: Custom Status
+  bot_emoji: 🐙
+  auto_reject_notice_emoji: 🤖
