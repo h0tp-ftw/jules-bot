@@ -112,12 +112,14 @@ async function initializeJulesSessionCore(
     threadConfig.messages.prompts,
   )
 
-  const { contextKey, usePool } = resolvePoolContext(
+  const { contextKey, usePool: poolEligible } = resolvePoolContext(
     thread,
     starterMessage.member,
     branchName,
     threadConfig,
   )
+  const isRepoless = repoName === 'NO_CODEBASE'
+  const usePool = poolEligible && !isRepoless
 
   const consumed = usePool
     ? await consumePreWarmedSession(repoName, contextKey, thread, threadConfig)

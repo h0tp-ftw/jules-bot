@@ -28,7 +28,7 @@ const client = julesApiClient
 
 export interface CreateSessionOptions {
   prompt: string
-  repo: string
+  repo?: string
   branch?: string
   title?: string
   thread?: any // Optional thread/channel context
@@ -52,12 +52,18 @@ export class JulesClient {
     }
     sessionPrompt += `\n\nUser Issue:\n${options.prompt}`
 
-    return await client.session({
+    const isRepoless = !options.repo || options.repo === 'NO_CODEBASE'
+    const sessionConfig: any = {
       prompt: sessionPrompt,
-      source: { github: options.repo, baseBranch: options.branch || 'main' },
       title: options.title || threadConfig.messages.session.default_title,
       requireApproval: true,
-    })
+    }
+
+    if (!isRepoless && options.repo) {
+      sessionConfig.source = { github: options.repo, baseBranch: options.branch || 'main' }
+    }
+
+    return await client.session(sessionConfig)
   }
 
   static getSession(sessionId: string): JulesSession {

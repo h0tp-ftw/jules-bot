@@ -32,6 +32,8 @@ export const DEFAULT_MESSAGES = {
   session: {
     initializing:
       '{emoji} **Initializing diagnostic Jules session...**\nRunning analysis against repository: `{repo}` on branch `{branch}`...',
+    initializing_repoless:
+      '{emoji} **Initializing diagnostic Jules session...**\nRunning analysis in a standalone cloud sandbox (No codebase)...',
     start_failed:
       '❌ **Failed to start Jules diagnostic session. Please verify your repository configuration and permissions.**',
     starter_message_unavailable:
@@ -81,6 +83,7 @@ export const DEFAULT_MESSAGES = {
     branch_select_placeholder: 'Choose a branch...',
     branch_search_results_placeholder: 'Search results for "{query}"...',
     default_repo_option: '⭐ Default: {repo}',
+    no_codebase_option: '✨ No Codebase (Standalone sandbox)',
     default_branch_option: '⭐ Default: {branch}',
     search_branches_option: '🔍 Search Branches...',
     custom_branch_option: '✍️ Enter Custom Branch...',

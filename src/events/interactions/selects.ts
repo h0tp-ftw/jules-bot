@@ -27,6 +27,22 @@ export async function handleSelectMenuInteraction(
       const repoName = interaction.values[0]
       await interaction.deferUpdate()
 
+      const botEmoji = threadConfig.bot_emoji || '🐙'
+
+      if (repoName === 'NO_CODEBASE') {
+        await interaction.editReply({
+          content: t(msgs.session.initializing_repoless || msgs.session.initializing, {
+            emoji: botEmoji,
+            repo: 'No codebase',
+            branch: 'sandbox',
+          }),
+          components: [],
+        })
+
+        await initializeJulesSession(thread, 'NO_CODEBASE', '', streamManager)
+        return
+      }
+
       // Find the selected repo branches
       const repos = await JulesClient.getConnectedRepos()
       const selectedRepo = repos.find((r) => r.name === repoName)

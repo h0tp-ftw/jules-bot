@@ -93,45 +93,50 @@ export default {
 
     if (isInteractive) {
       try {
-        const repos = await JulesClient.getConnectedRepos()
-        if (repos.length > 0) {
-          const options: StringSelectMenuOptionBuilder[] = []
-          const defaultRepo = threadConfig.default_repo
+        const repos = await JulesClient.getConnectedRepos().catch((err) => {
+          logger.warn('Failed to load connected repos for selection:', err)
+          return []
+        })
 
-          if (defaultRepo) {
-            options.push(
-              new StringSelectMenuOptionBuilder()
-                .setLabel(t(threadConfig.messages.setup.default_repo_option, { repo: defaultRepo }))
-                .setValue(defaultRepo),
-            )
-          }
+        const options: StringSelectMenuOptionBuilder[] = []
+        const defaultRepo = threadConfig.default_repo
 
-          const filteredRepos = defaultRepo ? repos.filter((r) => r.name !== defaultRepo) : repos
-
-          const maxOtherRepos = 25 - options.length
-          const displayRepos = filteredRepos.slice(0, maxOtherRepos)
-
-          for (const r of displayRepos) {
-            options.push(new StringSelectMenuOptionBuilder().setLabel(r.name).setValue(r.name))
-          }
-
-          const select = new StringSelectMenuBuilder()
-            .setCustomId(`select-repo:${thread.id}`)
-            .setPlaceholder(threadConfig.messages.setup.repo_select_placeholder)
-            .addOptions(options)
-
-          const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)
-          await thread.send({
-            content: threadConfig.messages.setup.configure_select_repo,
-            components: [row],
-          })
-          return
-        } else {
-          await thread.send(threadConfig.messages.setup.no_connected_repos)
-          return
+        if (defaultRepo) {
+          options.push(
+            new StringSelectMenuOptionBuilder()
+              .setLabel(t(threadConfig.messages.setup.default_repo_option, { repo: defaultRepo }))
+              .setValue(defaultRepo),
+          )
         }
+
+        // Always provide the option to run without a codebase (repoless session)
+        options.push(
+          new StringSelectMenuOptionBuilder()
+            .setLabel(threadConfig.messages.setup.no_codebase_option)
+            .setValue('NO_CODEBASE'),
+        )
+
+        const filteredRepos = defaultRepo ? repos.filter((r) => r.name !== defaultRepo) : repos
+        const maxOtherRepos = 25 - options.length
+        const displayRepos = filteredRepos.slice(0, Math.max(0, maxOtherRepos))
+
+        for (const r of displayRepos) {
+          options.push(new StringSelectMenuOptionBuilder().setLabel(r.name).setValue(r.name))
+        }
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId(`select-repo:${thread.id}`)
+          .setPlaceholder(threadConfig.messages.setup.repo_select_placeholder)
+          .addOptions(options)
+
+        const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select)
+        await thread.send({
+          content: threadConfig.messages.setup.configure_select_repo,
+          components: [row],
+        })
+        return
       } catch (err) {
-        logger.error('Failed to load connected repos for selection:', err)
+        logger.error('Failed to prepare repo selection:', err)
         await thread.send(threadConfig.messages.setup.load_repos_failed)
         return
       }
