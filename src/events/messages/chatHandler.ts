@@ -67,7 +67,7 @@ export async function processChatChannelMessage(
   const { authorized, silent } = await hasPermission(message.member, message.author, channel)
   if (!authorized) {
     if (!silent) {
-      await deliverWithReply(channel, message, 'reply_ping', {
+      await deliverWithReply(channel, message, channelConfig.reply_mode, {
         content: channelConfig.messages.errors.no_permission_session,
       })
     }
@@ -77,7 +77,7 @@ export async function processChatChannelMessage(
 
   const repoName = channelConfig.default_repo
   if (!repoName) {
-    await deliverWithReply(channel, message, 'reply_ping', {
+    await deliverWithReply(channel, message, channelConfig.reply_mode, {
       content: channelConfig.messages.setup.no_default_repo,
     })
     await updateReaction(message, 'failed')
@@ -99,7 +99,7 @@ export async function processChatChannelMessage(
     logger.error(`Failed to start chatbot session for channel ${channel.id}:`, err)
     stopTypingLoop(channel.id)
     await updateReaction(message, 'failed').catch(() => {})
-    await deliverWithReply(channel, message, 'reply_ping', {
+    await deliverWithReply(channel, message, channelConfig.reply_mode, {
       content: channelConfig.messages.session.start_failed,
     })
     return false

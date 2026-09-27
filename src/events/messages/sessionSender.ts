@@ -46,7 +46,7 @@ export async function sendToExistingSession(
   const { authorized, silent } = await hasPermission(message.member, message.author, channel)
   if (!authorized) {
     if (!silent) {
-      await deliverWithReply(channel, message, 'reply_ping', {
+      await deliverWithReply(channel, message, channelConfig.reply_mode, {
         content: channelConfig.messages.errors.no_permission_session,
       })
     }
@@ -142,7 +142,7 @@ export async function sendToExistingSession(
     logger.error(`Failed to send message to Jules for channel ${channel.id}:`, err)
     stopTypingLoop(channel.id)
     await updateReaction(message, 'failed').catch(() => {})
-    await deliverWithReply(channel, message, 'reply_ping', {
+    await deliverWithReply(channel, message, channelConfig.reply_mode, {
       content: channelConfig.messages.session.message_delivery_failed,
     })
     return false

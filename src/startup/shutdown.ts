@@ -10,6 +10,7 @@ import {
 import { stopHealthServer } from '../lib/health.js'
 import { stopHarnessServer } from '../harness/harnessServer.js'
 import type { StreamManager } from '../lib/streams/StreamManager.js'
+import { deliverWithReply } from '../lib/utils/replyDelivery.js'
 
 // Gracefully tear down on shutdown signals (pm2 reload/stop, Ctrl+C) so pending
 // status-message edits are dropped cleanly and the gateway/DB connections close
@@ -39,18 +40,26 @@ async function sendShutdownQueueNotice(snapshot: ActiveConversationQueueSnapshot
     await message.channel.send(chunk)
   }
 
+  const replyable = 'channelId' in message && message.channelId === message.channel.id ? message : null
   try {
-    await message.reply({ content: chunks[0], allowedMentions: { repliedUser: false } })
+    await deliverWithReply(message.channel as any, replyable, cfg.reply_mode, {
+      content: chunks[0],
+    })
   } catch (err) {
     logger.warn(
-      `[Shutdown] Could not reply to active queue message ${message.id}; sending in channel instead:`,
+      `[Shutdown] Could not deliver shutdown notice for active queue message ${message.id}:`,
       err,
     )
-    await sendInChannel(chunks[0])
+    return
   }
 
   for (const chunk of chunks.slice(1)) {
-    await sendInChannel(chunk)
+    try {
+      await sendInChannel(chunk)
+    } catch (err) {
+      logger.warn(`[Shutdown] Could not send notice continuation in channel:`, err)
+      break
+    }
   }
 }
 
