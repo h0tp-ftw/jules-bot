@@ -42,10 +42,11 @@ If the SQLite file is missing, `src/config.ts` auto-provisions it on boot via `n
 1. **ESM with explicit `.js` import extensions.** `tsconfig` uses `module`/`moduleResolution: Node16`
    and the package is `"type": "module"`. Every relative import must end in `.js` even though the file
    is `.ts` — e.g. `import { prisma } from '../config.js'`. Omitting it breaks build/runtime. Match the existing style.
-2. **`AGENTS.md` and `SOUL.md` are runtime config, not docs.** They are **gitignored** and read by
-   `src/config.ts` into `AGENT_PERSONALITY` / `SOUL_PERSONALITY`, then injected into *every* Jules session
-   prompt (`src/lib/jules/JulesClient.ts`). Do **not** put codebase/agent docs there — that's why this file
-   is `CLAUDE.md`. Edit the committed persona defaults in `templates/AGENTS.example.md` / `templates/SOUL.example.md`.
+2. **Jules persona files live in `prompts/` (`prompts/AGENTS.md` and `prompts/SOUL.md`).**
+   They are local configuration (gitignored `prompts/`) read by `src/config/personalities.ts` into
+   `AGENT_PERSONALITY` / `SOUL_PERSONALITY`, and injected into every Jules session prompt (`src/lib/jules/JulesClient.ts`).
+   Root `AGENTS.md` is standard codebase documentation for coding agents working on this repo.
+   Edit default persona templates in `templates/AGENTS.example.md` / `templates/SOUL.example.md`.
 3. **Resolve per-thread settings through `getEffectiveConfig(thread?, member?)`** (`src/config.ts`).
    Precedence: global YAML → parent-channel override → tag override (forum post's applied tags) →
    thread override → role override. Don't read `yamlConfig.*` directly when behavior should vary by

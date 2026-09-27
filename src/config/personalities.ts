@@ -3,38 +3,37 @@ import path from 'path'
 import { logger } from '../lib/utils/logger.js'
 import { isProfileActive, profileDir } from './profile.js'
 
-// Load Agent Personality Markdown
-const agentsExamplePath = path.resolve('templates/AGENTS.example.md')
-const agentsUserPath =
-  isProfileActive && profileDir ? path.join(profileDir, 'AGENTS.md') : path.resolve('AGENTS.md')
-let agentsContent = ''
+function resolvePersonalityFile(filename: string, exampleFilename: string): string {
+  const examplePath = path.resolve('templates', exampleFilename)
+  const candidatePaths: string[] = []
 
-try {
-  if (fs.existsSync(agentsUserPath)) {
-    agentsContent = fs.readFileSync(agentsUserPath, 'utf8')
-  } else if (fs.existsSync(agentsExamplePath)) {
-    agentsContent = fs.readFileSync(agentsExamplePath, 'utf8')
+  if (isProfileActive && profileDir) {
+    candidatePaths.push(path.join(profileDir, 'prompts', filename))
+    candidatePaths.push(path.join(profileDir, filename))
   }
-} catch (err) {
-  logger.error('Failed to load agent personality file:', err)
+  candidatePaths.push(path.resolve('prompts', filename))
+  candidatePaths.push(path.resolve(filename))
+
+  for (const candidate of candidatePaths) {
+    if (fs.existsSync(candidate)) {
+      try {
+        return fs.readFileSync(candidate, 'utf8')
+      } catch (err) {
+        logger.error(`Failed to read personality file at ${candidate}:`, err)
+      }
+    }
+  }
+
+  if (fs.existsSync(examplePath)) {
+    try {
+      return fs.readFileSync(examplePath, 'utf8')
+    } catch (err) {
+      logger.error(`Failed to read example personality file at ${examplePath}:`, err)
+    }
+  }
+
+  return ''
 }
 
-export const AGENT_PERSONALITY = agentsContent
-
-// Load Agent Soul Markdown
-const soulExamplePath = path.resolve('templates/SOUL.example.md')
-const soulUserPath =
-  isProfileActive && profileDir ? path.join(profileDir, 'SOUL.md') : path.resolve('SOUL.md')
-let soulContent = ''
-
-try {
-  if (fs.existsSync(soulUserPath)) {
-    soulContent = fs.readFileSync(soulUserPath, 'utf8')
-  } else if (fs.existsSync(soulExamplePath)) {
-    soulContent = fs.readFileSync(soulExamplePath, 'utf8')
-  }
-} catch (err) {
-  logger.error('Failed to load agent soul file:', err)
-}
-
-export const SOUL_PERSONALITY = soulContent
+export const AGENT_PERSONALITY = resolvePersonalityFile('AGENTS.md', 'AGENTS.example.md')
+export const SOUL_PERSONALITY = resolvePersonalityFile('SOUL.md', 'SOUL.example.md')

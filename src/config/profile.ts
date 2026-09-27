@@ -27,12 +27,18 @@ if (isProfileActive && profileDir) {
     fs.mkdirSync(profileBootstrapDir, { recursive: true })
   }
 
+  // Ensure prompts directory inside profile exists
+  const profilePromptsDir = path.join(profileDir, 'prompts')
+  if (!fs.existsSync(profilePromptsDir)) {
+    fs.mkdirSync(profilePromptsDir, { recursive: true })
+  }
+
   // Copy template files if they are missing
   const templatesToCopy = [
     { src: 'templates/.env.example', dest: '.env' },
     { src: 'templates/config.example.yaml', dest: 'config.yaml' },
-    { src: 'templates/AGENTS.example.md', dest: 'AGENTS.md' },
-    { src: 'templates/SOUL.example.md', dest: 'SOUL.md' },
+    { src: 'templates/AGENTS.example.md', dest: path.join('prompts', 'AGENTS.md') },
+    { src: 'templates/SOUL.example.md', dest: path.join('prompts', 'SOUL.md') },
   ]
 
   for (const { src, dest } of templatesToCopy) {

@@ -4,10 +4,10 @@ node_modules/
 # Compiled output
 dist/
 
-# Environment variables
+# Environment variables & Local configuration
 .env
 config.yaml
-AGENTS.md
+prompts/
 SOUL.md
 
 

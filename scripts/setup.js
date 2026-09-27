@@ -17,8 +17,8 @@ import { inviteUrl } from './lib/invite.js'
 
 const templateFiles = [
   { src: 'templates/config.example.yaml', dest: 'config.yaml' },
-  { src: 'templates/AGENTS.example.md', dest: 'AGENTS.md' },
-  { src: 'templates/SOUL.example.md', dest: 'SOUL.md' },
+  { src: 'templates/AGENTS.example.md', dest: 'prompts/AGENTS.md' },
+  { src: 'templates/SOUL.example.md', dest: 'prompts/SOUL.md' },
 ]
 
 const ENV_TEMPLATE = 'templates/.env.example'
@@ -128,6 +128,10 @@ function copyIfMissing(src, dest) {
     return
   }
   try {
+    const destDir = path.dirname(destPath)
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true })
+    }
     fs.copyFileSync(srcPath, destPath)
     console.log(`  ✨  Created ${dest}`)
   } catch (err) {
