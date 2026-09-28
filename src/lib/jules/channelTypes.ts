@@ -1,4 +1,4 @@
-import type { ThreadChannel, TextChannel } from 'discord.js'
+import type { ThreadChannel, TextChannel, DMChannel } from 'discord.js'
 
-// A Discord thread or text channel that can host a Jules session stream.
-export type JulesDiscordChannel = ThreadChannel | TextChannel
+// A Discord thread, text channel, or DM channel that can host a Jules session stream.
+export type JulesDiscordChannel = ThreadChannel | TextChannel | DMChannel

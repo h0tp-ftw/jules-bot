@@ -16,7 +16,7 @@
     "format:check": "prettier --check \"{src,scripts,test}/**/*.{ts,js}\" eslint.config.js",
     "harness": "tsx scripts/test-harness.ts",
     "harness:server": "tsx scripts/test-harness.ts --server",
-    "test": "node --import tsx --test test/harness.test.ts test/messageSplitter.test.ts test/emojis.test.ts test/attachments.test.ts test/strings.test.ts test/reply.test.ts test/sessionState.test.ts test/sessionOutcome.test.ts test/conversationQueue.test.ts test/channelRouting.test.ts test/streamManager.test.ts test/errors.test.ts test/invite.test.ts test/logger.test.ts test/permissions.test.ts test/config.test.ts test/configValidation.test.ts test/activityPollScheduler.test.ts test/newCommand.test.ts test/deliveryCursor.test.ts test/runJulesStream.test.ts test/reactionMarkers.test.ts test/replyDelivery.test.ts test/typingManager.test.ts test/turnTargets.test.ts"
+    "test": "node --import tsx --test test/harness.test.ts test/messageSplitter.test.ts test/emojis.test.ts test/attachments.test.ts test/strings.test.ts test/reply.test.ts test/sessionState.test.ts test/sessionOutcome.test.ts test/conversationQueue.test.ts test/channelRouting.test.ts test/streamManager.test.ts test/errors.test.ts test/invite.test.ts test/logger.test.ts test/permissions.test.ts test/config.test.ts test/configValidation.test.ts test/activityPollScheduler.test.ts test/newCommand.test.ts test/deliveryCursor.test.ts test/runJulesStream.test.ts test/reactionMarkers.test.ts test/replyDelivery.test.ts test/typingManager.test.ts test/turnTargets.test.ts test/dmSession.test.ts"
   },
   "keywords": [
     "discord",

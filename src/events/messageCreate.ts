@@ -1,14 +1,26 @@
-import { Message, Events, ThreadChannel, TextChannel, ChannelType } from 'discord.js'
+import { Message, Events, ThreadChannel, TextChannel, DMChannel, ChannelType } from 'discord.js'
 import { updateReaction } from '../lib/jules/orchestrator.js'
 import type { StreamManager } from '../lib/streams/StreamManager.js'
 import { enqueueConversationMessage } from '../lib/jules/ConversationQueue.js'
 import { resolveThreadRoutingContext, processThreadMessage } from './messages/threadHandler.js'
 import { resolveChatRoutingContext, processChatChannelMessage } from './messages/chatHandler.js'
+import { processDMMessage } from './messages/dmHandler.js'
 
 export default {
   name: Events.MessageCreate,
   async execute(message: Message, streamManager: StreamManager) {
     if (message.author.bot) return
+
+    if (message.channel.isDMBased()) {
+      const channel = message.channel as DMChannel
+      await enqueueConversationMessage(
+        channel.id,
+        message,
+        (turn) => processDMMessage(message, channel, streamManager, turn),
+        () => updateReaction(message, 'queued'),
+      )
+      return
+    }
 
     if (message.channel.isThread()) {
       const thread = message.channel as ThreadChannel

@@ -36,9 +36,13 @@ export async function rehydrateActiveStreams(client: any, streamManager: StreamM
     for (const session of sessions) {
       try {
         const channel = await client.channels.fetch(session.threadId)
-        if (!channel || (!channel.isThread() && channel.type !== ChannelType.GuildText)) continue
+        if (
+          !channel ||
+          (!channel.isThread() && channel.type !== ChannelType.GuildText && !channel.isDMBased())
+        )
+          continue
         const sessionChannel = channel as JulesDiscordChannel
-        if (!sessionChannel.isThread()) {
+        if (!sessionChannel.isThread() && !sessionChannel.isDMBased()) {
           const configuredChatChannelId =
             YAML_GUILDS[session.guildId]?.chat_channel_id ||
             guildConfigById.get(session.guildId)?.chatChannelId

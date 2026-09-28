@@ -7,6 +7,7 @@ import {
   Routes,
   Events,
   ActivityType,
+  Partials,
   PresenceStatusData,
 } from 'discord.js'
 import {
@@ -49,8 +50,10 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.DirectMessages,
     GatewayIntentBits.MessageContent,
   ],
+  partials: [Partials.Channel, Partials.Message],
 })
 
 const streamManager = new StreamManager(client)

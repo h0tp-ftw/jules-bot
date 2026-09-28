@@ -33,13 +33,17 @@ export interface CreateSessionOptions {
   title?: string
   thread?: any // Optional thread/channel context
   member?: any // Optional member context
+  omitPersonas?: boolean
 }
 
 export class JulesClient {
   static async createSession(options: CreateSessionOptions) {
     const threadConfig = getEffectiveConfig(options.thread, options.member)
 
-    let sessionPrompt = `${threadConfig.diagnostic_prompt}\n\nAgent Personality and Guidelines:\n${threadConfig.agents_personality}\n\nAgent Soul and Principles:\n${threadConfig.soul_personality}`
+    let sessionPrompt = threadConfig.diagnostic_prompt
+    if (!options.omitPersonas) {
+      sessionPrompt += `\n\nAgent Personality and Guidelines:\n${threadConfig.agents_personality}\n\nAgent Soul and Principles:\n${threadConfig.soul_personality}`
+    }
     if (threadConfig.bootstrap !== false) {
       const bootstrapContext = getBootstrapContext()
       if (bootstrapContext) {
