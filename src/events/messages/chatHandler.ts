@@ -15,6 +15,7 @@ import {
 import { sendToExistingSession, shouldIgnoreMessage } from './sessionSender.js'
 import { startTypingLoop, stopTypingLoop } from '../../lib/utils/typingManager.js'
 import { deliverWithReply } from '../../lib/utils/replyDelivery.js'
+import { createSystemEmbed } from '../../lib/utils/embeds.js'
 
 export type ChatRoutingContext = {
   dbDefaultRepo?: string
@@ -68,7 +69,12 @@ export async function processChatChannelMessage(
   if (!authorized) {
     if (!silent) {
       await deliverWithReply(channel, message, channelConfig.reply_mode, {
-        content: channelConfig.messages.errors.no_permission_session,
+        embeds: [
+          createSystemEmbed('error', {
+            title: '⚠️ Access Denied',
+            description: channelConfig.messages.errors.no_permission_session,
+          }),
+        ],
       })
     }
     await updateReaction(message, 'failed')
@@ -78,7 +84,12 @@ export async function processChatChannelMessage(
   const repoName = channelConfig.default_repo
   if (!repoName) {
     await deliverWithReply(channel, message, channelConfig.reply_mode, {
-      content: channelConfig.messages.setup.no_default_repo,
+      embeds: [
+        createSystemEmbed('error', {
+          title: '⚙️ Configuration Required',
+          description: channelConfig.messages.setup.no_default_repo,
+        }),
+      ],
     })
     await updateReaction(message, 'failed')
     return false

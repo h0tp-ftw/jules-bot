@@ -12,6 +12,7 @@ import { updateReaction } from './reactions.js'
 import { getActivityDate } from './deliveryCursor.js'
 import { scheduleNudgeForConversationTurn } from './nudges.js'
 import { runJulesStream } from './runJulesStream.js'
+import { createSystemEmbed } from '../utils/embeds.js'
 import {
   resolvePoolContext,
   consumePreWarmedSession,
@@ -28,7 +29,14 @@ export async function initializeJulesSession(
 ) {
   const starterMessage = await thread.fetchStarterMessage()
   if (!starterMessage || (!starterMessage.content && starterMessage.attachments.size === 0)) {
-    await thread.send(getEffectiveConfig(thread).messages.session.starter_message_unavailable)
+    await thread.send({
+      embeds: [
+        createSystemEmbed('warning', {
+          title: '⚠️ Starter Message Unavailable',
+          description: getEffectiveConfig(thread).messages.session.starter_message_unavailable,
+        }),
+      ],
+    })
     return
   }
 

@@ -3,6 +3,7 @@ import { getEffectiveConfig } from '../../config.js'
 import { t } from '../../strings.js'
 import { splitMessage } from '../utils/messageSplitter.js'
 import { deliverWithReply } from '../utils/replyDelivery.js'
+import { createSystemEmbed } from '../utils/embeds.js'
 import { scheduleConversationNudge } from './ConversationQueue.js'
 import { scheduleJulesRequest } from './JulesRequestCoordinator.js'
 import { wakeJulesStream } from './streamRegistry.js'
@@ -50,7 +51,12 @@ export function scheduleNudgeForConversationTurn(
       const replyable = turn.message.channelId === channel.id ? turn.message : null
       try {
         await deliverWithReply(channel, replyable, channelConfig.reply_mode, {
-          content: chunks[0],
+          embeds: [
+            createSystemEmbed('warning', {
+              title: '⏳ Inactivity Reminder',
+              description: content,
+            }),
+          ],
         })
       } catch (err) {
         logger.warn(`[Nudge] Could not post the Discord nudge notice in ${channel.id}:`, err)

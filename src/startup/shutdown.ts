@@ -40,7 +40,8 @@ async function sendShutdownQueueNotice(snapshot: ActiveConversationQueueSnapshot
     await message.channel.send(chunk)
   }
 
-  const replyable = 'channelId' in message && message.channelId === message.channel.id ? message : null
+  const replyable =
+    'channelId' in message && message.channelId === message.channel.id ? message : null
   try {
     await deliverWithReply(message.channel as any, replyable, cfg.reply_mode, {
       content: chunks[0],

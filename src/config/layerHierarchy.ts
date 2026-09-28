@@ -34,7 +34,10 @@ export function mergeOverrideLayer(acc: any, layer: any): any {
  * 3. Thread/Channel Override
  * 4. Member Role Overrides (accumulated in config order)
  */
-export function resolveOverrideLayers(thread?: any, member?: any): {
+export function resolveOverrideLayers(
+  thread?: any,
+  member?: any,
+): {
   parentOverride: ConfigLayer
   tagOverride: ConfigLayer
   threadOverride: ConfigLayer

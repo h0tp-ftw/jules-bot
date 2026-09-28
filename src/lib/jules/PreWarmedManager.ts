@@ -62,7 +62,10 @@ export async function preWarmSession(repoName: string, contextKey: string | null
         prompt: defaultPrompt,
         source: { github: repoName, baseBranch },
         title: contextKey
-          ? t(config.messages.prompts.prewarm_title_context, { repo: repoName, context: contextKey })
+          ? t(config.messages.prompts.prewarm_title_context, {
+              repo: repoName,
+              context: contextKey,
+            })
           : t(config.messages.prompts.prewarm_title, { repo: repoName }),
         requireApproval: true,
       }),

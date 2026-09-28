@@ -12,6 +12,7 @@ import { resolveMessageEmojis } from '../../utils/emojis.js'
 import { extractReactionMarkers } from '../../utils/reactionMarkers.js'
 import { splitMessage } from '../../utils/messageSplitter.js'
 import { deliverWithReply } from '../../utils/replyDelivery.js'
+import { createSystemEmbed } from '../../utils/embeds.js'
 import {
   julesRequestCoordinator as activityPollScheduler,
   scheduleJulesRequest,
@@ -55,12 +56,17 @@ export async function handlePlanGenerated(
       ? threadConfig.messages.prompts.chatbot_mode_plan_feedback
       : autoReject.message || threadConfig.messages.prompts.auto_reject_default
     if (!ctx.chatbotMode) {
-      await ctx.thread.send(
-        t(threadConfig.messages.plan.auto_rejected_notice, {
-          emoji: threadConfig.messages.misc.auto_reject_notice_emoji || '🤖',
-          feedback,
-        }),
-      )
+      await ctx.thread.send({
+        embeds: [
+          createSystemEmbed('info', {
+            title: '🤖 Plan Auto-Rejected',
+            description: t(threadConfig.messages.plan.auto_rejected_notice, {
+              emoji: threadConfig.messages.misc.auto_reject_notice_emoji || '🤖',
+              feedback,
+            }),
+          }),
+        ],
+      })
     }
     await scheduleJulesRequest(() => ctx.session.send(feedback))
     activityPollScheduler.markActive(ctx.thread.id)
@@ -88,7 +94,7 @@ export async function handlePlanGenerated(
       }),
     )
     .setDescription(stepsText.slice(0, 4000) || threadConfig.messages.plan.embed_no_details)
-    .setColor(0x00ae86)
+    .setColor(0x5865f2)
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
@@ -221,7 +227,12 @@ export async function handleSessionCompleted(
     for (let i = 0; i < splits.length; i++) {
       if (i === 0) {
         await deliverWithReply(ctx.thread, replyable, threadConfig.reply_mode, {
-          content: splits[i],
+          embeds: [
+            createSystemEmbed('success', {
+              title: '✅ Session Completed',
+              description: splits[i],
+            }),
+          ],
         })
       } else {
         await ctx.thread.send(splits[i])

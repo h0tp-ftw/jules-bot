@@ -129,5 +129,3 @@ test('templates/messages.default.yaml matches DEFAULT_MESSAGES exactly', async (
   const parsed = parse(fs.readFileSync(yamlPath, 'utf8'))
   assert.deepEqual(parsed, DEFAULT_MESSAGES)
 })
-
-

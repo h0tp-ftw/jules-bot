@@ -19,6 +19,7 @@ import { startTypingLoop, stopTypingLoop } from '../../lib/utils/typingManager.j
 import { deliverWithReply } from '../../lib/utils/replyDelivery.js'
 import { formatAttachmentMetadata } from '../../lib/utils/attachments.js'
 import { buildReplyAwarePrompt } from '../../lib/utils/reply.js'
+import { createSystemEmbed } from '../../lib/utils/embeds.js'
 
 export async function processDMMessage(
   message: Message,
@@ -50,7 +51,12 @@ export async function processDMMessage(
   if (!authorized) {
     if (!silent) {
       await deliverWithReply(channel, message, channelConfig.reply_mode, {
-        content: channelConfig.messages.errors.no_permission_session,
+        embeds: [
+          createSystemEmbed('error', {
+            title: '⚠️ Access Denied',
+            description: channelConfig.messages.errors.no_permission_session,
+          }),
+        ],
       })
     }
     await updateReaction(message, 'failed')
@@ -129,7 +135,12 @@ export async function processDMMessage(
     stopTypingLoop(channel.id)
     await updateReaction(message, 'failed').catch(() => {})
     await deliverWithReply(channel, message, channelConfig.reply_mode, {
-      content: channelConfig.messages.session.message_delivery_failed,
+      embeds: [
+        createSystemEmbed('error', {
+          title: '❌ Delivery Failed',
+          description: channelConfig.messages.session.message_delivery_failed,
+        }),
+      ],
     })
     return false
   }

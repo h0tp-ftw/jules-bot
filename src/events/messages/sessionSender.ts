@@ -18,6 +18,7 @@ import { hasPermission } from '../../lib/utils/permissions.js'
 import { markConversationTurnDispatched } from '../../lib/jules/ConversationQueue.js'
 import { startTypingLoop, stopTypingLoop } from '../../lib/utils/typingManager.js'
 import { deliverWithReply } from '../../lib/utils/replyDelivery.js'
+import { createSystemEmbed } from '../../lib/utils/embeds.js'
 
 export function shouldIgnoreMessage(
   message: Message,
@@ -47,7 +48,12 @@ export async function sendToExistingSession(
   if (!authorized) {
     if (!silent) {
       await deliverWithReply(channel, message, channelConfig.reply_mode, {
-        content: channelConfig.messages.errors.no_permission_session,
+        embeds: [
+          createSystemEmbed('error', {
+            title: '⚠️ Access Denied',
+            description: channelConfig.messages.errors.no_permission_session,
+          }),
+        ],
       })
     }
     await updateReaction(message, 'failed')
@@ -143,7 +149,12 @@ export async function sendToExistingSession(
     stopTypingLoop(channel.id)
     await updateReaction(message, 'failed').catch(() => {})
     await deliverWithReply(channel, message, channelConfig.reply_mode, {
-      content: channelConfig.messages.session.message_delivery_failed,
+      embeds: [
+        createSystemEmbed('error', {
+          title: '❌ Delivery Failed',
+          description: channelConfig.messages.session.message_delivery_failed,
+        }),
+      ],
     })
     return false
   }

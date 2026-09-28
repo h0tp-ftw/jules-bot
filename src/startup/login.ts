@@ -41,11 +41,7 @@ function getSessionWaitTime(msg: string): number {
  * Delay schedule: 5 s → 10 s → 20 s → … capped at 120 s.
  * Non-network errors are rethrown immediately so the caller can exit cleanly.
  */
-export async function loginWithRetry(
-  client: Client,
-  token: string,
-  attempt = 0,
-): Promise<void> {
+export async function loginWithRetry(client: Client, token: string, attempt = 0): Promise<void> {
   try {
     await client.login(token)
   } catch (err: unknown) {

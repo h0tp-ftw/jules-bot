@@ -181,9 +181,9 @@ export function getEffectiveConfig(
   // Resolve user-facing strings
   const hasCustomMessages = Boolean(
     parentOverride.messages ||
-      tagOverride.messages ||
-      threadOverride.messages ||
-      roleOverride.messages,
+    tagOverride.messages ||
+    threadOverride.messages ||
+    roleOverride.messages,
   )
 
   const resolvedMessages: Messages = hasCustomMessages

@@ -10,8 +10,7 @@ export const MESSAGES: Messages = deepMergeMessages(
 ) as Messages
 
 // Diagnostic Prompt for Google Jules
-export const DIAGNOSTIC_PROMPT =
-  yamlConfig.diagnostic_prompt || MESSAGES.prompts.diagnostic_default
+export const DIAGNOSTIC_PROMPT = yamlConfig.diagnostic_prompt || MESSAGES.prompts.diagnostic_default
 
 export const BOT_EMOJI =
   typeof yamlConfig.bot_emoji === 'string' ? yamlConfig.bot_emoji : MESSAGES.misc.bot_emoji

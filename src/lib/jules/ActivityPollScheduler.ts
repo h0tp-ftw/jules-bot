@@ -126,9 +126,7 @@ export class ActivityPollScheduler {
     while (true) {
       const requestDueAt = Math.max(this.globalRateLimitUntil, this.nextRequestAt)
       if (requestDueAt > this.now()) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.max(1, requestDueAt - this.now())),
-        )
+        await new Promise((resolve) => setTimeout(resolve, Math.max(1, requestDueAt - this.now())))
       }
 
       await this.acquirePermit()

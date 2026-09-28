@@ -166,8 +166,10 @@ export const DEFAULT_MESSAGES = {
     new_description: 'Start a fresh conversation session in this channel',
     new_prompt_option_description: 'Optional prompt to immediately begin the new conversation with',
     new_invalid_channel: '❌ This command can only be used in a text channel or thread.',
-    new_no_repo: '❌ **No repository configured for this channel.** Please link a repository first.',
-    new_session_reset_ready: '🔄 **Previous conversation ended.** Ready for a new conversation—send a message to begin!',
+    new_no_repo:
+      '❌ **No repository configured for this channel.** Please link a repository first.',
+    new_session_reset_ready:
+      '🔄 **Previous conversation ended.** Ready for a new conversation—send a message to begin!',
     new_session_initializing: '{emoji} **Starting a new session** for `{repo}` on `{branch}`...',
     new_session_failed: '❌ **Failed to start new conversation session.**',
   },

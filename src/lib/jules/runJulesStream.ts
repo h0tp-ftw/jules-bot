@@ -19,6 +19,7 @@ import {
 import { getFreshSessionInfo } from './sessionInfo.js'
 import type { JulesActivity, JulesSession } from './julesTypes.js'
 import type { JulesDiscordChannel } from './channelTypes.js'
+import { createSystemEmbed } from '../utils/embeds.js'
 import { createTypingController } from './stream/typingIndicator.js'
 import { createStreamTurnTarget } from './stream/streamTurnTarget.js'
 import {
@@ -207,7 +208,14 @@ export async function runJulesStream(
         const lastHuman = await turnTarget.getTarget()
         const threadConfig = getEffectiveConfig(thread, lastHuman?.member)
         const sessionUrl = info.url || 'https://jules.google'
-        await thread.send(t(threadConfig.messages.session.paused_notice, { url: sessionUrl }))
+        await thread.send({
+          embeds: [
+            createSystemEmbed('warning', {
+              title: '⏸️ Session Paused',
+              description: t(threadConfig.messages.session.paused_notice, { url: sessionUrl }),
+            }),
+          ],
+        })
         pauseNoticeSent = true
       }
       if (

@@ -1,17 +1,9 @@
 import { logger } from '../lib/utils/logger.js'
-import {
-  ChatInputCommandInteraction,
-  SlashCommandBuilder,
-  ChannelType,
-} from 'discord.js'
+import { ChatInputCommandInteraction, SlashCommandBuilder, ChannelType } from 'discord.js'
 import { prisma, getEffectiveConfig, MESSAGES, YAML_GUILDS } from '../config.js'
 import { t } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import {
-  runJulesStream,
-  activeStreams,
-  scheduleJulesRequest,
-} from '../lib/jules/orchestrator.js'
+import { runJulesStream, activeStreams, scheduleJulesRequest } from '../lib/jules/orchestrator.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 
 export default {
