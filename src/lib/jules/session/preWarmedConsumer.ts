@@ -148,7 +148,7 @@ async function replayHistoryActivities(session: any, thread: ThreadChannel, thre
           ? extractReactionMarkers(rawMessage).text
           : rawMessage
         if (body) {
-          const resolved = resolveMessageEmojis(thread.client, body)
+          const resolved = resolveMessageEmojis(thread.client, body, threadConfig.emojis)
           const splits = splitMessage(resolved, 2000)
           for (const chunk of splits) {
             await thread.send(chunk)

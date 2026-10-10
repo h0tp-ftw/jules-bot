@@ -54,6 +54,11 @@ export const REACTIONS: Record<string, string> = {
   ...(yamlConfig.reactions || {}),
 }
 
+// Custom Emojis dictionary mapping (shortcode -> full tag/id)
+export const EMOJIS: Record<string, string> = {
+  ...(yamlConfig.emojis || {}),
+}
+
 // Guild override mappings from YAML
 export const YAML_GUILDS: Record<
   string,

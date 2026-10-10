@@ -164,7 +164,7 @@ export async function handleAgentMessaged(
       : { text: rawMessage, emojis: [] as string[] }
 
     if (bodyText) {
-      const resolved = resolveMessageEmojis(ctx.thread.client, bodyText)
+      const resolved = resolveMessageEmojis(ctx.thread.client, bodyText, threadConfig.emojis)
       const splits = splitMessage(resolved, 2000)
       const replyable = target?.channelId === ctx.thread.id ? target : null
       for (let i = 0; i < splits.length; i++) {

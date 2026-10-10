@@ -15,6 +15,7 @@ export function mergeOverrideLayer(acc: any, layer: any): any {
     ...layer,
     access_control: { ...(acc.access_control || {}), ...(layer.access_control || {}) },
     reactions: { ...(acc.reactions || {}), ...(layer.reactions || {}) },
+    emojis: { ...(acc.emojis || {}), ...(layer.emojis || {}) },
     auto_reject: { ...(acc.auto_reject || {}), ...(layer.auto_reject || {}) },
     jules_reactions: { ...(acc.jules_reactions || {}), ...(layer.jules_reactions || {}) },
     nudge: { ...(acc.nudge || {}), ...(layer.nudge || {}) },

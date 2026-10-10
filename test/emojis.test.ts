@@ -48,3 +48,25 @@ test('leaves :shortcode: untouched when no custom emoji matches (unicode aliases
 test('keeps the original tag when the referenced emoji is not cached', () => {
   assert.equal(resolveMessageEmojis(mockClient([]), '<:unknown:123>'), '<:unknown:123>')
 })
+
+test('resolves shortcodes using custom mapping dictionary when provided', () => {
+  const mapping = {
+    wave: '<a:wave:1511236496978350260>',
+    surprised: '<:surprised:1511236476615266324>',
+  }
+  assert.equal(
+    resolveMessageEmojis(null, 'Hello :wave: look at this :surprised:!', mapping),
+    'Hello <a:wave:1511236496978350260> look at this <:surprised:1511236476615266324>!',
+  )
+})
+
+test('custom mapping overrides or normalizes full tags with wrong animated flag', () => {
+  const mapping = {
+    wave: '<a:wave:1511236496978350260>',
+  }
+  // If agent wrote static <:wave:111> instead of <a:wave:1511236496978350260>
+  assert.equal(
+    resolveMessageEmojis(null, 'Hello <:wave:111>', mapping),
+    'Hello <a:wave:1511236496978350260>',
+  )
+})

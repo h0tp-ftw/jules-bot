@@ -15,6 +15,7 @@ import {
   BOT_EMOJI,
   YAML_GUILDS,
   MESSAGES,
+  EMOJIS,
 } from './constants.js'
 import { AGENT_PERSONALITY, SOUL_PERSONALITY } from './personalities.js'
 import { resolveOverrideLayers, type ConfigLayer } from './layerHierarchy.js'
@@ -109,6 +110,7 @@ export function getEffectiveConfig(
     silent: boolean
   }
   reactions: Record<string, string>
+  emojis: Record<string, string>
   auto_reject: {
     enabled: boolean
     message: string
@@ -152,6 +154,10 @@ export function getEffectiveConfig(
   const resolvedReactions = layers.reduce<Record<string, string>>(
     (acc, l) => ({ ...acc, ...(l.reactions || {}) }),
     { ...REACTIONS },
+  )
+  const resolvedEmojis = layers.reduce<Record<string, string>>(
+    (acc, l) => ({ ...acc, ...(l.emojis || {}) }),
+    { ...EMOJIS },
   )
   const resolvedJulesReactions = layers.reduce<typeof JULES_REACTIONS>(
     (acc, l) => ({ ...acc, ...(l.jules_reactions || {}) }),
@@ -200,6 +206,7 @@ export function getEffectiveConfig(
     diagnostic_prompt: resolveScalar(layers, 'diagnostic_prompt', DIAGNOSTIC_PROMPT),
     access_control: resolvedAccessControl,
     reactions: resolvedReactions,
+    emojis: resolvedEmojis,
     auto_reject: resolvedAutoReject,
     jules_reactions: resolvedJulesReactions,
     nudge: resolvedNudge,
