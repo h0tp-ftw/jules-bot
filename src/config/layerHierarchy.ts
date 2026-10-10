@@ -88,9 +88,13 @@ export function resolveOverrideLayers(
     const rolesConfig = yamlConfig.roles || {}
     for (const [roleKey, roleVal] of Object.entries(rolesConfig)) {
       let hasRole = false
-      if ('cache' in member.roles) {
-        hasRole =
-          member.roles.cache.has(roleKey) || member.roles.cache.some((r: any) => r.name === roleKey)
+      if ('cache' in member.roles && member.roles.cache) {
+        const cache = member.roles.cache
+        if (typeof cache.some === 'function') {
+          hasRole = cache.has(roleKey) || cache.some((r: any) => r.name === roleKey)
+        } else if (typeof cache.values === 'function') {
+          hasRole = cache.has?.(roleKey) || Array.from(cache.values()).some((r: any) => r?.name === roleKey)
+        }
       } else if (Array.isArray(member.roles)) {
         hasRole = member.roles.includes(roleKey)
       }

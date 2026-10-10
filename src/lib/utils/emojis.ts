@@ -10,9 +10,9 @@ export function resolveMessageEmojis(client: Client, text: string): string {
 
   // 1. Resolve full custom emoji formats: <a?:name:id>
   let resolved = text.replace(/<a?:([a-zA-Z0-9_]+):([0-9]+)>/g, (match, name, _id) => {
-    const cachedEmoji = client.emojis.cache.find(
-      (e) => e.name?.toLowerCase() === name.toLowerCase(),
-    )
+    const cachedEmoji = typeof client?.emojis?.cache?.find === 'function'
+      ? client.emojis.cache.find((e) => e.name?.toLowerCase() === name.toLowerCase())
+      : undefined
     if (cachedEmoji) {
       const animated = cachedEmoji.animated ? 'a' : ''
       return `<${animated}:${cachedEmoji.name}:${cachedEmoji.id}>`
@@ -24,9 +24,9 @@ export function resolveMessageEmojis(client: Client, text: string): string {
   // The `(?!\d)` lookahead prevents re-matching the ":name:" inside an already-resolved
   // <:name:id> tag (where the closing colon is followed by the numeric id).
   resolved = resolved.replace(/:([a-zA-Z0-9_]+):(?!\d)/g, (match, name) => {
-    const cachedEmoji = client.emojis.cache.find(
-      (e) => e.name?.toLowerCase() === name.toLowerCase(),
-    )
+    const cachedEmoji = typeof client?.emojis?.cache?.find === 'function'
+      ? client.emojis.cache.find((e) => e.name?.toLowerCase() === name.toLowerCase())
+      : undefined
     if (cachedEmoji) {
       const animated = cachedEmoji.animated ? 'a' : ''
       return `<${animated}:${cachedEmoji.name}:${cachedEmoji.id}>`
