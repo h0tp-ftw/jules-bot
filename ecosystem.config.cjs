@@ -15,10 +15,14 @@ module.exports = {
       script: 'dist/index.js',
       exec_mode: 'fork',
       instances: 1,
-      // Leave the process stopped after a fatal exit. PM2 keeps stdout/stderr
-      // logs, so the failure remains inspectable instead of entering a restart
-      // loop that can exhaust Discord gateway sessions.
-      autorestart: false,
+      // Autorestart on unexpected crashes (with delays and limits to avoid thrashing
+      // and protect Discord gateway sessions), while allowing PM2 to restart before OOM.
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+      restart_delay: 5000,
+      max_memory_restart: '2500M',
+      node_args: '--max-old-space-size=3072',
       // Prefix PM2 log lines with timestamps so the first failure can be tied
       // to Discord/Jules activity without relying on surrounding daemon logs.
       time: true,

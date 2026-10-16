@@ -1,4 +1,5 @@
 import { julesRequestCoordinator as activityPollScheduler } from './JulesRequestCoordinator.js'
+import { evictSessionStorage } from './JulesClient.js'
 
 // Module-level per-thread state shared by the session stream lifecycle.
 export const activeStreams = new Set<string>()
@@ -19,5 +20,8 @@ export function teardownStreamState(threadId: string, sessionId?: string) {
   activityPollScheduler.remove(threadId)
   activeStreams.delete(threadId)
   processedActivityIdsMap.delete(threadId)
-  if (sessionId) autoRejectedSessions.delete(sessionId)
+  if (sessionId) {
+    autoRejectedSessions.delete(sessionId)
+    evictSessionStorage(sessionId)
+  }
 }
