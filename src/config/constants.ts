@@ -54,8 +54,22 @@ export const REACTIONS: Record<string, string> = {
   ...(yamlConfig.reactions || {}),
 }
 
+// Default Pikachu custom emojis mapping for shortcodes
+export const DEFAULT_EMOJIS: Record<string, string> = {
+  wave: '<a:wave:1511236496978350260>',
+  mine: '<a:mine:1511236461842923530>',
+  surprised: '<:surprised:1511236476615266324>',
+  lurk: '<:lurk:1511236473901416500>',
+  pleading: '<:pleading:1511236479777636402>',
+  facepalm: '<:facepalm:1511236484236054548>',
+  detective: '<:detective:1511236465252630618>',
+  dead: '<:dead:1511236471288496248>',
+  coffee: '<:coffee:1511236468226523287>',
+}
+
 // Custom Emojis dictionary mapping (shortcode -> full tag/id)
 export const EMOJIS: Record<string, string> = {
+  ...DEFAULT_EMOJIS,
   ...(yamlConfig.emojis || {}),
 }
 
