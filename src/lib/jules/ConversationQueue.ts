@@ -15,6 +15,7 @@ export interface ConversationTurn {
   dispatchedAt?: number
   respondedAt?: number
   nudgedAt?: number
+  nudgeCount?: number
   completedAt?: number
   completionReason?: ConversationTurnCompletionReason
 }
@@ -207,30 +208,50 @@ export function scheduleConversationNudge(
     return false
   }
   if (turnId && active.turn.id !== turnId) return false
-  if (!Number.isFinite(delayMs) || delayMs <= 0 || active.nudgeTimer || active.turn.nudgedAt) {
+  if (!Number.isFinite(delayMs) || delayMs <= 0 || active.nudgeTimer) {
     return false
   }
 
   const expectedTurnId = active.turn.id
-  active.nudgeTimer = setTimeout(() => {
-    active.nudgeTimer = undefined
-    const current = channelQueues.get(channelId)?.active
-    if (
-      current !== active ||
-      current.turn.id !== expectedTurnId ||
-      current.turn.respondedAt ||
-      current.turn.completedAt ||
-      current.turn.nudgedAt
-    ) {
-      return
-    }
+  const armNudgeTimer = () => {
+    active.nudgeTimer = setTimeout(() => {
+      active.nudgeTimer = undefined
+      const current = channelQueues.get(channelId)?.active
+      if (
+        current !== active ||
+        current.turn.id !== expectedTurnId ||
+        current.turn.respondedAt ||
+        current.turn.completedAt
+      ) {
+        return
+      }
 
-    current.turn.nudgedAt = Date.now()
-    logger.info(`[ConversationQueue] Nudging unanswered turn ${current.turn.id}`)
-    void sendNudge(current.turn).catch((err) => {
-      logger.warn(`[ConversationQueue] Failed to nudge turn ${current.turn.id}:`, err)
-    })
-  }, delayMs)
+      current.turn.nudgedAt = Date.now()
+      current.turn.nudgeCount = (current.turn.nudgeCount || 0) + 1
+      logger.info(
+        `[ConversationQueue] Nudging unanswered turn ${current.turn.id} (nudge #${current.turn.nudgeCount})`,
+      )
+      void sendNudge(current.turn)
+        .catch((err) => {
+          logger.warn(`[ConversationQueue] Failed to nudge turn ${current.turn.id}:`, err)
+        })
+        .finally(() => {
+          // Re-arm for subsequent interval if turn is still unanswered and active
+          const check = channelQueues.get(channelId)?.active
+          if (
+            check === active &&
+            check.turn.id === expectedTurnId &&
+            !check.turn.respondedAt &&
+            !check.turn.completedAt &&
+            !check.nudgeTimer
+          ) {
+            armNudgeTimer()
+          }
+        })
+    }, delayMs)
+  }
+
+  armNudgeTimer()
 
   logger.debug(`[ConversationQueue] Scheduled nudge for turn ${active.turn.id} in ${delayMs}ms`)
   return true

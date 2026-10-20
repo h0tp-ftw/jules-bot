@@ -42,8 +42,9 @@ export function scheduleNudgeForConversationTurn(
 
       if (!channelConfig.nudge.notify_discord) return
 
+      const totalMinutes = channelConfig.nudge.after_minutes * (turn.nudgeCount || 1)
       const content = t(discordNotice, {
-        delay: formatNudgeDelay(channelConfig.nudge.after_minutes, channelConfig.messages),
+        delay: formatNudgeDelay(totalMinutes, channelConfig.messages),
       })
       const chunks = splitMessage(content, 2000)
       if (chunks.length === 0) return

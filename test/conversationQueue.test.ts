@@ -166,7 +166,7 @@ test('releases a turn after its first agent response', async () => {
   assert.equal(getConversationQueueDepth(channelId), 0)
 })
 
-test('sends one nudge when the active turn remains unanswered', async () => {
+test('sends recurring nudges when the active turn remains unanswered', async () => {
   const channelId = 'queue-nudge'
   let turnId = ''
   let nudges = 0
@@ -180,7 +180,7 @@ test('sends one nudge when the active turn remains unanswered', async () => {
       assert.equal(
         scheduleConversationNudge(
           channelId,
-          10,
+          15,
           async () => {
             nudges++
           },
@@ -192,11 +192,12 @@ test('sends one nudge when the active turn remains unanswered', async () => {
     },
   )
 
-  await sleep(30)
-  assert.equal(nudges, 1)
+  await sleep(40)
+  assert.ok(nudges >= 2, `Expected at least 2 nudges, got ${nudges}`)
   assert.ok(getActiveConversationTurn(channelId)?.nudgedAt)
+  assert.ok((getActiveConversationTurn(channelId)?.nudgeCount ?? 0) >= 2)
   assert.equal(
-    scheduleConversationNudge(channelId, 10, async () => {}, turnId),
+    scheduleConversationNudge(channelId, 15, async () => {}, turnId),
     false,
   )
 
