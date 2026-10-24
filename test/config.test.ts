@@ -130,6 +130,8 @@ test('nudge defaults off and merges thread and role settings', () => {
   assert.deepEqual(getEffectiveConfig({ id: 'nudge-thread' }, memberWithRole('NudgeRole')).nudge, {
     enabled: true,
     after_minutes: 1,
+    max_nudges: 3,
+    auto_reset: true,
     notify_discord: true,
     message: 'role prompt',
     discord_message: 'thread notice',

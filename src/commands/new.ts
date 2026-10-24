@@ -3,7 +3,8 @@ import { ChatInputCommandInteraction, SlashCommandBuilder, ChannelType } from 'd
 import { prisma, getEffectiveConfig, MESSAGES, YAML_GUILDS } from '../config.js'
 import { t } from '../strings.js'
 import { JulesClient } from '../lib/jules/JulesClient.js'
-import { runJulesStream, activeStreams, scheduleJulesRequest } from '../lib/jules/orchestrator.js'
+import { runJulesStream, activeStreams, scheduleJulesRequest, teardownStreamState } from '../lib/jules/orchestrator.js'
+import { clearConversationQueue } from '../lib/jules/ConversationQueue.js'
 import { StreamManager } from '../lib/streams/StreamManager.js'
 
 export default {
@@ -33,13 +34,15 @@ export default {
 
     const initialPrompt = interaction.options.getString('prompt')?.trim()
 
-    // 1. Teardown existing session
+    // 1. Teardown existing session & clear stuck conversation queues
+    clearConversationQueue(channel.id, 'cleared')
+
     const existingSession = await prisma.debugSession.findUnique({
       where: { threadId: channel.id },
     })
 
     if (existingSession) {
-      activeStreams.delete(channel.id)
+      teardownStreamState(channel.id, existingSession.julesSessionId)
       await prisma.debugSession.delete({
         where: { threadId: channel.id },
       })

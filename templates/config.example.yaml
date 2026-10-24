@@ -66,6 +66,8 @@ jules_reactions:
 nudge:
   enabled: false
   after_minutes: 5
+  max_nudges: 3
+  auto_reset: true
   notify_discord: true
   # Optional direct text overrides. When omitted, the defaults come from
   # messages.prompts.response_nudge and messages.session.nudge_sent.

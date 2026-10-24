@@ -86,6 +86,11 @@ function resolveNudge(layers: ConfigLayer[]) {
       typeof raw.after_minutes === 'number' && raw.after_minutes > 0
         ? raw.after_minutes
         : NUDGE.after_minutes,
+    max_nudges:
+      typeof raw.max_nudges === 'number' && raw.max_nudges > 0
+        ? raw.max_nudges
+        : NUDGE.max_nudges,
+    auto_reset: typeof raw.auto_reset === 'boolean' ? raw.auto_reset : NUDGE.auto_reset,
     notify_discord:
       typeof raw.notify_discord === 'boolean' ? raw.notify_discord : NUDGE.notify_discord,
     message: typeof raw.message === 'string' && raw.message.trim() ? raw.message : undefined,
@@ -121,6 +126,8 @@ export function getEffectiveConfig(
   nudge: {
     enabled: boolean
     after_minutes: number
+    max_nudges: number
+    auto_reset: boolean
     notify_discord: boolean
     message?: string
     discord_message?: string

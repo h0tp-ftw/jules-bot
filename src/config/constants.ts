@@ -110,6 +110,9 @@ export const NUDGE = {
   enabled: typeof nudge.enabled === 'boolean' ? nudge.enabled : false,
   after_minutes:
     typeof nudge.after_minutes === 'number' && nudge.after_minutes > 0 ? nudge.after_minutes : 5,
+  max_nudges:
+    typeof nudge.max_nudges === 'number' && nudge.max_nudges > 0 ? nudge.max_nudges : 3,
+  auto_reset: typeof nudge.auto_reset === 'boolean' ? nudge.auto_reset : true,
   notify_discord: typeof nudge.notify_discord === 'boolean' ? nudge.notify_discord : true,
   message: typeof nudge.message === 'string' && nudge.message.trim() ? nudge.message : undefined,
   discord_message:

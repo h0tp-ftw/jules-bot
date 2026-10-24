@@ -1,12 +1,12 @@
 import { logger } from '../utils/logger.js'
-import { getEffectiveConfig } from '../../config.js'
+import { getEffectiveConfig, prisma } from '../../config.js'
 import { t } from '../../strings.js'
 import { splitMessage } from '../utils/messageSplitter.js'
 import { deliverWithReply } from '../utils/replyDelivery.js'
 import { createSystemEmbed } from '../utils/embeds.js'
-import { scheduleConversationNudge } from './ConversationQueue.js'
+import { scheduleConversationNudge, clearConversationQueue } from './ConversationQueue.js'
 import { scheduleJulesRequest } from './JulesRequestCoordinator.js'
-import { wakeJulesStream } from './streamRegistry.js'
+import { wakeJulesStream, teardownStreamState } from './streamRegistry.js'
 import type { JulesDiscordChannel } from './channelTypes.js'
 
 function formatNudgeDelay(minutes: number, messages: any): string {
@@ -34,6 +34,52 @@ export function scheduleNudgeForConversationTurn(
     channel.id,
     delayMs,
     async (turn) => {
+      const currentNudgeCount = turn.nudgeCount || 1
+      const maxNudges = channelConfig.nudge.max_nudges || 3
+      const shouldAutoReset = channelConfig.nudge.auto_reset && currentNudgeCount >= maxNudges
+
+      if (shouldAutoReset) {
+        const totalMinutes = channelConfig.nudge.after_minutes * currentNudgeCount
+        const delayStr = formatNudgeDelay(totalMinutes, channelConfig.messages)
+        logger.warn(
+          `[Nudge] Reached max inactivity nudges (${currentNudgeCount}/${maxNudges}) for channel ${channel.id}. Resetting session and clearing queues.`,
+        )
+
+        // 1. Teardown stream and delete session from DB
+        teardownStreamState(channel.id, session.id)
+        try {
+          await prisma.debugSession.delete({
+            where: { threadId: channel.id },
+          })
+        } catch (err) {
+          logger.debug(`[Nudge] DebugSession for ${channel.id} was already removed:`, err)
+        }
+
+        // 2. Clear conversation queue (cancels timers, unblocks waiters, discards pending messages)
+        clearConversationQueue(channel.id, 'cleared')
+
+        // 3. Post notification to Discord
+        if (channelConfig.nudge.notify_discord) {
+          const resetNotice = t(channelConfig.messages.session.inactivity_reset_notice, {
+            delay: delayStr,
+          })
+          const replyable = turn.message.channelId === channel.id ? turn.message : null
+          try {
+            await deliverWithReply(channel, replyable, channelConfig.reply_mode, {
+              embeds: [
+                createSystemEmbed('error', {
+                  title: '⏳ Session Timed Out',
+                  description: resetNotice,
+                }),
+              ],
+            })
+          } catch (err) {
+            logger.warn(`[Nudge] Could not post inactivity reset notice in ${channel.id}:`, err)
+          }
+        }
+        return
+      }
+
       logger.info(
         `[Nudge] Sending response reminder for Discord message ${turn.message.id} to Jules session ${session.id}`,
       )
@@ -42,7 +88,7 @@ export function scheduleNudgeForConversationTurn(
 
       if (!channelConfig.nudge.notify_discord) return
 
-      const totalMinutes = channelConfig.nudge.after_minutes * (turn.nudgeCount || 1)
+      const totalMinutes = channelConfig.nudge.after_minutes * currentNudgeCount
       const content = t(discordNotice, {
         delay: formatNudgeDelay(totalMinutes, channelConfig.messages),
       })

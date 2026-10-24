@@ -18,6 +18,7 @@ export {
   autoRejectedSessions,
   processedActivityIdsMap,
   wakeJulesStream,
+  teardownStreamState,
 } from './streamRegistry.js'
 export { getLastHumanMessage } from './discordHistory.js'
 export { updateReaction, applyJulesReactions } from './reactions.js'

@@ -48,6 +48,8 @@ export const DEFAULT_MESSAGES = {
     paused_notice:
       '⏸️ **Jules has paused this session.**\nAn admin or repository collaborator needs to visit the [Jules UI]({url}) and click **Resume session** to continue.',
     nudge_sent: '🔔 **Jules had not replied after {delay}, so I sent a reminder.**',
+    inactivity_reset_notice:
+      '⏳ **Session timed out after {delay} of inactivity without a response from Jules.**\nThe session and pending queued messages have been cleared. Send a message to start fresh!',
     nudge_delay_minute: '{minutes} minute',
     nudge_delay_minutes: '{minutes} minutes',
     shutdown_queue_active:

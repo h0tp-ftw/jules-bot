@@ -6,6 +6,7 @@ export type ConversationTurnCompletionReason =
   | 'session_completed'
   | 'session_failed'
   | 'stream_ended'
+  | 'cleared'
 
 export interface ConversationTurn {
   id: string
@@ -276,4 +277,40 @@ export function completeConversationTurn(
     `[ConversationQueue] Completed turn ${active.turn.id} for channel ${channelId} (${reason}); remaining=${Math.max(0, getConversationQueueDepth(channelId) - 1)}`,
   )
   return true
+}
+
+export function clearConversationQueue(channelId: string, reason: ConversationTurnCompletionReason = 'cleared'): number {
+  const state = channelQueues.get(channelId)
+  if (!state) return 0
+
+  let clearedCount = 0
+
+  // 1. Clear any active turn timer and resolve/unblock its waiter
+  if (state.active) {
+    clearNudgeTimer(state.active)
+    state.active.turn.completedAt = Date.now()
+    state.active.turn.completionReason = reason
+    clearedCount++
+  }
+  if (state.waiter && !state.waiter.settled) {
+    state.waiter.resolve(reason)
+  }
+
+  // 2. Reject/cancel any pending turns so their caller promises don't hang
+  while (state.pending.length > 0) {
+    const entry = state.pending.shift()!
+    clearNudgeTimer(entry)
+    entry.turn.completedAt = Date.now()
+    entry.turn.completionReason = reason
+    entry.resolve()
+    clearedCount++
+  }
+
+  state.active = undefined
+  state.waiter = undefined
+  state.draining = false
+  channelQueues.delete(channelId)
+
+  logger.info(`[ConversationQueue] Cleared queue for channel ${channelId} (${clearedCount} turn(s), reason=${reason})`)
+  return clearedCount
 }

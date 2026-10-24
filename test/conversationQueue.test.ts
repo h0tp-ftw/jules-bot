@@ -10,6 +10,7 @@ import {
   markConversationTurnDispatched,
   markConversationTurnResponded,
   scheduleConversationNudge,
+  clearConversationQueue,
 } from '../src/lib/jules/ConversationQueue.js'
 
 function fakeMessage(id: string): Message {
@@ -203,6 +204,35 @@ test('sends recurring nudges when the active turn remains unanswered', async () 
 
   completeConversationTurn(channelId, 'session_completed', turnId)
   await completion
+})
+
+test('clearConversationQueue unblocks active turn and cancels pending turns', async () => {
+  const channelId = 'queue-clear-test'
+  const dispatched: string[] = []
+
+  const first = enqueueConversationMessage(channelId, fakeMessage('msg-1'), async (turn) => {
+    dispatched.push('msg-1')
+    markConversationTurnDispatched(channelId, turn.id)
+    return true
+  })
+
+  const second = enqueueConversationMessage(channelId, fakeMessage('msg-2'), async () => {
+    dispatched.push('msg-2')
+    return false
+  })
+
+  await nextTick()
+  assert.deepEqual(dispatched, ['msg-1'])
+  assert.equal(getConversationQueueDepth(channelId), 2)
+
+  const cleared = clearConversationQueue(channelId, 'cleared')
+  assert.equal(cleared, 2)
+  assert.equal(getConversationQueueDepth(channelId), 0)
+
+  // Both promises should resolve without hanging
+  await Promise.all([first, second])
+  // Pending msg-2 was discarded, so dispatched list remains just msg-1
+  assert.deepEqual(dispatched, ['msg-1'])
 })
 
 test('cancels the nudge as soon as Jules responds', async () => {
